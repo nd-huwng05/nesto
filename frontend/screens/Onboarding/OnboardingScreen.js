@@ -1,14 +1,14 @@
 import React from 'react';
 import {Image, View, Text, TouchableOpacity} from "react-native";
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {ImageGridDecorator} from "../components/onboarding/ImageGridDecorator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {ImageGridDecorator} from "../../components/onboarding/ImageGridDecorator";
 
 export default function OnboardingScreen({navigation}) {
     const appearWellcome = async () => {
         try {
             await AsyncStorage.setItem('hasWellcome', 'true')
-            navigation.replace('AccountScreen')
+            navigation.replace('AccountFlow')
         } catch (error) {
             console.error("Error save status onboarding")
         }
@@ -17,7 +17,7 @@ export default function OnboardingScreen({navigation}) {
     return (
         <>
             <View className="flex-1 bg-white w-screen h-screen">
-                <Image source={require('../assets/images/decorator/decorate_01.png')}
+                <Image source={require('../../assets/images/decorator/decorate_01.png')}
                        className="absolute top-[-90px] right-[-20px] h-[1200px] w-[650px]" resizeMode="contain"/>
                 <SafeAreaView className="flex-1 justify-between pt-20">
                     <View className="flex w-full h-[70%] ">

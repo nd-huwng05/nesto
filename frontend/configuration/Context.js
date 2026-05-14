@@ -3,6 +3,7 @@ import {useFonts} from 'expo-font';
 import {LoadScreen} from "../components/utils/Load";
 import {Asset} from "expo-asset";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import OnboardingFlow from "../screens/Onboarding/OnboardingNavigator";
 
 export const GlobalContext = createContext()
 
@@ -20,7 +21,7 @@ export default function Context({children}) {
     useEffect(() => {
         async function prepareApp() {
             try {
-                 const images = [
+                const images = [
                     require('../assets/images/icon.svg'),
                     require('../assets/images/onboarding/nesto_01.jpg'),
                     require('../assets/images/onboarding/nesto_02.jpg'),
@@ -30,6 +31,7 @@ export default function Context({children}) {
                     require('../assets/images/onboarding/nesto_06.jpg'),
                     require('../assets/images/onboarding/nesto_07.jpg'),
                     require('../assets/images/decorator/decorate_01.png'),
+                    require('../assets/images/decorator/decorate_02.png'),
                 ]
 
                 const cacheImages = images.map(image => Asset.fromModule(image).downloadAsync())
@@ -38,27 +40,27 @@ export default function Context({children}) {
                     AsyncStorage.getItem('userToken'),
                     ...cacheImages
                 ]);
-
-                 if (hasSeen === null) {
-                    setInitialRoute("OnboardingScreen");
+                if (hasSeen === null) {
+                    setInitialRoute("OnboardingFlow");
                 } else if (userToken !== null) {
-                    setInitialRoute("HomeScreen");
+                    setInitialRoute("HomeFlow");
                 } else {
-                    setInitialRoute("AccountScreen");
+                    setInitialRoute("AccountFlow");
                 }
             } catch (error) {
                 console.error("Error read AsyncStore: ", error)
-                setInitialRoute("OnboardingScreen");
+                setInitialRoute("OnboardingFlow");
             } finally {
                 setIsAppReady(true);
             }
         }
+
         prepareApp()
     }, []);
 
     if (!fontsLoaded || !isAppReady) return (<LoadScreen/>);
     return (
-        <GlobalContext.Provider value={{ initialRoute }}>
+        <GlobalContext.Provider value={{initialRoute}}>
             {children}
         </GlobalContext.Provider>
     );
