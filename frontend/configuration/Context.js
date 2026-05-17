@@ -42,7 +42,7 @@ export default function Context({children}) {
                 ]);
                 if (hasSeen === null) {
                     setInitialRoute("OnboardingFlow");
-                } else if (userToken !== null) {
+                } else if (userToken) {
                     setInitialRoute("HomeFlow");
                 } else {
                     setInitialRoute("AccountFlow");

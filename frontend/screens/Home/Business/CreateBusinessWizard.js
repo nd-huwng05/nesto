@@ -1,140 +1,205 @@
-import {useState} from "react";
-import {TextInput, TouchableOpacity, View} from "react-native";
-import {QuestionLayout} from "../../../layout/QuestionLayout";
-import {Check} from "lucide-react-native";
+import React from 'react';
+import {TextInput, TouchableOpacity, View, Text, ActivityIndicator, Image} from 'react-native';
+import {QuestionLayout} from '../../../layout/QuestionLayout';
+import {Check, Image as ImageIcon} from 'lucide-react-native';
+import {useCreateBusiness} from '../../../hooks/business/useCreateBusiness';
+import {commonInputStyles} from '../../../styles/TextInputStyles';
+import OtpBottomSheet from '../../../components/login/OtpBottomSheet';
 
-export default function CreateBusinessWizard({navigation}) {
-    const [step, setStep] = useState(1)
-    const [name, setName] = useState("");
-    const [type, setType] = useState("");
-    const [scale, setScale] = useState("");
-    const [features, setFeatures] = useState([]);
+export default function CreateBusinessWizard({navigation, route}) {
+    const {
+        step,
+        name,
+        setName,
+        logo,
+        type,
+        setType,
+        scale,
+        setScale,
+        corporateEmail,
+        setCorporateEmail,
+        contactPhone,
+        setContactPhone,
+        lodgingTypes,
+        isLoading,
+        handleContinue,
+        handleBack,
+        checkIsValid,
+        getTitle,
+        pickLogo,
+        showOtpModal,
+        setShowOtpModal,
+        handleOtpSuccess,
+        contactError,
+        setContactError,
+    } = useCreateBusiness(navigation, route);
 
-    const handleContinue = () => {
-        if (step < 4) {
-            setStep(step + 1);
-        } else {
-            navigation.goBack();
-        }
-    };
-
-    const checkIsValid = () => {
-        switch (step) {
-            case 1:
-                return name.trim().length > 0;
-            case 2:
-                return type !== "";
-            case 3:
-                return scale !== "";
-            case 4:
-                return features.length > 0;
-            default:
-                return false;
-        }
+    if (isLoading && step === 1 && lodgingTypes.length === 0) {
+        return (
+            <View className="flex-1 justify-center items-center bg-white">
+                <ActivityIndicator size="large" color="#8294FF" />
+                <Text className="text-gray-500 mt-2 font-sf">Loading form configurations...</Text>
+            </View>
+        );
     }
 
-    const toggleFeature = (feat) => {
-        if (features.includes(feat)) {
-            setFeatures(features.filter(f => f !== feat));
-        } else {
-            setFeatures([...features, feat]);
-        }
-    };
-
-    const handleBack = () => {
-        if (step > 1) {
-            setStep(step - 1);
-        } else {
-            navigation.goBack();
-        }
-    };
-
-    const getTitle = () => {
-        switch (step) {
-            case 1: return "What is the name of your business?";
-            case 2: return "What is your primary lodging model?";
-            case 3: return "How many branches are you currently operating?";
-            case 4: return "Which guest segments does your business serve the most?";
-            default: return "";
-        }
-    };
-
     return (
-        <QuestionLayout
+        <View className="flex-1">
+            <QuestionLayout
+                navigation={{goBack: handleBack}}
+                title={getTitle()}
+                isValid={checkIsValid()}
+                isLoading={isLoading && step === 5}
+                onContinue={handleContinue}
+                footerText={
+                    <Text className="text-gray-400 mb-2 font-sf text-center">Step {step} of 5</Text>
+                }
+            >
+                {step === 1 && (
+                    <View className="mt-4 flex-row items-center bg-gray-50 border rounded-2xl px-4 h-12 border-gray-100">
+                        <TextInput
+                            autoFocus
+                            placeholder="Enter business name (e.g. Swiss, Nesto...)"
+                            placeholderTextColor="#9ca3af"
+                            value={name}
+                            onChangeText={setName}
+                            className="flex-1 font-sf-bold text-lg text-gray-900"
+                            style={commonInputStyles.baseInput}
+                        />
+                    </View>
+                )}
 
-            navigation={{ goBack: handleBack }}
-            title={getTitle()}
-            isValid={checkIsValid()}
-            onContinue={handleContinue}
-            footerText={<Text className="text-gray-400 mb-2 font-sf">Step {step} of 4</Text>}
-        >
-            {step === 1 && (
-                <View className="mt-4">
-                    <TextInput
-                        placeholder="Enter business name (e.g. Swiss, Nesto...)"
-                        placeholderTextColor="#94a3b8"
-                        value={name}
-                        onChangeText={setName}
-                        className="w-full border-b border-gray-300 text-xl font-sf-medium py-3 text-slate-800 text-center focus:border-primary"
-                    />
-                </View>
-            )}
-
-            {step === 2 && (
-                <View className="gap-3 mt-4">
-                    {["Hotel", "Homestay", "Resort", "Villa"].map((item) => (
+                {step === 2 && (
+                    <View className="items-center mt-6">
                         <TouchableOpacity
-                            key={item}
                             activeOpacity={0.8}
-                            onPress={() => setType(item)}
-                            className={`p-4 rounded-2xl border flex-row justify-between items-center ${
-                                type === item ? "border-primary bg-primary/5" : "border-gray-200 bg-white"
-                            }`}
+                            onPress={pickLogo}
+                            className="w-36 h-36 rounded-full border-2 border-dashed border-gray-300 bg-gray-50 justify-center items-center overflow-hidden"
                         >
-                            <Text className={`text-base font-sf-medium ${type === item ? "text-primary" : "text-slate-700"}`}>{item}</Text>
-                            {type === item && <Check size={18} color="#4f46e5" />}
+                            {logo ? (
+                                <Image source={{uri: logo}} className="w-full h-full" />
+                            ) : (
+                                <View className="items-center px-4">
+                                    <ImageIcon size={32} color="#94a3b8" />
+                                    <Text className="text-xs text-gray-400 font-sf text-center mt-2">
+                                        Upload Brand Logo
+                                    </Text>
+                                </View>
+                            )}
                         </TouchableOpacity>
-                    ))}
-                </View>
-            )}
+                    </View>
+                )}
 
-            {step === 3 && (
-                <View className="gap-3 mt-4">
-                    {["Single location", "2 - 5 branches", "More than 5 branches"].map((item) => (
-                        <TouchableOpacity
-                            key={item}
-                            activeOpacity={0.8}
-                            onPress={() => setScale(item)}
-                            className={`p-4 rounded-2xl border flex-row justify-between items-center ${
-                                scale === item ? "border-primary bg-primary/5" : "border-gray-200 bg-white"
-                            }`}
-                        >
-                            <Text className={`text-base font-sf-medium ${scale === item ? "text-primary" : "text-slate-700"}`}>{item}</Text>
-                            {scale === item && <Check size={18} color="#4f46e5" />}
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            )}
-
-            {step === 4 && (
-                <View className="flex-row flex-wrap gap-2.5 mt-4 justify-center">
-                    {["Family", "Couple", "Beachfront", "Business Travelers", "Dorm"].map((feat) => {
-                        const isSelected = features.includes(feat);
-                        return (
+                {step === 3 && (
+                    <View className="gap-3 mt-4">
+                        {lodgingTypes.map((item) => (
                             <TouchableOpacity
-                                key={feat}
+                                key={item}
                                 activeOpacity={0.8}
-                                onPress={() => toggleFeature(feat)}
-                                className={`px-5 py-3 rounded-full border ${
-                                    isSelected ? "border-primary bg-primary" : "border-gray-300 bg-white"
+                                onPress={() => setType(item)}
+                                className={`p-4 rounded-2xl border flex-row justify-between items-center ${
+                                    type === item
+                                        ? 'border-primary bg-primary/5'
+                                        : 'border-gray-200 bg-white'
                                 }`}
                             >
-                                <Text className={`text-sm font-sf-medium ${isSelected ? "text-white" : "text-slate-600"}`}>{feat}</Text>
+                                <Text
+                                    className={`text-base font-sf-medium ${
+                                        type === item ? 'text-primary' : 'text-slate-700'
+                                    }`}
+                                >
+                                    {item}
+                                </Text>
+                                {type === item && <Check size={18} color="#8294FF" />}
                             </TouchableOpacity>
-                        );
-                    })}
-                </View>
-            )}
-        </QuestionLayout>
+                        ))}
+                    </View>
+                )}
+
+                {step === 4 && (
+                    <View className="gap-3 mt-4">
+                        {['Single location', '2 - 5 branches', 'More than 5 branches'].map((item) => (
+                            <TouchableOpacity
+                                key={item}
+                                activeOpacity={0.8}
+                                onPress={() => setScale(item)}
+                                className={`p-4 rounded-2xl border flex-row justify-between items-center ${
+                                    scale === item
+                                        ? 'border-primary bg-primary/5'
+                                        : 'border-gray-200 bg-white'
+                                }`}
+                            >
+                                <Text
+                                    className={`text-base font-sf-medium ${
+                                        scale === item ? 'text-primary' : 'text-slate-700'
+                                    }`}
+                                >
+                                    {item}
+                                </Text>
+                                {scale === item && <Check size={18} color="#8294FF" />}
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
+
+                {step === 5 && (
+                    <View className="mt-4 gap-3">
+                        <View
+                            className={`flex-row items-center bg-gray-50 border rounded-2xl px-4 h-12 ${
+                                contactError ? 'border-red-400' : 'border-gray-100'
+                            }`}
+                        >
+                            <TextInput
+                                placeholder="Corporate Email *"
+                                placeholderTextColor="#9ca3af"
+                                autoFocus
+                                autoCapitalize="none"
+                                keyboardType="email-address"
+                                className="flex-1 font-sf-bold text-base text-gray-900"
+                                style={commonInputStyles.baseInput}
+                                value={corporateEmail}
+                                onChangeText={(text) => {
+                                    setCorporateEmail(text);
+                                    if (contactError) setContactError(null);
+                                }}
+                                editable={!isLoading}
+                            />
+                        </View>
+                        <View className="flex-row items-center bg-gray-50 border rounded-2xl px-4 h-12 border-gray-100">
+                            <TextInput
+                                placeholder="Corporate Phone *"
+                                placeholderTextColor="#9ca3af"
+                                keyboardType="phone-pad"
+                                className="flex-1 font-sf-bold text-base text-gray-900"
+                                style={commonInputStyles.baseInput}
+                                value={contactPhone}
+                                onChangeText={(text) => {
+                                    setContactPhone(text);
+                                    if (contactError) setContactError(null);
+                                }}
+                                editable={!isLoading}
+                            />
+                            {isLoading && <ActivityIndicator size="small" color="#8294FF" />}
+                        </View>
+                        {contactError ? (
+                            <Text className="text-red-500 text-xs font-sf text-center px-1">
+                                {contactError}
+                            </Text>
+                        ) : (
+                            <Text className="text-gray-400 text-xs font-sf text-center px-1">
+                                We will send a verification code to your corporate email.
+                            </Text>
+                        )}
+                    </View>
+                )}
+            </QuestionLayout>
+
+            <OtpBottomSheet
+                isVisible={showOtpModal}
+                onClose={() => setShowOtpModal(false)}
+                onSuccess={handleOtpSuccess}
+                email={corporateEmail}
+            />
+        </View>
     );
 }

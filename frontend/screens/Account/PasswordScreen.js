@@ -1,58 +1,63 @@
-import {ActivityIndicator, Alert, Text, TextInput, TouchableOpacity, View} from "react-native";
-import React, {useEffect, useRef} from "react";
-import {useValidation, VALIDATE_PASSWORD} from "../../hooks/validations/useFormValidation";
-import {AccountLayout} from "../../layout/AccountLayout";
-import {useAuth} from "../../hooks/account/useAuth";
-import {commonInputStyles} from "../../styles/TextInputStyles";
+import {Text, TouchableOpacity} from 'react-native';
+import {useForm} from 'react-hook-form';
+import {yupResolver} from '@hookform/resolvers/yup';
+import {QuestionLayout} from '../../layout/QuestionLayout';
+import {PasswordField} from '../../components/auth/PasswordField';
+import {loginPasswordSchema} from '../../validation/authSchemas';
+import {useAuth} from '../../hooks/account/useAuth';
 
 export default function PasswordScreen({navigation, route}) {
-    const {identifier} = route.params
-    const inputRef = useRef(null)
-    const {value: password, setValue: setPassword, isValid: isValidPassword} = useValidation('', VALIDATE_PASSWORD)
-    const {login, isLoading, error, setError} = useAuth()
-    const handleLogin = async () => {
+    const {identifier, type} = route.params || {};
+    const {login, isLoading} = useAuth();
+
+    const {
+        control,
+        handleSubmit,
+        reset,
+        formState: {errors, isValid},
+    } = useForm({
+        resolver: yupResolver(loginPasswordSchema),
+        mode: 'onChange',
+        defaultValues: {password: ''},
+    });
+
+    const onSubmit = async ({password}) => {
         const result = await login(identifier, password);
-        if (result.success) navigation.replace('HomeFlow')
-        else {
-            setPassword('')
-            setTimeout(() => {
-                inputRef.current?.focus();
-            }, 100);
+        if (result.success) {
+            navigation.replace('HomeFlow');
+        } else {
+            reset({password: ''});
         }
-    }
+    };
+
+    const identifierLabel = type === 'phone' ? 'phone number' : 'email';
+
     return (
-        <AccountLayout navigation={navigation} title="What's your password?" isValid={isValidPassword && !isLoading}
-                       onContinue={() => handleLogin()}>
-            <View className="flex-row items-center bg-gray-50 border border-gray-100 rounded-2xl px-4 h-10">
-                <TextInput
-                    ref={inputRef}
-                    placeholder="Password"
-                    secureTextEntry={true}
-                    autoFocus={true}
-                    textContentType="password"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    className="flex-1 font-sf-bold text-lg text-gray-900 h-full py-0"
-                    value={password}
-                    style={commonInputStyles.baseInput}
-                    onChangeText={(text) => {
-                        setPassword(text);
-                        if (error) setError(null);
-                    }}
-                    editable={!isLoading}
-                />
-                {isLoading && <ActivityIndicator size="small" color="#8294FF"/>}
-            </View>
-            {error && (
-                <View className="mt-2">
-                    <Text className="text-red-500 text-center font-sf-semi text-xs">
-                        {String(error)}
-                    </Text>
-                </View>
-            )}
-            <TouchableOpacity className="bg-gray-100 px-3 py-1 rounded-full self-center mt-3">
-                <Text className="font-bold text-gray-900">Forgot password</Text>
+        <QuestionLayout
+            navigation={navigation}
+            title="What's your password?"
+            subtitle={`Signing in with your ${identifierLabel}`}
+            isValid={isValid}
+            isLoading={isLoading}
+            continueLabel="Sign in"
+            onContinue={handleSubmit(onSubmit)}
+        >
+            <PasswordField
+                control={control}
+                name="password"
+                placeholder="Password"
+                autoFocus
+                editable={!isLoading}
+                error={errors.password?.message}
+            />
+
+            <TouchableOpacity
+                className="bg-gray-100 px-4 py-2 rounded-full self-center mt-4"
+                onPress={() => navigation.navigate('ForgotPasswordScreen')}
+                disabled={isLoading}
+            >
+                <Text className="font-sf-semi text-gray-700 text-sm">Forgot password?</Text>
             </TouchableOpacity>
-        </AccountLayout>
+        </QuestionLayout>
     );
 }

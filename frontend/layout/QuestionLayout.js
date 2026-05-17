@@ -1,49 +1,93 @@
-import {SafeAreaView} from "react-native-safe-area-context";
-import {Image, Keyboard, KeyboardAvoidingView, ScrollView, Text, TouchableOpacity, View} from "react-native";
-import {ChevronLeft} from "lucide-react-native";
-import React from "react";
+import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
+import {
+    ActivityIndicator,
+    Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import {ChevronLeft} from 'lucide-react-native';
+import React from 'react';
 
-export const AccountLayout = ({navigation, title, children, onContinue, isValid, footerText}) => {
+export const QuestionLayout = ({
+    navigation,
+    title,
+    subtitle,
+    children,
+    onContinue,
+    isValid = true,
+    isLoading = false,
+    continueLabel = 'Continue',
+    footerText,
+    hideContinue = false,
+}) => {
+    const insets = useSafeAreaInsets();
+    const canSubmit = isValid && !isLoading;
+
     return (
-        <SafeAreaView className="flex-1">
-            <Image source={require('../assets/images/decorator/decorate_02.png')}
-                   className="absolute top-[-190px] right-[-80px] h-[1200px] w-[650px] -rotate-180"
-                   resizeMode="contain"/>
-            <KeyboardAvoidingView behavior="padding" className="flex-1">
-                <ScrollView contentContainerStyle={{flexGrow: 1}} showsVerticalScrollIndicator={false}
-                            keyboardShouldPersistTaps="handled" className="px-6">
-
+        <SafeAreaView className="flex-1 bg-white" edges={['top', 'left', 'right']}>
+            <Image
+                source={require('../assets/images/decorator/decorate_02.png')}
+                className="absolute top-[-190px] right-[-80px] h-[1200px] w-[650px] -rotate-180"
+                resizeMode="contain"
+            />
+            <KeyboardAvoidingView style={{flex: 1}} behavior="padding" keyboardVerticalOffset={0}>
+                <ScrollView
+                    contentContainerStyle={{
+                        flexGrow: 1,
+                        justifyContent: 'space-between',
+                        paddingHorizontal: 24,
+                        paddingBottom: insets.bottom + 8,
+                    }}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                    showsVerticalScrollIndicator={false}
+                    bounces={false}
+                >
                     <View className="mt-4">
                         <TouchableOpacity
                             onPress={() => navigation.goBack()}
-                            className="w-10 h-10 border border-gray-200 rounded-full items-center justify-center">
-                            <ChevronLeft size={24} color={"#1f2937"} strokeWidth={2}/>
+                            className="w-10 h-10 border border-gray-200 rounded-full items-center justify-center"
+                        >
+                            <ChevronLeft size={24} color="#1f2937" strokeWidth={2} />
                         </TouchableOpacity>
                     </View>
 
-
-                    <View className='flex-1 justify-center'>
+                    <View className="flex-1 justify-center py-4">
                         <Text className="text-3xl font-sf-bold text-center mb-3">{title}</Text>
+                        {subtitle ? (
+                            <Text className="text-gray-500 font-sf text-center mb-4 px-2">{subtitle}</Text>
+                        ) : null}
                         {children}
                     </View>
 
-                    <View className="mt-auto mb-3 items-center">
-                        {footerText && footerText}
-                        <TouchableOpacity
-                            className={`${isValid ? 'bg-primary' : 'bg-gray-300'} w-full py-4 rounded-full self-center`}
-                            disabled={!isValid}
-                            onPress={() => {
-                                Keyboard.dismiss();
-                                onContinue();
-                            }}
-                        >
-                            <Text className="text-white text-center font-sf-bold text-base">
-                                Continue
-                            </Text>
-                        </TouchableOpacity>
+                    <View className="items-center pb-3">
+                        {footerText}
+                        {!hideContinue && (
+                            <TouchableOpacity
+                                className={`${canSubmit ? 'bg-primary' : 'bg-gray-300'} w-full py-4 rounded-full flex-row items-center justify-center`}
+                                disabled={!canSubmit}
+                                onPress={() => {
+                                    Keyboard.dismiss();
+                                    onContinue?.();
+                                }}
+                            >
+                                {isLoading ? (
+                                    <ActivityIndicator color="#ffffff" />
+                                ) : (
+                                    <Text className="text-white text-center font-sf-bold text-base">
+                                        {continueLabel}
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
-    )
-}
+    );
+};

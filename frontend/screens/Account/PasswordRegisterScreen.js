@@ -1,54 +1,46 @@
-import { Text, TextInput, View } from "react-native";
-import React, { useEffect, useRef } from "react";
-import { useValidation, VALIDATE_PASSWORD } from "../../hooks/validations/useFormValidation";
-import { AccountLayout } from "../../layout/AccountLayout";
-import { commonInputStyles } from "../../styles/TextInputStyles";
+import {QuestionLayout} from '../../layout/QuestionLayout';
+import {PasswordField} from '../../components/auth/PasswordField';
+import {useForm} from 'react-hook-form';
+import {yupResolver} from '@hookform/resolvers/yup';
+import {passwordSchema} from '../../validation/authSchemas';
 
-export default function PasswordRegisterScreen({ navigation, route }) {
-    const inputRef = useRef(null);
-    const { email } = route.params || {};
+const PASSWORD_HINT =
+    'Use at least 8 characters with uppercase, a number, and a special character (@$!%*?&#).';
 
-    const { value: password, setValue: setPassword, isValid: isValidPassword } = useValidation('', VALIDATE_PASSWORD);
+export default function PasswordRegisterScreen({navigation, route}) {
+    const {email, role} = route.params || {};
 
-    useEffect(() => {
-        const timer = setTimeout(() => inputRef.current?.focus(), 300);
-        return () => clearTimeout(timer);
-    }, []);
+    const {
+        control,
+        handleSubmit,
+        formState: {errors, isValid},
+    } = useForm({
+        resolver: yupResolver(passwordSchema),
+        mode: 'onChange',
+        defaultValues: {password: ''},
+    });
 
-    const handleContinue = () => {
-        navigation.navigate('RePasswordRegisterScreen', {
-            email: email,
-            password: password
-        });
-    }
+    const onSubmit = ({password}) => {
+        navigation.navigate('RePasswordRegisterScreen', {email, password, role});
+    };
 
     return (
-        <AccountLayout
+        <QuestionLayout
             navigation={navigation}
             title="Create a password"
-            isValid={isValidPassword}
-            onContinue={handleContinue}
+            subtitle="Choose a strong password for your account"
+            isValid={isValid}
+            onContinue={handleSubmit(onSubmit)}
         >
-            <View className="flex-row items-center bg-gray-50 border border-gray-100 rounded-2xl px-4 h-10">
-                <TextInput
-                    ref={inputRef}
-                    placeholder="Password"
-                    secureTextEntry={true}
-                    autoFocus={true}
-                    textContentType="newPassword"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    className="flex-1 font-sf-bold text-lg text-gray-900 h-full py-0"
-                    value={password}
-                    style={commonInputStyles.baseInput}
-                    onChangeText={setPassword} // Đúng hàm setPassword
-                />
-            </View>
-            <View className="mt-3 px-1">
-                <Text className="text-gray-500 font-sf-regular text-xs">
-                    Your password must have at least 8 characters.
-                </Text>
-            </View>
-        </AccountLayout>
+            <PasswordField
+                control={control}
+                name="password"
+                placeholder="Password"
+                autoFocus
+                textContentType="newPassword"
+                error={errors.password?.message}
+                hint={PASSWORD_HINT}
+            />
+        </QuestionLayout>
     );
 }

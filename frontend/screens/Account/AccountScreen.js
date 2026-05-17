@@ -19,7 +19,7 @@ export function AccountScreen({navigation}) {
                     <Text className={"text-2xl font-wendy text-extra mt-3"}>Find your perfect nest</Text>
                 </View>
                 <View className={"flex items-center justify-center w-[52%] h-[40%]"}>
-                    <TouchableOpacity onPress={() => navigation.navigate('EmailRegisterScreen')}
+                    <TouchableOpacity onPress={() => navigation.navigate('RolesRegisterScreen')}
                         className="bg-primary py-3 pl-6 pr-6 rounded-full items-center justify-center shadow-md"
                         activeOpacity={0.7}>
                         <Text className="text-white text-lg font-sf-semi"> Create an account</Text>

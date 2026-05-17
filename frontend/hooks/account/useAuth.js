@@ -1,29 +1,37 @@
-import {useState} from "react";
-import {authApi} from "../../services/AuthService";
-import {Vibration} from "react-native";
+import {useState, useCallback} from 'react';
+import {Alert, Vibration} from 'react-native';
+import {authApi} from '../../services/AuthService';
+import {saveSession} from '../../utils/authStorage';
+import {getErrorMessage} from '../../utils/authErrors';
 
 export const useAuth = () => {
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState(null);
 
-    const login = async (email, password) => {
-        setIsLoading(true)
-        setError(null);
-
+    const login = useCallback(async (identifier, password, role = 'business') => {
+        setIsLoading(true);
         try {
-            const response = await authApi(email, password);
-            if(response.status === 'success' || response.status === 200) {
-                return {success: true, data: response.data};
-            }
-        } catch (err) {
-            const errMsg = err.response?.message || "Something went wrong";
-            setError(errMsg);
-            Vibration.vibrate([0,100,50,100])
-            return {success: false, message: errMsg}
-        } finally {
-            setIsLoading(false)
-        }
-    };
+            const response = await authApi(identifier, password);
+            const token = response?.data?.access_token;
+            const user = response?.data?.user;
 
-    return { login, isLoading, error, setError}
-}
+            if ((response?.status === 'success' || response?.status === 200) && token) {
+                await saveSession(token, user || role);
+                return {success: true, data: response.data, user};
+            }
+
+            const message = 'Login failed. Please check your credentials.';
+            Alert.alert('Sign in failed', message);
+            Vibration.vibrate([0, 100, 50, 100]);
+            return {success: false, message};
+        } catch (err) {
+            const message = getErrorMessage(err, 'Email or password is incorrect');
+            Alert.alert('Sign in failed', message);
+            Vibration.vibrate([0, 100, 50, 100]);
+            return {success: false, message};
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    return {login, isLoading};
+};

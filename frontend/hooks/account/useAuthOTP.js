@@ -1,40 +1,40 @@
-import {useState} from "react";
-import {checkOTP, sendOTP} from "../../services/AuthService";
+import {useState, useCallback} from 'react';
+import {checkOTP, sendOTP} from '../../services/AuthService';
+import {getErrorMessage} from '../../utils/authErrors';
 
 export const useAuthOTP = () => {
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState(null)
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
 
-    const handleSendOTP  = async (email) => {
+    const handleSendOTP = useCallback(async (contact) => {
         setLoading(true);
         setError(null);
         try {
-            const res = await sendOTP(email);
-            return res.response;
+            const res = await sendOTP(contact);
+            return res?.response ?? res;
         } catch (err) {
-            setError(err.response?.message || "Send OTP failed");
+            const message = getErrorMessage(err, 'Failed to send verification code');
+            setError(message);
             throw err;
         } finally {
-            setLoading(false)
+            setLoading(false);
         }
-    }
+    }, []);
 
-    const handleVerifyOTP = async (otp) => {
+    const handleVerifyOTP = useCallback(async (otp) => {
         setLoading(true);
         setError(null);
         try {
             const res = await checkOTP(otp);
-            return res.response;
+            return res?.response ?? res;
         } catch (err) {
-            const msg = err.response?.message || "OTP Incorrect"
-            setError(msg)
-            throw msg;
+            const message = getErrorMessage(err, 'Incorrect verification code');
+            setError(message);
+            throw message;
         } finally {
-            setLoading(false)
+            setLoading(false);
         }
-    }
+    }, []);
 
-    return {
-        handleSendOTP, handleVerifyOTP, loading, error, setError
-    }
-}
+    return {handleSendOTP, handleVerifyOTP, loading, error, setError};
+};
