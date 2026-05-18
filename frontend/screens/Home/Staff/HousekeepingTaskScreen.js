@@ -1,26 +1,38 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useEffect, useState} from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
+    LayoutAnimation,
+    Platform,
     RefreshControl,
     StyleSheet,
     Text,
     TouchableOpacity,
+    UIManager,
     View,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
+import {CheckCircle} from 'lucide-react-native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
-import {UI, cardStyle} from '../../../styles/uiTokens';
+
+const normalizeStatus = (status) => String(status || '').toLowerCase();
 
 function statusLabel(status) {
-    return status === 'cleaning' ? 'Cleaning in progress' : 'Needs cleaning';
+    return normalizeStatus(status) === 'cleaning' ? 'In Progress' : 'Needs Cleaning';
 }
 
 export default function HousekeepingTaskScreen() {
+    useEffect(() => {
+        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+            UIManager.setLayoutAnimationEnabledExperimental(true);
+        }
+    }, []);
+
     const {user, branchId} = useStaffSession();
     const branch = getStaffBranchInfo(branchId);
     const [rooms, setRooms] = useState([]);
@@ -34,14 +46,23 @@ export default function HousekeepingTaskScreen() {
             setIsLoading(false);
             return;
         }
-        const data = await staffPortalMockStore.listHousekeepingRooms(branchId);
-        setRooms(data);
-        setIsLoading(false);
+        setIsLoading(true);
+        try {
+            const data = await staffPortalMockStore.listHousekeepingRooms(branchId);
+            const filtered = (data || [])
+                .filter((room) => {
+                    const status = normalizeStatus(room.status);
+                    return status === 'dirty' || status === 'cleaning';
+                })
+                .sort((a, b) => Number(a.roomNumber) - Number(b.roomNumber));
+            setRooms(filtered);
+        } finally {
+            setIsLoading(false);
+        }
     }, [branchId]);
 
     useFocusEffect(
         useCallback(() => {
-            setIsLoading(true);
             loadRooms();
         }, [loadRooms])
     );
@@ -52,73 +73,80 @@ export default function HousekeepingTaskScreen() {
         setRefreshing(false);
     };
 
+    const confirmMarkClean = (room) => {
+        Alert.alert(
+            'Confirm Clean-up',
+            `Mark Room ${room.roomNumber} as clean?`,
+            [
+                {text: 'Cancel', style: 'cancel'},
+                {text: 'Mark Clean', style: 'default', onPress: () => handleMarkClean(room.id)},
+            ],
+            {cancelable: true}
+        );
+    };
+
     const handleMarkClean = async (roomId) => {
         setMarkingId(roomId);
-        await staffPortalMockStore.markRoomClean(roomId);
-        setRooms((prev) => prev.filter((r) => r.id !== roomId));
-        setMarkingId(null);
+        try {
+            await staffPortalMockStore.markRoomClean(roomId);
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setRooms((prev) => prev.filter((r) => r.id !== roomId));
+        } finally {
+            setMarkingId(null);
+        }
     };
 
     return (
-        <TabScreenLayout backgroundColor={UI.screenBg}>
+        <TabScreenLayout backgroundColor="#F8FAFC">
             <View style={styles.inner}>
                 <View style={styles.headerPad}>
-                    <StaffBranchHeader
-                        user={user}
-                        branchName={branch.name}
-                        branchAddress={branch.address}
-                    />
-                    <Text className="font-sf-bold text-2xl text-slate-800">Housekeeping Tasks</Text>
-                    <Text className="font-sf text-sm text-gray-500 mt-1 mb-2">
-                        Rooms marked Dirty or Cleaning — tap when ready for guests.
-                    </Text>
+                    <StaffBranchHeader user={user} branchName={branch.name} branchAddress={branch.address} />
+                    <Text style={styles.title}>Housekeeping Tasks</Text>
+                    <Text style={styles.subtitle}>Rooms marked Dirty or Cleaning — tap when ready for guests.</Text>
                 </View>
 
                 {isLoading ? (
-                    <ActivityIndicator size="large" color="#8294FF" style={{marginTop: 40}} />
+                    <View style={styles.loadingWrap}>
+                        <ActivityIndicator size="large" color="#22C55E" />
+                    </View>
                 ) : (
                     <FlatList
                         data={rooms}
                         keyExtractor={(item) => item.id}
                         contentContainerStyle={styles.listContent}
-                        refreshControl={
-                            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />
-                        }
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#22C55E" />}
                         renderItem={({item}) => (
-                            <View style={[cardStyle, styles.roomCard]}>
-                                <View style={styles.roomHeader}>
-                                    <Text style={styles.roomNumber}>Room {item.roomNumber}</Text>
-                                    <View
-                                        style={[
-                                            styles.statusPill,
-                                            item.status === 'cleaning'
-                                                ? styles.statusCleaning
-                                                : styles.statusDirty,
-                                        ]}
-                                    >
-                                        <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
+                            <View style={styles.roomCard}>
+                                <View style={styles.row}>
+                                    <View style={styles.leftArea}>
+                                        <Text style={styles.roomNumber}>Room {item.roomNumber}</Text>
+                                        <View style={[styles.statusPill, normalizeStatus(item.status) === 'cleaning' ? styles.statusCleaning : styles.statusDirty]}>
+                                            <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
+                                        </View>
                                     </View>
+                                    <TouchableOpacity
+                                        activeOpacity={0.9}
+                                        disabled={markingId === item.id}
+                                        onPress={() => confirmMarkClean(item)}
+                                        style={[styles.cleanBtn, markingId === item.id && styles.cleanBtnDisabled]}
+                                    >
+                                        {markingId === item.id ? (
+                                            <ActivityIndicator color="#fff" />
+                                        ) : (
+                                            <View style={styles.cleanBtnInner}>
+                                                <CheckCircle size={18} color="#fff" strokeWidth={2.5} />
+                                                <Text style={styles.cleanBtnText}>Mark Clean</Text>
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
                                 </View>
-                                <TouchableOpacity
-                                    activeOpacity={0.9}
-                                    disabled={markingId === item.id}
-                                    onPress={() => handleMarkClean(item.id)}
-                                    style={styles.cleanBtn}
-                                >
-                                    {markingId === item.id ? (
-                                        <ActivityIndicator color="#fff" />
-                                    ) : (
-                                        <Text style={styles.cleanBtnText}>Mark as Clean</Text>
-                                    )}
-                                </TouchableOpacity>
                             </View>
                         )}
+                        ItemSeparatorComponent={() => <View style={{height: 16}} />}
                         ListEmptyComponent={
                             <View style={styles.empty}>
-                                <Text className="font-sf-bold text-slate-700 text-lg">All caught up!</Text>
-                                <Text className="font-sf text-sm text-gray-500 text-center mt-2">
-                                    No rooms need cleaning right now.
-                                </Text>
+                                <Text style={styles.emptyTitle}>All caught up!</Text>
+                                <Text style={styles.emptySubtitle}>No rooms need cleaning right now.</Text>
                             </View>
                         }
                     />
@@ -131,38 +159,59 @@ export default function HousekeepingTaskScreen() {
 const styles = StyleSheet.create({
     inner: {flex: 1},
     headerPad: {paddingHorizontal: 20, paddingTop: 8},
+    title: {fontSize: 22, fontWeight: '700', color: '#1E293B', marginTop: 6},
+    subtitle: {fontSize: 13, color: '#64748B', marginTop: 6, marginBottom: 6},
+    loadingWrap: {marginTop: 40, alignItems: 'center'},
     listContent: {paddingHorizontal: 20, paddingBottom: 24, flexGrow: 1},
-    roomCard: {marginBottom: UI.sectionGap},
-    roomHeader: {
+    roomCard: {
+        backgroundColor: '#FFFFFF',
+        padding: 20,
+        borderRadius: 16,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        shadowOffset: {width: 0, height: 2},
+        marginBottom: 0,
+    },
+    row: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 16,
     },
+    leftArea: {flex: 1, paddingRight: 12},
     roomNumber: {
-        fontSize: 28,
+        fontSize: 24,
         fontWeight: '700',
-        color: '#1e293b',
+        color: '#1E293B',
     },
     statusPill: {
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 20,
+        marginTop: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 999,
+        alignSelf: 'flex-start',
     },
-    statusDirty: {backgroundColor: '#fef3c7'},
-    statusCleaning: {backgroundColor: '#dbeafe'},
-    statusText: {fontSize: 11, fontWeight: '600', color: '#475569'},
+    statusDirty: {backgroundColor: '#FEF3C7'},
+    statusCleaning: {backgroundColor: '#FFEDD5'},
+    statusText: {fontSize: 13, fontWeight: '700', color: '#92400E'},
     cleanBtn: {
-        backgroundColor: '#8294FF',
-        borderRadius: 14,
-        minHeight: 56,
+        backgroundColor: '#22C55E',
+        borderRadius: 12,
+        minHeight: 48,
+        minWidth: 132,
         alignItems: 'center',
         justifyContent: 'center',
+        paddingHorizontal: 16,
     },
+    cleanBtnDisabled: {opacity: 0.75},
+    cleanBtnInner: {flexDirection: 'row', alignItems: 'center', gap: 8},
     cleanBtnText: {
         color: '#ffffff',
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: '700',
     },
     empty: {alignItems: 'center', paddingVertical: 48},
+    emptyTitle: {fontSize: 18, fontWeight: '700', color: '#0F172A'},
+    emptySubtitle: {fontSize: 13, color: '#64748B', textAlign: 'center', marginTop: 8},
 });

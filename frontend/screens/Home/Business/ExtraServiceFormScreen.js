@@ -7,6 +7,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import {Utensils, Flower2, Car, Bell as ConciergeBell} from 'lucide-react-native';
 import {FormScreenLayout} from '../../../components/common/FormScreenLayout';
 import {DetailScreenHeader} from '../../../components/business/DetailScreenHeader';
 import {useExtraServices} from '../../../hooks/business/useExtraServices';
@@ -21,6 +22,7 @@ export default function ExtraServiceFormScreen({navigation, route}) {
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [price, setPrice] = useState('');
+    const [category, setCategory] = useState('RESTAURANT');
     const [loading, setLoading] = useState(isEdit);
 
     useEffect(() => {
@@ -35,6 +37,7 @@ export default function ExtraServiceFormScreen({navigation, route}) {
                 setName(found.name);
                 setDescription(found.description || '');
                 setPrice(String(found.price));
+                setCategory(found.category || 'RESTAURANT');
             }
             setLoading(false);
         })();
@@ -52,7 +55,12 @@ export default function ExtraServiceFormScreen({navigation, route}) {
         }
 
         const res = await save(
-            {name: name.trim(), description: description.trim(), price: priceNum},
+            {
+                name: name.trim(),
+                description: description.trim(),
+                price: priceNum,
+                category: category || 'RESTAURANT',
+            },
             serviceId
         );
 
@@ -107,6 +115,40 @@ export default function ExtraServiceFormScreen({navigation, route}) {
                     className="bg-gray-50 border border-gray-100 rounded-xl px-4 font-sf text-slate-800 mb-4"
                     style={commonInputStyles.baseInput}
                 />
+
+                <Text style={{marginBottom: 8, fontSize: 14, color: '#64748B'}}>Category</Text>
+                <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 12, width: '100%', marginBottom: 12}}>
+                    {[
+                        {key: 'RESTAURANT', labelText: 'Restaurant', Icon: Utensils},
+                        {key: 'SPA', labelText: 'Spa', Icon: Flower2},
+                        {key: 'TRANSPORT', labelText: 'Transport', Icon: Car},
+                        {key: 'ROOM_SERVICE', labelText: 'Room Service', Icon: ConciergeBell},
+                    ].map((opt) => {
+                        const selected = category === opt.key;
+                        return (
+                            <TouchableOpacity
+                                key={opt.key}
+                                onPress={() => setCategory(opt.key)}
+                                activeOpacity={0.85}
+                                style={{
+                                    paddingVertical: 10,
+                                    paddingHorizontal: 16,
+                                    borderRadius: 100,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    backgroundColor: selected ? '#8294FF' : '#FFFFFF',
+                                    borderWidth: selected ? 0 : 1,
+                                    borderColor: selected ? 'transparent' : '#E2E8F0',
+                                }}
+                            >
+                                <opt.Icon size={16} color={selected ? '#FFFFFF' : '#64748B'} />
+                                <Text style={{marginLeft: 10, color: selected ? '#FFFFFF' : '#64748B', fontWeight: selected ? '700' : '600'}}>
+                                    {opt.labelText}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
 
                 <Text className="font-sf text-xs text-gray-500 mb-1.5">Description</Text>
                 <TextInput

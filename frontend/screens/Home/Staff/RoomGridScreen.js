@@ -2,7 +2,6 @@ import {useCallback, useState} from 'react';
 import {
     ActivityIndicator,
     FlatList,
-    Image,
     RefreshControl,
     StyleSheet,
     Text,
@@ -13,13 +12,52 @@ import {useFocusEffect} from '@react-navigation/native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
-import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
-import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
-import {UI, cardStyle} from '../../../styles/uiTokens';
+import {isRoomGridBlocked, staffPortalMockStore} from '../../../services/staffPortalMockStore';
+import {UI} from '../../../styles/uiTokens';
 
 function formatHourly(amount) {
     return `${Number(amount).toLocaleString('vi-VN')} VND/h`;
+}
+
+function normalizeStatus(status) {
+    return String(status || '').toLowerCase();
+}
+
+function getStatusBadge(status) {
+    const key = normalizeStatus(status);
+    if (key === 'dirty' || key === 'cleaning') {
+        return {
+            label: key === 'cleaning' ? 'Cleaning' : 'Dirty',
+            badgeStyle: styles.badgeYellow,
+            textStyle: styles.badgeTextYellow,
+        };
+    }
+    if (key === 'maintenance') {
+        return {
+            label: 'Maintenance',
+            badgeStyle: styles.badgeYellow,
+            textStyle: styles.badgeTextYellow,
+        };
+    }
+    if (key === 'occupied' || key === 'booked' || key === 'reserved') {
+        return {
+            label: key === 'occupied' ? 'Occupied' : 'Booked',
+            badgeStyle: styles.badgeRed,
+            textStyle: styles.badgeTextRed,
+        };
+    }
+    return {
+        label: 'Available',
+        badgeStyle: styles.badgeGreen,
+        textStyle: styles.badgeTextGreen,
+    };
+}
+
+function getBlockedLabel(status) {
+    const key = normalizeStatus(status);
+    if (key === 'maintenance') return 'Maintenance';
+    return 'Occupied';
 }
 
 export default function RoomGridScreen({navigation}) {
@@ -53,6 +91,15 @@ export default function RoomGridScreen({navigation}) {
         setRefreshing(false);
     };
 
+    const openBooking = (item) => {
+        navigation.navigate('StaffCreateBookingScreen', {
+            roomId: item.id,
+            roomNumber: item.roomNumber,
+            hourlyRate: item.hourlyRate,
+            roomType: item.type,
+        });
+    };
+
     return (
         <TabScreenLayout backgroundColor={UI.screenBg}>
             <View style={styles.inner}>
@@ -64,7 +111,8 @@ export default function RoomGridScreen({navigation}) {
                     />
                     <Text className="font-sf-bold text-2xl text-slate-800">Rooms</Text>
                     <Text className="font-sf text-sm text-gray-500 mt-1 mb-2">
-                        View availability and start a booking for your branch.
+                        Tap a room to start a walk-in. Occupied and maintenance rooms cannot be
+                        booked.
                     </Text>
                 </View>
 
@@ -78,47 +126,51 @@ export default function RoomGridScreen({navigation}) {
                         refreshControl={
                             <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />
                         }
-                        renderItem={({item}) => (
-                            <View style={[cardStyle, styles.roomCard]}>
-                                <View style={styles.roomRow}>
-                                    <Image
-                                        source={{uri: STAFF_MEDIA.ROOM_IMAGE}}
-                                        style={styles.thumb}
-                                        resizeMode="cover"
-                                    />
-                                    <View style={styles.roomBody}>
-                                        <View style={styles.topRow}>
-                                            <Text className="font-sf-bold text-base text-slate-800">
+                        renderItem={({item}) => {
+                            const statusBadge = getStatusBadge(item.status);
+                            const blocked = isRoomGridBlocked(item.status);
+
+                            return (
+                                <TouchableOpacity
+                                    activeOpacity={blocked ? 1 : 0.88}
+                                    disabled={blocked}
+                                    onPress={() => openBooking(item)}
+                                    style={[
+                                        styles.roomCard,
+                                        blocked && styles.roomCardBlocked,
+                                    ]}
+                                >
+                                    <View style={styles.cardTop}>
+                                        <View style={styles.cardLeft}>
+                                            <Text style={styles.roomNumber}>
                                                 Room {item.roomNumber}
                                             </Text>
-                                            <Text style={styles.hourlyRate}>
-                                                {formatHourly(item.hourlyRate)}
+                                            <Text style={styles.roomType}>{item.type}</Text>
+                                            <Text style={styles.roomFeature}>{item.feature}</Text>
+                                        </View>
+                                        <View style={[styles.statusBadge, statusBadge.badgeStyle]}>
+                                            <Text
+                                                style={[styles.statusBadgeText, statusBadge.textStyle]}
+                                            >
+                                                {statusBadge.label}
                                             </Text>
                                         </View>
-                                        <Text className="font-sf text-xs text-gray-500 mt-1">
-                                            Type: {item.type} · Feature: {item.feature}
-                                        </Text>
-                                        <Text className="font-sf text-xs text-gray-400 mt-0.5 capitalize">
-                                            Status: {item.status}
-                                        </Text>
-                                        <TouchableOpacity
-                                            activeOpacity={0.85}
-                                            style={styles.bookBtn}
-                                            onPress={() =>
-                                                navigation.navigate('StaffCreateBookingScreen', {
-                                                    roomId: item.id,
-                                                    roomNumber: item.roomNumber,
-                                                    hourlyRate: item.hourlyRate,
-                                                    roomType: item.type,
-                                                })
-                                            }
-                                        >
-                                            <Text className="font-sf-semi text-primary text-sm">Book now</Text>
-                                        </TouchableOpacity>
                                     </View>
-                                </View>
-                            </View>
-                        )}
+                                    <View style={styles.cardFooter}>
+                                        <Text style={styles.hourlyRate}>
+                                            {formatHourly(item.hourlyRate)}
+                                        </Text>
+                                        {blocked ? (
+                                            <Text style={styles.blockedHint}>
+                                                {getBlockedLabel(item.status)}
+                                            </Text>
+                                        ) : (
+                                            <Text style={styles.bookHint}>Tap to book walk-in</Text>
+                                        )}
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        }}
                         ListEmptyComponent={
                             <Text className="font-sf text-center text-gray-500 py-12">No rooms found.</Text>
                         }
@@ -133,24 +185,86 @@ const styles = StyleSheet.create({
     inner: {flex: 1},
     headerPad: {paddingHorizontal: 20, paddingTop: 8},
     listContent: {paddingHorizontal: 20, paddingBottom: 24},
-    roomCard: {marginBottom: UI.sectionGap},
-    roomRow: {flexDirection: 'row'},
-    thumb: {
-        width: 72,
-        height: 72,
-        borderRadius: 12,
-        backgroundColor: '#e2e8f0',
-        marginRight: 12,
+    roomCard: {
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: UI.sectionGap,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        shadowColor: '#0f172a',
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 2,
     },
-    roomBody: {flex: 1, minWidth: 0},
-    topRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start'},
+    roomCardBlocked: {
+        opacity: 0.72,
+        backgroundColor: '#f8fafc',
+    },
+    cardTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: 12,
+    },
+    cardLeft: {
+        flex: 1,
+        minWidth: 0,
+    },
+    roomNumber: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#0f172a',
+    },
+    roomType: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#475569',
+        marginTop: 4,
+    },
+    roomFeature: {
+        fontSize: 12,
+        color: '#94a3b8',
+        marginTop: 2,
+    },
+    statusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 10,
+    },
+    statusBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    badgeGreen: {backgroundColor: '#dcfce7'},
+    badgeTextGreen: {color: '#166534'},
+    badgeYellow: {backgroundColor: '#fef9c3'},
+    badgeTextYellow: {color: '#854d0e'},
+    badgeRed: {backgroundColor: '#fee2e2'},
+    badgeTextRed: {color: '#991b1b'},
+    cardFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 14,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+    },
     hourlyRate: {
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '700',
         color: '#059669',
     },
-    bookBtn: {
-        alignSelf: 'flex-start',
-        marginTop: 10,
+    bookHint: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#8294FF',
+    },
+    blockedHint: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#94a3b8',
     },
 });

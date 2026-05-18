@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -14,8 +14,19 @@ import {ChevronLeft} from 'lucide-react-native';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {createStaffBooking} from '../../../services/ReceptionService';
+import {canBookWalkInRoom, staffPortalMockStore} from '../../../services/staffPortalMockStore';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
 import {UI} from '../../../styles/uiTokens';
+
+function formatVnd(amount) {
+    return `${Number(amount).toLocaleString('vi-VN')} VND`;
+}
+
+function parseNonNegativeInt(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits === '') return 0;
+    return Math.min(Number(digits), 999);
+}
 
 export default function StaffCreateBookingScreen({navigation, route}) {
     const {roomId, roomNumber, hourlyRate, roomType} = route.params || {};
@@ -24,9 +35,43 @@ export default function StaffCreateBookingScreen({navigation, route}) {
 
     const [guestName, setGuestName] = useState('');
     const [phone, setPhone] = useState('');
-    const [durationAmount, setDurationAmount] = useState('1');
-    const [durationUnit, setDurationUnit] = useState('hours');
+    const [durationDays, setDurationDays] = useState('0');
+    const [durationHours, setDurationHours] = useState('1');
     const [submitting, setSubmitting] = useState(false);
+    const [roomAvailable, setRoomAvailable] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            if (!roomId) {
+                setRoomAvailable(false);
+                return;
+            }
+            const room = await staffPortalMockStore.getReceptionRoom(roomId);
+            if (cancelled) return;
+            if (!room || !canBookWalkInRoom(room.status)) {
+                setRoomAvailable(false);
+                Alert.alert(
+                    'Room unavailable',
+                    'This room is occupied or under maintenance and cannot accept a walk-in.',
+                    [{text: 'OK', onPress: () => navigation.goBack()}]
+                );
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [roomId, navigation]);
+
+    const rate = Number(hourlyRate) || 0;
+    const days = parseNonNegativeInt(durationDays);
+    const hours = parseNonNegativeInt(durationHours);
+    const totalHours = days * 24 + hours;
+
+    const estimatedPrice = useMemo(() => {
+        if (totalHours < 1) return 0;
+        return Math.round(rate * totalHours);
+    }, [rate, totalHours]);
 
     const handleSubmit = async () => {
         if (!guestName.trim()) {
@@ -37,9 +82,8 @@ export default function StaffCreateBookingScreen({navigation, route}) {
             Alert.alert('Required', 'Please enter a phone number.');
             return;
         }
-        const amount = Number(durationAmount);
-        if (!amount || amount < 1) {
-            Alert.alert('Required', 'Duration must be at least 1.');
+        if (totalHours < 1) {
+            Alert.alert('Required', 'Total duration must be at least 1 hour.');
             return;
         }
 
@@ -49,21 +93,26 @@ export default function StaffCreateBookingScreen({navigation, route}) {
             branchId,
             guestName: guestName.trim(),
             phone: phone.trim(),
-            durationAmount: amount,
-            durationUnit,
+            durationDays: days,
+            durationHours: hours,
+            walkIn: true,
             hotelName: branch.name,
             hotelAddress: branch.address,
         });
         setSubmitting(false);
 
         if (result.status === 'success') {
-            Alert.alert('Booking created', `Reservation for Room ${roomNumber} is pending check-in.`, [
-                {
-                    text: 'OK',
-                    onPress: () =>
-                        navigation.navigate('ReceptionistMain', {screen: 'RoomGrid'}),
-                },
-            ]);
+            Alert.alert(
+                'Walk-in checked in',
+                `Guest checked in to Room ${roomNumber} now. Collect payment at check-out.`,
+                [
+                    {
+                        text: 'OK',
+                        onPress: () =>
+                            navigation.navigate('ReceptionistMain', {screen: 'Bookings'}),
+                    },
+                ]
+            );
             return;
         }
         Alert.alert('Error', result.message || 'Could not create booking.');
@@ -75,7 +124,7 @@ export default function StaffCreateBookingScreen({navigation, route}) {
                 <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12}>
                     <ChevronLeft size={24} color="#334155" />
                 </TouchableOpacity>
-                <Text style={styles.topTitle}>New booking</Text>
+                <Text style={styles.topTitle}>Walk-in check-in</Text>
                 <View style={{width: 24}} />
             </View>
 
@@ -85,10 +134,10 @@ export default function StaffCreateBookingScreen({navigation, route}) {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.roomBanner}>
-                    <Text style={styles.roomBannerLabel}>Room</Text>
+                    <Text style={styles.roomBannerLabel}>Walk-in · checking in now</Text>
                     <Text style={styles.roomBannerTitle}>Room {roomNumber}</Text>
                     <Text style={styles.roomBannerMeta}>
-                        {roomType} · {Number(hourlyRate).toLocaleString('vi-VN')} VND/h
+                        {roomType} · {rate.toLocaleString('vi-VN')} VND/h
                     </Text>
                 </View>
 
@@ -112,43 +161,55 @@ export default function StaffCreateBookingScreen({navigation, route}) {
                 />
 
                 <Text style={styles.label}>Duration</Text>
-                <View style={styles.unitRow}>
-                    {['hours', 'nights'].map((unit) => (
-                        <TouchableOpacity
-                            key={unit}
-                            onPress={() => setDurationUnit(unit)}
-                            style={[styles.unitChip, durationUnit === unit && styles.unitChipActive]}
-                        >
-                            <Text
-                                style={[
-                                    styles.unitChipText,
-                                    durationUnit === unit && styles.unitChipTextActive,
-                                ]}
-                            >
-                                {unit === 'hours' ? 'Hours' : 'Nights'}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
+                <View style={styles.durationRow}>
+                    <View style={styles.durationField}>
+                        <Text style={styles.durationFieldLabel}>Days</Text>
+                        <TextInput
+                            value={durationDays}
+                            onChangeText={(v) => setDurationDays(String(parseNonNegativeInt(v)))}
+                            placeholder="0"
+                            placeholderTextColor="#94a3b8"
+                            keyboardType="number-pad"
+                            style={[commonInputStyles.baseInput, styles.input, styles.durationInput]}
+                        />
+                    </View>
+                    <View style={styles.durationField}>
+                        <Text style={styles.durationFieldLabel}>Hours</Text>
+                        <TextInput
+                            value={durationHours}
+                            onChangeText={(v) => setDurationHours(String(parseNonNegativeInt(v)))}
+                            placeholder="1"
+                            placeholderTextColor="#94a3b8"
+                            keyboardType="number-pad"
+                            style={[commonInputStyles.baseInput, styles.input, styles.durationInput]}
+                        />
+                    </View>
                 </View>
-                <TextInput
-                    value={durationAmount}
-                    onChangeText={setDurationAmount}
-                    placeholder="1"
-                    placeholderTextColor="#94a3b8"
-                    keyboardType="number-pad"
-                    style={[commonInputStyles.baseInput, styles.input]}
-                />
+
+                <View style={styles.estimateCard}>
+                    <Text style={styles.estimateLabel}>Total duration</Text>
+                    <Text style={styles.estimateValue}>
+                        {totalHours} hour{totalHours === 1 ? '' : 's'} ({days}d × 24 + {hours}h)
+                    </Text>
+                    <Text style={[styles.estimateLabel, {marginTop: 12}]}>Estimated room charge</Text>
+                    <Text style={styles.estimatePrice}>
+                        {totalHours < 1 ? '—' : formatVnd(estimatedPrice)}
+                    </Text>
+                </View>
 
                 <TouchableOpacity
                     activeOpacity={0.9}
-                    disabled={submitting}
+                    disabled={submitting || totalHours < 1 || !roomAvailable}
                     onPress={handleSubmit}
-                    style={[styles.cta, submitting && styles.ctaDisabled]}
+                    style={[
+                        styles.cta,
+                        (submitting || totalHours < 1 || !roomAvailable) && styles.ctaDisabled,
+                    ]}
                 >
                     {submitting ? (
                         <ActivityIndicator color="#ffffff" />
                     ) : (
-                        <Text style={styles.ctaText}>Confirm Booking</Text>
+                        <Text style={styles.ctaText}>Confirm Walk-in</Text>
                     )}
                 </TouchableOpacity>
             </ScrollView>
@@ -195,22 +256,49 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: '#0f172a',
     },
-    unitRow: {flexDirection: 'row', gap: 10, marginBottom: 10},
-    unitChip: {
+    durationRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 8,
+    },
+    durationField: {
         flex: 1,
-        paddingVertical: 10,
-        borderRadius: 12,
+    },
+    durationFieldLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        marginBottom: 6,
+    },
+    durationInput: {
+        marginBottom: 0,
+    },
+    estimateCard: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 14,
         borderWidth: 1,
         borderColor: '#e2e8f0',
-        backgroundColor: '#ffffff',
-        alignItems: 'center',
+        padding: 14,
+        marginTop: 12,
+        marginBottom: 4,
     },
-    unitChipActive: {
-        borderColor: '#8294FF',
-        backgroundColor: '#eef2ff',
+    estimateLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
     },
-    unitChipText: {fontSize: 14, fontWeight: '600', color: '#64748b'},
-    unitChipTextActive: {color: '#8294FF'},
+    estimateValue: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#334155',
+        marginTop: 4,
+    },
+    estimatePrice: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#059669',
+        marginTop: 4,
+    },
     cta: {
         backgroundColor: '#8294FF',
         borderRadius: 16,

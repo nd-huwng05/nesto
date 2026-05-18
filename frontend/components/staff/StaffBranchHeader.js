@@ -1,27 +1,26 @@
 import {Image, StyleSheet, Text, View} from 'react-native';
 import {STAFF_MEDIA} from '../../constants/staffMedia';
 import {StaffUserAvatar} from './StaffUserAvatar';
-import {cardStyle} from '../../styles/uiTokens';
+
+const HOTEL_SIZE = 40;
 
 export function StaffBranchHeader({user, branchName, branchAddress}) {
     return (
-        <View style={[cardStyle, styles.header]}>
+        <View style={styles.header}>
             <Image
-                source={{uri: STAFF_MEDIA.BRANCH_LOGO}}
-                style={styles.branchLogo}
+                source={{uri: STAFF_MEDIA.HOTEL_AVATAR || STAFF_MEDIA.BRANCH_LOGO}}
+                style={styles.hotelImage}
                 resizeMode="cover"
             />
             <View style={styles.info}>
                 <Text style={styles.branchName} numberOfLines={1}>
                     {branchName}
                 </Text>
-                {branchAddress ? (
-                    <Text style={styles.branchAddress} numberOfLines={2}>
-                        {branchAddress}
-                    </Text>
-                ) : null}
+                <Text style={styles.branchAddress} numberOfLines={2}>
+                    {branchAddress || '—'}
+                </Text>
             </View>
-            <StaffUserAvatar user={user} size={40} style={styles.avatarMargin} />
+            <StaffUserAvatar user={user} size={HOTEL_SIZE} style={styles.userAvatar} />
         </View>
     );
 }
@@ -32,16 +31,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 16,
     },
-    branchLogo: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+    hotelImage: {
+        width: HOTEL_SIZE,
+        height: HOTEL_SIZE,
+        borderRadius: 999,
         marginRight: 12,
         backgroundColor: '#e2e8f0',
     },
     info: {
         flex: 1,
         minWidth: 0,
+        marginRight: 8,
     },
     branchName: {
         fontSize: 16,
@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
         marginTop: 3,
         lineHeight: 16,
     },
-    avatarMargin: {
-        marginLeft: 8,
+    userAvatar: {
+        marginLeft: 0,
     },
 });

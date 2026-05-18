@@ -81,6 +81,7 @@ const seedExtraServices = (branchId, businessId) => [
         name: 'Airport Transfer',
         description: 'Private pick-up and drop-off from airport.',
         price: 350000,
+        category: 'TRANSPORT',
     },
     {
         id: `es_${branchId}_2`,
@@ -90,6 +91,7 @@ const seedExtraServices = (branchId, businessId) => [
         name: 'Breakfast Buffet',
         description: 'International breakfast buffet per guest.',
         price: 0,
+        category: 'RESTAURANT',
     },
 ];
 
@@ -484,6 +486,7 @@ export const branchMockStore = {
             name: payload.name,
             description: payload.description || '',
             price: Number(payload.price) || 0,
+            category: payload.category || null,
         };
         branch.extraServices = [...(branch.extraServices || []), service];
         return service;
@@ -501,6 +504,7 @@ export const branchMockStore = {
                 updates.price !== undefined
                     ? Number(updates.price)
                     : branch.extraServices[index].price,
+            category: updates.category ?? branch.extraServices[index].category,
         };
         return branch.extraServices[index];
     },

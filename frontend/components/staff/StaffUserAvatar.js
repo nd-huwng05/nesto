@@ -24,8 +24,6 @@ const styles = StyleSheet.create({
     wrap: {
         overflow: 'hidden',
         backgroundColor: '#e2e8f0',
-        borderWidth: 2,
-        borderColor: '#ffffff',
     },
     largeShadow: {
         shadowColor: '#8294FF',

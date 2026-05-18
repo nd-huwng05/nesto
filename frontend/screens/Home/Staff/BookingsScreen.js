@@ -1,29 +1,45 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 import {
     ActivityIndicator,
     FlatList,
     RefreshControl,
+    ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
+import {Calendar, ChevronLeft, ChevronRight, Search} from 'lucide-react-native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
-import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
+import {fetchBookingsForDay} from '../../../services/ReceptionService';
+import {buildDateStripe, toDateKey} from '../../../utils/staffBookingOps';
 import {UI, cardStyle} from '../../../styles/uiTokens';
-
-function formatVnd(amount) {
-    return `${amount.toLocaleString('vi-VN')} VND`;
-}
 
 function badgeStyle(status) {
     if (status === 'checked_in') return styles.badgeInHouse;
     if (status === 'checked_out') return styles.badgeDone;
     return styles.badgePending;
+}
+
+function matchesSearch(booking, query) {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    const name = String(booking.guestName || '').toLowerCase();
+    const phone = String(booking.phone || '').replace(/\s/g, '');
+    const phoneQuery = query.replace(/\s/g, '');
+    return name.includes(q) || phone.includes(phoneQuery);
+}
+
+function shiftDateKey(dateKey, days) {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const next = new Date(y, m - 1, d);
+    next.setDate(next.getDate() + days);
+    return toDateKey(next);
 }
 
 export default function BookingsScreen({navigation}) {
@@ -32,6 +48,10 @@ export default function BookingsScreen({navigation}) {
     const [bookings, setBookings] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedDateKey, setSelectedDateKey] = useState(() => toDateKey(new Date()));
+
+    const dateStripe = useMemo(() => buildDateStripe(new Date(selectedDateKey), 3), [selectedDateKey]);
 
     const loadBookings = useCallback(async () => {
         if (!branchId) {
@@ -39,10 +59,10 @@ export default function BookingsScreen({navigation}) {
             setIsLoading(false);
             return;
         }
-        const data = await staffPortalMockStore.listBookings(branchId);
-        setBookings(data);
+        const result = await fetchBookingsForDay(branchId, selectedDateKey);
+        setBookings(result.status === 'success' ? result.data || [] : []);
         setIsLoading(false);
-    }, [branchId]);
+    }, [branchId, selectedDateKey]);
 
     useFocusEffect(
         useCallback(() => {
@@ -51,11 +71,29 @@ export default function BookingsScreen({navigation}) {
         }, [loadBookings])
     );
 
+    const filteredBookings = useMemo(
+        () => bookings.filter((item) => matchesSearch(item, searchQuery.trim())),
+        [bookings, searchQuery]
+    );
+
     const refresh = async () => {
         setRefreshing(true);
         await loadBookings();
         setRefreshing(false);
     };
+
+    const selectedLabel = useMemo(() => {
+        const [y, m, d] = selectedDateKey.split('-').map(Number);
+        const date = new Date(y, m - 1, d);
+        return date.toLocaleDateString('en-GB', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+        });
+    }, [selectedDateKey]);
+
+    const isToday = selectedDateKey === toDateKey(new Date());
 
     return (
         <TabScreenLayout backgroundColor={UI.screenBg}>
@@ -68,15 +106,87 @@ export default function BookingsScreen({navigation}) {
                     />
                     <Text className="font-sf-bold text-2xl text-slate-800">Bookings</Text>
                     <Text className="font-sf text-sm text-gray-500 mt-1 mb-2">
-                        Pending: confirm check-in. In house: process check-out and payment.
+                        Filter by day · see room readiness before guests arrive.
                     </Text>
+
+                    <View style={styles.dateNavRow}>
+                        <TouchableOpacity
+                            hitSlop={10}
+                            onPress={() => setSelectedDateKey((k) => shiftDateKey(k, -1))}
+                            style={styles.dateNavBtn}
+                        >
+                            <ChevronLeft size={20} color="#64748b" />
+                        </TouchableOpacity>
+                        <View style={styles.dateNavCenter}>
+                            <Calendar size={16} color="#8294FF" />
+                            <Text style={styles.dateNavLabel}>{selectedLabel}</Text>
+                        </View>
+                        <TouchableOpacity
+                            hitSlop={10}
+                            onPress={() => setSelectedDateKey((k) => shiftDateKey(k, 1))}
+                            style={styles.dateNavBtn}
+                        >
+                            <ChevronRight size={20} color="#64748b" />
+                        </TouchableOpacity>
+                    </View>
+
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.dateStripe}
+                    >
+                        {dateStripe.map((day) => {
+                            const active = day.key === selectedDateKey;
+                            return (
+                                <TouchableOpacity
+                                    key={day.key}
+                                    onPress={() => setSelectedDateKey(day.key)}
+                                    style={[styles.dateCell, active && styles.dateCellActive]}
+                                >
+                                    <Text style={[styles.dateWeekday, active && styles.dateCellTextActive]}>
+                                        {day.weekday}
+                                    </Text>
+                                    <Text style={[styles.dateDayNum, active && styles.dateCellTextActive]}>
+                                        {day.dayNum}
+                                    </Text>
+                                    <Text style={[styles.dateMonth, active && styles.dateCellTextActive]}>
+                                        {day.month}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+
+                    {!isToday ? (
+                        <View style={styles.todayRow}>
+                            <TouchableOpacity
+                                onPress={() => setSelectedDateKey(toDateKey(new Date()))}
+                                style={styles.todayChip}
+                            >
+                                <Text style={styles.todayChipText}>Jump to today</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : null}
+
+                    <View style={styles.searchBar}>
+                        <Search size={18} color="#94a3b8" />
+                        <TextInput
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            placeholder="Search by guest name or phone"
+                            placeholderTextColor="#94a3b8"
+                            style={styles.searchInput}
+                            autoCorrect={false}
+                            clearButtonMode="while-editing"
+                        />
+                    </View>
                 </View>
 
                 {isLoading ? (
                     <ActivityIndicator size="large" color="#8294FF" style={{marginTop: 40}} />
                 ) : (
                     <FlatList
-                        data={bookings}
+                        data={filteredBookings}
                         keyExtractor={(item) => item.id}
                         contentContainerStyle={styles.listContent}
                         refreshControl={
@@ -98,17 +208,24 @@ export default function BookingsScreen({navigation}) {
                                             <Text style={styles.badgeText}>{item.statusLabel}</Text>
                                         </View>
                                     </View>
+
                                     <Text className="font-sf text-sm text-gray-600 mt-2">
-                                        Room {item.roomNumber} · {item.checkIn} → {item.checkOut}
+                                        {item.phone || '—'}
                                     </Text>
-                                    <Text className="font-sf-bold text-sm text-emerald-600 mt-2">
-                                        {formatVnd(item.total)}
+                                    <Text className="font-sf text-sm text-gray-600 mt-1">
+                                        {item.isUnassigned || !item.roomNumber
+                                            ? `Unassigned · Type: ${item.roomType || '—'}`
+                                            : `Room ${item.roomNumber}`}
                                     </Text>
                                 </View>
                             </TouchableOpacity>
                         )}
                         ListEmptyComponent={
-                            <Text className="font-sf text-center text-gray-500 py-12">No bookings yet.</Text>
+                            <Text className="font-sf text-center text-gray-500 py-12">
+                                {searchQuery.trim()
+                                    ? 'No bookings match your search.'
+                                    : 'No bookings for this day.'}
+                            </Text>
                         }
                     />
                 )}
@@ -120,6 +237,106 @@ export default function BookingsScreen({navigation}) {
 const styles = StyleSheet.create({
     inner: {flex: 1},
     headerPad: {paddingHorizontal: 20, paddingTop: 8},
+    dateNavRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+    },
+    dateNavBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    dateNavCenter: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingHorizontal: 8,
+    },
+    dateNavLabel: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#334155',
+    },
+    dateStripe: {
+        gap: 8,
+        paddingBottom: 4,
+    },
+    todayRow: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        marginBottom: 12,
+        marginTop: 4,
+    },
+    todayChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        backgroundColor: '#eef2ff',
+    },
+    todayChipText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#8294FF',
+    },
+    dateCell: {
+        width: 56,
+        paddingVertical: 10,
+        borderRadius: 14,
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        alignItems: 'center',
+    },
+    dateCellActive: {
+        backgroundColor: '#8294FF',
+        borderColor: '#8294FF',
+    },
+    dateWeekday: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#94a3b8',
+    },
+    dateDayNum: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#0f172a',
+        marginTop: 2,
+    },
+    dateMonth: {
+        fontSize: 10,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    dateCellTextActive: {
+        color: '#ffffff',
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ffffff',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 12,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#0f172a',
+        paddingVertical: 0,
+    },
     listContent: {paddingHorizontal: 20, paddingBottom: 24},
     bookingCard: {marginBottom: UI.sectionGap},
     bookingTop: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},

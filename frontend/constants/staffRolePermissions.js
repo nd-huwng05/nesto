@@ -7,5 +7,5 @@ export const STAFF_ROLE_PERMISSIONS = {
     Housekeeping:
         'Limited access. Can only view assigned rooms and update cleaning status.',
     Service:
-        'F&B access. Can view and fulfill room service orders, mark requests as in progress or done.',
+        'Department-scoped service access. Can only view and fulfill orders for their assigned department, then mark requests in progress or completed.',
 };

@@ -74,7 +74,13 @@ export const createStaffBooking = async (payload) => {
     if (useMock()) {
         try {
             const data = await staffPortalMockStore.createBooking(payload);
-            return {status: 'success', data, message: 'Booking created'};
+            return {
+                status: 'success',
+                data,
+                message: payload.walkIn
+                    ? 'Walk-in guest checked in successfully'
+                    : 'Booking created',
+            };
         } catch (err) {
             return {status: 'error', message: err.message || 'Unable to create booking'};
         }
@@ -108,6 +114,85 @@ export const addBookingExtraService = async (bookingId, serviceKey) => {
         return response;
     } catch (err) {
         return {status: 'error', message: err.message || 'Unable to add service'};
+    }
+};
+
+export const fetchBookingsForDay = async (branchId, dateKey) => {
+    await networkDelay(300, 500);
+
+    if (useMock()) {
+        const data = await staffPortalMockStore.listBookings(branchId, {date: dateKey});
+        return {status: 'success', data};
+    }
+
+    try {
+        const response = await Apis.get('/reception/bookings', {params: {branchId, date: dateKey}});
+        return response;
+    } catch (err) {
+        return {status: 'error', message: err.message || 'Unable to load bookings'};
+    }
+};
+
+export const fetchAvailableRoomsForSwitch = async (branchId, roomType) => {
+    await networkDelay(200, 400);
+
+    if (useMock()) {
+        const data = await staffPortalMockStore.listAvailableRoomsForSwitch(branchId, roomType);
+        return {status: 'success', data};
+    }
+
+    try {
+        const response = await Apis.get('/reception/rooms/available', {params: {branchId, roomType}});
+        return response;
+    } catch (err) {
+        return {status: 'error', message: err.message || 'Unable to load rooms'};
+    }
+};
+
+export const assignRoomAndCheckIn = async (bookingId, newRoomId) => {
+    await networkDelay(300, 500);
+
+    if (useMock()) {
+        try {
+            const data = await staffPortalMockStore.assignRoomAndCheckIn(bookingId, newRoomId);
+            return {
+                status: 'success',
+                data,
+                message: `Guest checked in to Room ${data.roomNumber}`,
+            };
+        } catch (err) {
+            return {status: 'error', message: err.message || 'Unable to assign room'};
+        }
+    }
+
+    try {
+        const response = await Apis.post(
+            `${endpoints['get_booking']}/${bookingId}/assign-and-check-in`,
+            {roomId: newRoomId}
+        );
+        return response;
+    } catch (err) {
+        return {status: 'error', message: err.message || 'Unable to assign room'};
+    }
+};
+
+export const switchBookingRoom = async (bookingId, newRoomId) => {
+    await networkDelay(300, 500);
+
+    if (useMock()) {
+        try {
+            const data = await staffPortalMockStore.switchBookingRoom(bookingId, newRoomId);
+            return {status: 'success', data, message: 'Room assignment updated'};
+        } catch (err) {
+            return {status: 'error', message: err.message || 'Unable to change room'};
+        }
+    }
+
+    try {
+        const response = await Apis.patch(`${endpoints['get_booking']}/${bookingId}/room`, {roomId: newRoomId});
+        return response;
+    } catch (err) {
+        return {status: 'error', message: err.message || 'Unable to change room'};
     }
 };
 

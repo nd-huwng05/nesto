@@ -1,48 +1,91 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useEffect, useState} from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
+    LayoutAnimation,
+    Platform,
     RefreshControl,
     StyleSheet,
     Text,
     TouchableOpacity,
+    UIManager,
     View,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
+import {CheckCircle, Car, Utensils, Flower2, Bell, Phone} from 'lucide-react-native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
-import {UI, cardStyle} from '../../../styles/uiTokens';
 
 const STATUS_STYLES = {
-    pending: {bg: '#fef3c7', text: '#b45309', label: 'Pending'},
-    in_progress: {bg: '#dbeafe', text: '#1d4ed8', label: 'In Progress'},
+    PENDING: {bg: '#FEF3C7', text: '#92400E', label: 'Pending'},
+    IN_PROGRESS: {bg: '#DBEAFE', text: '#1D4ED8', label: 'In Progress'},
 };
 
+const DEPARTMENT_META = {
+    SPA: {title: 'Spa Appointments', subtitle: 'Massage and wellness requests for your branch.', icon: Flower2},
+    TRANSPORT: {title: 'Transport Schedule', subtitle: 'Driver pickups and drop-offs for your branch.', icon: Car},
+    RESTAURANT: {title: 'Restaurant Reservations', subtitle: 'Table reservations and hosting for your branch.', icon: Utensils},
+    ROOM_SERVICE: {title: 'Room Service Requests', subtitle: 'Guest room service requests for your branch.', icon: Bell},
+};
+
+const normalizeStatus = (status) => String(status || '').toUpperCase();
+const normalizeDepartment = (department) => String(department || '').trim().toUpperCase();
+
+const formatRoomLabel = (roomNumber) => {
+    const value = String(roomNumber || '').trim();
+    if (!value) return 'Room';
+    return /^room\s/i.test(value) ? value : `Room ${value}`;
+};
+
+const getDepartmentMeta = (department) =>
+    DEPARTMENT_META[normalizeDepartment(department)] || {
+        title: 'Service Requests',
+        subtitle: 'Only your branch and department requests are shown.',
+    };
+
 export default function ServiceOrderScreen() {
+    useEffect(() => {
+        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+            UIManager.setLayoutAnimationEnabledExperimental(true);
+        }
+    }, []);
+
     const {user, branchId} = useStaffSession();
     const branch = getStaffBranchInfo(branchId);
+    const department = normalizeDepartment(user?.department);
+    const departmentMeta = getDepartmentMeta(department);
     const [orders, setOrders] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [busyId, setBusyId] = useState(null);
 
     const loadOrders = useCallback(async () => {
-        if (!branchId) {
+        if (!branchId || !department) {
             setOrders([]);
             setIsLoading(false);
             return;
         }
-        const data = await staffPortalMockStore.listServiceOrders(branchId);
-        setOrders(data);
-        setIsLoading(false);
-    }, [branchId]);
+        setIsLoading(true);
+        try {
+            const data = await staffPortalMockStore.listServiceOrders(branchId);
+            setOrders(
+                (data || []).filter(
+                    (order) =>
+                        order.branchId === branchId &&
+                        normalizeDepartment(order.category) === department
+                )
+            );
+        } finally {
+            setIsLoading(false);
+        }
+    }, [branchId, department]);
 
     useFocusEffect(
         useCallback(() => {
-            setIsLoading(true);
             loadOrders();
         }, [loadOrders])
     );
@@ -53,91 +96,155 @@ export default function ServiceOrderScreen() {
         setRefreshing(false);
     };
 
+    const confirmAccept = (order) => {
+        Alert.alert(
+            'Accept & Process?',
+            `Start preparing the request for ${formatRoomLabel(order.roomNumber)}?`,
+            [
+                {text: 'Cancel', style: 'cancel'},
+                {text: 'Accept & Process', onPress: () => handleAccept(order.id)},
+            ]
+        );
+    };
+
+    const confirmDeliver = (order) => {
+        Alert.alert(
+            'Mark Completed?',
+            `Confirm completion for ${formatRoomLabel(order.roomNumber)}?`,
+            [
+                {text: 'Cancel', style: 'cancel'},
+                {text: 'Mark Completed', onPress: () => handleDone(order.id)},
+            ]
+        );
+    };
+
     const handleAccept = async (orderId) => {
         setBusyId(orderId);
-        await staffPortalMockStore.acceptServiceOrder(orderId);
-        await loadOrders();
-        setBusyId(null);
+        try {
+            // pass the active staff member's name so the mock store records assignment
+            await staffPortalMockStore.acceptServiceOrder(orderId, user?.name || null);
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setOrders((prev) =>
+                prev
+                    .map((order) =>
+                        order.id === orderId ? {...order, status: 'IN_PROGRESS'} : order
+                    )
+            );
+        } finally {
+            setBusyId(null);
+        }
     };
 
     const handleDone = async (orderId) => {
         setBusyId(orderId);
-        await staffPortalMockStore.completeServiceOrder(orderId);
-        setOrders((prev) => prev.filter((o) => o.id !== orderId));
-        setBusyId(null);
+        try {
+            await staffPortalMockStore.completeServiceOrder(orderId);
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setOrders((prev) => prev.filter((o) => o.id !== orderId));
+        } finally {
+            setBusyId(null);
+        }
     };
 
     return (
-        <TabScreenLayout backgroundColor={UI.screenBg}>
+        <TabScreenLayout backgroundColor="#F8FAFC">
             <View style={styles.inner}>
                 <View style={styles.headerPad}>
-                    <StaffBranchHeader
-                        user={user}
-                        branchName={branch.name}
-                        branchAddress={branch.address}
-                    />
-                    <Text className="font-sf-bold text-2xl text-slate-800">Service Orders</Text>
-                    <Text className="font-sf text-sm text-gray-500 mt-1 mb-2">
-                        Room service and guest requests for your branch.
-                    </Text>
+                    <StaffBranchHeader user={user} branchName={branch.name} branchAddress={branch.address} />
+                    <Text style={styles.title}>{departmentMeta.title}</Text>
+                    <Text style={styles.subtitle}>{departmentMeta.subtitle}</Text>
                 </View>
 
                 {isLoading ? (
-                    <ActivityIndicator size="large" color="#8294FF" style={{marginTop: 40}} />
+                    <View style={styles.loadingWrap}>
+                        <ActivityIndicator size="large" color="#8294FF" />
+                    </View>
                 ) : (
                     <FlatList
                         data={orders}
                         keyExtractor={(item) => item.id}
                         contentContainerStyle={styles.listContent}
-                        refreshControl={
-                            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />
-                        }
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />}
                         renderItem={({item}) => {
-                            const st = STATUS_STYLES[item.status] || STATUS_STYLES.pending;
+                            const statusKey = normalizeStatus(item.status);
+                            const st = STATUS_STYLES[statusKey] || STATUS_STYLES.PENDING;
+                            const Icon = departmentMeta.icon || Utensils;
                             return (
-                                <View style={[cardStyle, styles.orderCard]}>
+                                <View style={styles.orderCard}>
                                     <View style={styles.orderTop}>
-                                        <Text className="font-sf-bold text-base text-slate-800">
-                                            Room {item.roomNumber}
-                                        </Text>
+                                        <Text style={styles.roomText}>{formatRoomLabel(item.roomNumber)}</Text>
                                         <View style={[styles.statusBadge, {backgroundColor: st.bg}]}>
                                             <Text style={[styles.statusLabel, {color: st.text}]}>{st.label}</Text>
                                         </View>
                                     </View>
-                                    <Text className="font-sf text-slate-700 mt-2">{item.summary}</Text>
-                                    <Text className="font-sf text-xs text-gray-400 mt-1">{item.createdAt}</Text>
+
+                                    <View style={styles.itemsWrap}>
+                                        {(item.items || []).map((line, index) => (
+                                            <View key={`${item.id}_${index}`} style={styles.itemRow}>
+                                                <Text style={styles.bullet}>•</Text>
+                                                <Text style={styles.itemText}>{line}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+
+                                    <Text style={styles.timestamp}>{item.timestamp}</Text>
+
+                                    <View style={styles.guestRow}>
+                                        <Text style={styles.guestName}>{item.guestName || 'Guest'}</Text>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                try {
+                                                    const tel = `tel:${(item.guestPhone || '').replace(/\s+/g, '')}`;
+                                                    import('react-native').then(({Linking}) => Linking.openURL(tel)).catch(() => {});
+                                                } catch (e) {}
+                                            }}
+                                            style={styles.phoneWrap}
+                                        >
+                                            <Phone size={16} color="#475569" />
+                                            <Text style={styles.guestPhone}>{item.guestPhone || ''}</Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {statusKey === 'IN_PROGRESS' && item.assignedStaff ? (
+                                        <Text style={styles.assignedText}>Assigned to: {item.assignedStaff}</Text>
+                                    ) : null}
+
                                     <View style={styles.actions}>
-                                        {item.status === 'pending' ? (
+                                        {statusKey === 'PENDING' ? (
                                             <TouchableOpacity
                                                 style={[styles.actionBtn, styles.acceptBtn]}
                                                 disabled={busyId === item.id}
-                                                onPress={() => handleAccept(item.id)}
+                                                onPress={() => confirmAccept(item)}
                                             >
-                                                <Text className="font-sf-bold text-white text-sm">Accept Order</Text>
+                                                <View style={styles.buttonContent}>
+                                                    <Icon size={18} color="#fff" strokeWidth={2.25} />
+                                                    <Text style={styles.actionText}>Accept & Process</Text>
+                                                </View>
                                             </TouchableOpacity>
-                                        ) : (
+                                        ) : statusKey === 'IN_PROGRESS' ? (
                                             <TouchableOpacity
                                                 style={[styles.actionBtn, styles.doneBtn]}
                                                 disabled={busyId === item.id}
-                                                onPress={() => handleDone(item.id)}
+                                                onPress={() => confirmDeliver(item)}
                                             >
                                                 {busyId === item.id ? (
                                                     <ActivityIndicator color="#fff" size="small" />
                                                 ) : (
-                                                    <Text className="font-sf-bold text-white text-sm">Mark Done</Text>
+                                                    <View style={styles.buttonContent}>
+                                                        <CheckCircle size={18} color="#fff" strokeWidth={2.25} />
+                                                        <Text style={styles.actionText}>Mark Completed</Text>
+                                                    </View>
                                                 )}
                                             </TouchableOpacity>
-                                        )}
+                                        ) : null}
                                     </View>
                                 </View>
                             );
                         }}
+                        ItemSeparatorComponent={() => <View style={{height: 16}} />}
                         ListEmptyComponent={
                             <View style={styles.empty}>
-                                <Text className="font-sf-bold text-slate-700 text-lg">No open orders</Text>
-                                <Text className="font-sf text-sm text-gray-500 text-center mt-2">
-                                    New guest requests will appear here.
-                                </Text>
+                                <Text style={styles.emptyText}>No active {departmentMeta.title.toLowerCase()} for your branch.</Text>
                             </View>
                         }
                     />
@@ -150,20 +257,47 @@ export default function ServiceOrderScreen() {
 const styles = StyleSheet.create({
     inner: {flex: 1},
     headerPad: {paddingHorizontal: 20, paddingTop: 8},
+    title: {fontSize: 22, fontWeight: '700', color: '#1E293B', marginTop: 6},
+    subtitle: {fontSize: 13, color: '#64748B', marginTop: 6, marginBottom: 6},
+    loadingWrap: {marginTop: 40, alignItems: 'center'},
     listContent: {paddingHorizontal: 20, paddingBottom: 24, flexGrow: 1},
-    orderCard: {marginBottom: UI.sectionGap},
+    orderCard: {
+        backgroundColor: '#FFFFFF',
+        padding: 20,
+        borderRadius: 16,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        shadowOffset: {width: 0, height: 2},
+        marginBottom: 0,
+    },
     orderTop: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
-    statusBadge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20},
-    statusLabel: {fontSize: 11, fontWeight: '600'},
-    actions: {marginTop: 14},
+    roomText: {fontSize: 22, fontWeight: '700', color: '#1E293B'},
+    statusBadge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999},
+    statusLabel: {fontSize: 11, fontWeight: '700'},
+    itemsWrap: {marginTop: 14},
+    itemRow: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6},
+    bullet: {fontSize: 16, lineHeight: 22, color: '#475569', marginRight: 8},
+    itemText: {flex: 1, fontSize: 14, lineHeight: 22, color: '#334155'},
+    timestamp: {fontSize: 12, color: '#94A3B8', marginTop: 4},
+    guestRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10},
+    guestName: {fontSize: 14, color: '#0F172A', fontWeight: '600'},
+    guestPhone: {fontSize: 13, color: '#2563EB', marginLeft: 8},
+    phoneWrap: {flexDirection: 'row', alignItems: 'center'},
+    assignedText: {marginTop: 8, color: '#1D4ED8', fontWeight: '700'},
+    actions: {marginTop: 16},
     actionBtn: {
         borderRadius: 12,
-        paddingVertical: 12,
+        minHeight: 48,
+        paddingHorizontal: 16,
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: 44,
     },
     acceptBtn: {backgroundColor: '#8294FF'},
-    doneBtn: {backgroundColor: '#059669'},
-    empty: {alignItems: 'center', paddingVertical: 48},
+    doneBtn: {backgroundColor: '#22C55E'},
+    buttonContent: {flexDirection: 'row', alignItems: 'center'},
+    actionText: {color: '#FFFFFF', fontSize: 15, fontWeight: '700', marginLeft: 8},
+    empty: {flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64},
+    emptyText: {fontSize: 15, color: '#64748B', textAlign: 'center'},
 });

@@ -5,6 +5,7 @@ export const STAFF_ROLES = ['Manager', 'Receptionist', 'Housekeeping', 'Service'
 export const DEFAULT_STAFF_PASSWORD = 'Abc123@';
 
 const normalizeIdentifier = (value) => String(value || '').trim().toLowerCase();
+const normalizeDepartment = (value) => String(value || '').trim().toUpperCase();
 
 /** @type {Record<string, object>} */
 let staffById = {
@@ -68,10 +69,47 @@ let staffById = {
         managerId: MANAGER_ID,
         businessId: 'b2',
         branchId: 'br2',
-        name: 'Thảo Nguyễn',
-        email: 'thao.nguyen@nesto.vn',
+        name: 'Driver Nesto',
+        email: 'driver@nesto.vn',
         phone: '0956789012',
         role: 'Service',
+        department: 'TRANSPORT',
+        password: DEFAULT_STAFF_PASSWORD,
+    },
+    st7: {
+        id: 'st7',
+        managerId: MANAGER_ID,
+        businessId: 'b2',
+        branchId: 'br2',
+        name: 'Spa Nesto',
+        email: 'spa@nesto.vn',
+        phone: '0967890123',
+        role: 'Service',
+        department: 'SPA',
+        password: DEFAULT_STAFF_PASSWORD,
+    },
+    st8: {
+        id: 'st8',
+        managerId: MANAGER_ID,
+        businessId: 'b2',
+        branchId: 'br2',
+        name: 'Restaurant Nesto',
+        email: 'restaurant@nesto.vn',
+        phone: '0977890123',
+        role: 'Service',
+        department: 'RESTAURANT',
+        password: DEFAULT_STAFF_PASSWORD,
+    },
+    st9: {
+        id: 'st9',
+        managerId: MANAGER_ID,
+        businessId: 'b2',
+        branchId: 'br2',
+        name: 'Room Service Nesto',
+        email: 'roomservice@nesto.vn',
+        phone: '0987890123',
+        role: 'Service',
+        department: 'ROOM_SERVICE',
         password: DEFAULT_STAFF_PASSWORD,
     },
 };
@@ -115,6 +153,7 @@ export const staffMockStore = {
             name: row.name,
             role: staffJobToAuthRole(row.role),
             jobRole: row.role,
+            department: row.department ? normalizeDepartment(row.department) : null,
             branchId: row.branchId,
             businessId: row.businessId,
             managerId: row.managerId,

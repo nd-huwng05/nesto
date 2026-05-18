@@ -12,6 +12,7 @@ import RoomGridScreen from './RoomGridScreen';
 import BookingsScreen from './BookingsScreen';
 import BookingDetailScreen from './BookingDetailScreen';
 import StaffCreateBookingScreen from './StaffCreateBookingScreen';
+import StaffAddServiceScreen from './StaffAddServiceScreen';
 import HousekeepingTaskScreen from './HousekeepingTaskScreen';
 import ServiceOrderScreen from './ServiceOrderScreen';
 import StaffProfileScreen from './StaffProfileScreen';
@@ -63,6 +64,7 @@ function ReceptionistFlow({bottomInset}) {
                 {() => <ReceptionistTabs bottomInset={bottomInset} />}
             </StaffStack.Screen>
             <StaffStack.Screen name="BookingDetailScreen" component={BookingDetailScreen} />
+            <StaffStack.Screen name="StaffAddServiceScreen" component={StaffAddServiceScreen} />
             <StaffStack.Screen name="StaffCreateBookingScreen" component={StaffCreateBookingScreen} />
         </StaffStack.Navigator>
     );
