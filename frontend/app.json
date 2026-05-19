@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.svg",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "scheme": "nesto-app",
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -21,22 +20,15 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": false,
-      "softwareKeyboardLayoutMode": "resize"
+      "edgeToEdgeEnabled": true,
+      "package": "com.anonymous.frontend"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-font",
-      "expo-asset",
-      "@react-native-google-signin/google-signin",
-      "expo-web-browser"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "8728a6a7-b005-4016-b041-3d364bd42845"
-      }
-    }
+      "expo-asset"
+    ]
   }
 }
