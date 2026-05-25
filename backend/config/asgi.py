@@ -21,8 +21,8 @@ from channels.security.websocket import AllowedHostsOriginValidator
 # is populated before importing code that may import ORM models.
 django_asgi_app = get_asgi_application()
 
-# Import notifications routing AFTER Django setup
-from notifications.routing import websocket_urlpatterns
+# Import routing AFTER Django setup
+from accounts.routing import websocket_urlpatterns
 
 # Application wrapper with Channels
 application = ProtocolTypeRouter({

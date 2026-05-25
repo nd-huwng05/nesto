@@ -15,6 +15,7 @@ DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -28,15 +29,6 @@ INSTALLED_APPS = [
     'channels',
     'core',
     'accounts',
-    'businesses',
-    'rooms',
-    'bookings',
-    'services',
-    'payments',
-    'notifications',
-    'reception',
-    'staff',
-    'reports',
 ]
 
 MIDDLEWARE = [
@@ -55,7 +47,7 @@ ROOT_URLCONF = 'config.urls.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -160,9 +152,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@nesto.local')
 AUTH_USER_MODEL = 'accounts.User'
 
-# Authentication backends - allows login with email
 AUTHENTICATION_BACKENDS = [
-    'accounts.backends.EmailBackend',
+    'accounts.backends.UnifiedAuthBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
@@ -194,9 +185,16 @@ OAUTH2_PROVIDER = {
         'read': 'Read access',
         'write': 'Write access',
     },
-    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,  # 1 hour
-    'REFRESH_TOKEN_EXPIRE_SECONDS': 86400,  # 24 hours
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    'REFRESH_TOKEN_EXPIRE_SECONDS': 86400,
     'ROTATE_REFRESH_TOKEN': True,
+    'GRANT_TYPES': (
+        'password',
+        'refresh_token',
+        'google',
+    ),
+    'ALLOWED_GRANT_TYPES': ['password', 'refresh_token', 'google'],
+    'OAUTH2_VALIDATOR_CLASS': 'accounts.backends.CustomOAuth2Validator',
 }
 
 # CORS Settings
@@ -215,20 +213,11 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
-    'TAGS': [
-        {'name': 'Auth', 'description': 'Authentication and authorization endpoints'},
-        {'name': 'Users', 'description': 'User management endpoints'},
-        {'name': 'Businesses', 'description': 'Business management endpoints'},
-        {'name': 'Branches', 'description': 'Branch/location management endpoints'},
-        {'name': 'Staff', 'description': 'Staff management with RBAC'},
-        {'name': 'Reception', 'description': 'Booking and reception endpoints'},
-        {'name': 'Reports', 'description': 'Reporting and analytics endpoints'},
-        {'name': 'Reference', 'description': 'Reference data endpoints'},
-    ],
 }
 
 # Cloudinary Configuration
 import cloudinary
+
 cloudinary.config(
     cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME', ''),
     api_key=os.getenv('CLOUDINARY_API_KEY', ''),
@@ -272,3 +261,31 @@ LOGGING = {
         },
     },
 }
+
+SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', '')
+SENDGRID_FROM_EMAIL = os.getenv('SENDGRID_FROM', '')
+
+if SENDGRID_API_KEY:
+    EMAIL_BACKEND = 'sgbackend.Backend'
+    SENDGRID_EMAIL_HOST = 'smtp.sendgrid.net'
+    SENDGRID_EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+    SENDGRID_EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
+    SENDGRID_EMAIL_HOST_USER = 'apikey'
+    SENDGRID_EMAIL_HOST_PASSWORD = SENDGRID_API_KEY
+else:
+    EMAIL_BACKEND = os.getenv(
+        'EMAIL_BACKEND',
+        'django.core.mail.backends.console.EmailBackend'
+    )
+    EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+    EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+
+GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID', '')
+GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', '')
+
+SOCIAL_AUTH_GOOGLE_OAUTH2_UTILS_ENDPOINT = (
+    'https://oauth2.googleapis.com/tokeninfo'
+)

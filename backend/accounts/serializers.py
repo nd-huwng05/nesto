@@ -1,53 +1,112 @@
 import re
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
-from accounts.models import User
-from core.constant import Provider, Message
+
+from accounts.models import Role, User
+
+User = get_user_model()
 
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ["id", "email", "phone", "name", "avatar", "role", "is_active"]
-        read_only_fields = fields
-
-
-class LoginSerializer(serializers.Serializer):
-    provider = serializers.ChoiceField(choices=Provider.choices)
-    email = serializers.EmailField(required=False)
-    phone = serializers.CharField(required=False, allow_blank=False)
-    password = serializers.CharField(required=False, write_only=True, trim_whitespace=False)
-    id_token = serializers.CharField(required=False, write_only=True)
-
-    PROVIDER_REQUIRED_FIELDS = {
-        Provider.EMAIL: ["email", "password"],
-        Provider.PHONE: ["phone", "password"],
-        Provider.GOOGLE: ["id_token"],
-    }
-
+class PhoneValidationMixin:
     def validate_phone(self, value):
         if not value:
             return value
-        value = re.sub(r"^\+?[1-9]\d{7,14}$", "", value)
+        normalized = re.sub(r'[\s\-\(\)]+', '', str(value).strip())
+        if len(normalized) < 8:
+            raise serializers.ValidationError("Phone number must be at least 8 digits.")
+        return normalized
+
+
+class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'phone', 'name', 'avatar', 'role', 'role_display', 'is_active']
+        read_only_fields = ['id', 'email']
+
+
+class SendOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        email = value.lower().strip()
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError("This email is already registered.")
+        return email
+
+
+class VerifyOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    otp_code = serializers.CharField(max_length=6, required=True)
+    session_id = serializers.CharField(required=False, allow_blank=True)
+
+
+class UserRegistrationSerializer(PhoneValidationMixin, serializers.ModelSerializer):
+    confirm_password = serializers.CharField(required=True, write_only=True)
+    register_token = serializers.CharField(required=True, write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['email', 'password', 'confirm_password', 'name', 'phone', 'role', 'register_token']
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'phone': {'required': False},
+            'role': {'required': False}
+        }
+
+    def validate_role(self, value):
+        if not value:
+            return Role.CUSTOMER
+        allowed_roles = [Role.CUSTOMER, Role.BUSINESS_OWNER]
+        if value not in [r.value for r in allowed_roles]:
+            raise serializers.ValidationError("Cannot register with this role.")
         return value
 
-    def validate(self, attrs):
-        provider = attrs.get("provider")
-        required_fields = self.PROVIDER_REQUIRED_FIELDS.get(provider)
+    def validate(self, data):
+        if data['password'] != data['confirm_password']:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
 
-        if not required_fields:
-            raise serializers.ValidationError({"provider": "Unsupported provider."})
+        fake_user = User(
+            email=data.get('email', ''),
+            name=data.get('name', ''),
+            phone=data.get('phone', '')
+        )
+        try:
+            validate_password(data['password'], user=fake_user)
+        except Exception as e:
+            raise serializers.ValidationError({"password": list(e.messages)})
 
-        errors = {}
-        for field in required_fields:
-            if not attrs.get(field):
-                errors[field] = Message.FieldRequest
+        from accounts.services.otp_service import OTPService
+        is_valid = OTPService.verify_register_token(data['email'], data['register_token'])
+        if not is_valid:
+            raise serializers.ValidationError("Registration token is invalid or expired. Please verify your email again.")
 
-        if errors:
-            raise serializers.ValidationError(errors)
+        return data
 
-        clean_attrs = {"provider": provider}
-        for field in required_fields:
-            clean_attrs[field] = attrs.get(field)
+    def create(self, validated_data):
+        validated_data.pop('confirm_password')
+        validated_data.pop('register_token')
+        validated_data['is_active'] = True
+        return User.objects.create_user(**validated_data)
 
-        return clean_attrs
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, write_only=True)
+    confirm_password = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        try:
+            validate_password(data['new_password'])
+        except Exception as e:
+            raise serializers.ValidationError({"new_password": list(e.messages)})
+        return data

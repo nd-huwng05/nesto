@@ -21,5 +21,4 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     path('api/v1/', include('config.urls.v1')),
-    path('accounts/', include('django.contrib.auth.urls')),
 ]
