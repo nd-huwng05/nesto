@@ -153,7 +153,7 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@nesto.local')
 AUTH_USER_MODEL = 'accounts.User'
 
 AUTHENTICATION_BACKENDS = [
-    'accounts.backends.UnifiedAuthBackend',
+    'accounts.backends.EmailBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
@@ -266,12 +266,13 @@ SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', '')
 SENDGRID_FROM_EMAIL = os.getenv('SENDGRID_FROM', '')
 
 if SENDGRID_API_KEY:
-    EMAIL_BACKEND = 'sgbackend.Backend'
-    SENDGRID_EMAIL_HOST = 'smtp.sendgrid.net'
-    SENDGRID_EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-    SENDGRID_EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
-    SENDGRID_EMAIL_HOST_USER = 'apikey'
-    SENDGRID_EMAIL_HOST_PASSWORD = SENDGRID_API_KEY
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.sendgrid.net'
+    EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
+    EMAIL_HOST_USER = 'apikey'
+    EMAIL_HOST_PASSWORD = SENDGRID_API_KEY
+    DEFAULT_FROM_EMAIL = SENDGRID_FROM_EMAIL
 else:
     EMAIL_BACKEND = os.getenv(
         'EMAIL_BACKEND',
