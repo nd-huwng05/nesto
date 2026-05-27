@@ -82,7 +82,7 @@ export default function CustomerLocketScreen({navigation}) {
             </View>
 
             <View style={styles.searchWrap}>
-                <Image source={require('../../../assets/images/hotels/icon.png')} style={styles.aiSearchIcon}/>
+                <Image source={require('../../../assets/images/hotels/sun-suites-business.jpg')} style={styles.aiSearchIcon}/>
                 <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}

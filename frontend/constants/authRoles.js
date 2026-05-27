@@ -1,6 +1,8 @@
 /** App-level roles used for navigation and RBAC */
 export const AUTH_ROLES = {
     SUPER_ADMIN: 'SUPER_ADMIN',
+    BUSINESS_OWNER: 'BUSINESS_OWNER',
+    CUSTOMER: 'CUSTOMER',
     MANAGER: 'MANAGER',
     RECEPTIONIST: 'RECEPTIONIST',
     HOUSEKEEPING: 'HOUSEKEEPING',
@@ -8,6 +10,10 @@ export const AUTH_ROLES = {
 };
 
 export const isSuperAdmin = (role) => role === AUTH_ROLES.SUPER_ADMIN;
+
+export const isBusinessOwner = (role) => role === AUTH_ROLES.BUSINESS_OWNER;
+
+export const isCustomer = (role) => role === AUTH_ROLES.CUSTOMER;
 
 /** Map hotel staff job title → auth role */
 export const staffJobToAuthRole = (jobRole) => {

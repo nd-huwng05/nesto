@@ -6,7 +6,8 @@ import {AuthTextField} from '../../components/auth/AuthTextField';
 import {forgotPasswordSchema} from '../../validation/authSchemas';
 import {useForgotPassword} from '../../hooks/account/useForgotPassword';
 
-export default function ForgotPasswordScreen({navigation}) {
+export default function ForgotPasswordScreen({navigation, route}) {
+    const { email: prefillEmail } = route.params || {};
     const {submitResetRequest, isLoading, isSubmitted} = useForgotPassword();
 
     const {
@@ -16,7 +17,7 @@ export default function ForgotPasswordScreen({navigation}) {
     } = useForm({
         resolver: yupResolver(forgotPasswordSchema),
         mode: 'onChange',
-        defaultValues: {email: ''},
+        defaultValues: {email: prefillEmail || ''},
     });
 
     const onSubmit = async ({email}) => {

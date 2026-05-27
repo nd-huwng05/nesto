@@ -1,4 +1,4 @@
-import {useCallback, useMemo, useState} from 'react';
+import {useCallback, useMemo, useState, useEffect} from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -18,6 +18,7 @@ import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {fetchBookingsForDay} from '../../../services/ReceptionService';
 import {buildDateStripe, toDateKey} from '../../../utils/staffBookingOps';
+import {connectBookingUpdates} from '../../../services/WebSocketService';
 import {UI, cardStyle} from '../../../styles/uiTokens';
 
 function badgeStyle(status) {
@@ -70,6 +71,18 @@ export default function BookingsScreen({navigation}) {
             loadBookings();
         }, [loadBookings])
     );
+
+    useEffect(() => {
+        if (!branchId) return;
+        connectBookingUpdates(branchId, {
+            onMessage: (data) => {
+                if (data.type === 'booking' || data.type === 'booking_update') {
+                    loadBookings();
+                }
+            },
+        });
+        return () => {};
+    }, [branchId, loadBookings]);
 
     const filteredBookings = useMemo(
         () => bookings.filter((item) => matchesSearch(item, searchQuery.trim())),

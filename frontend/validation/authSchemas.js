@@ -63,3 +63,11 @@ export const forgotPasswordSchema = yup.object({
         .email('Please enter a valid email address')
         .required('Email is required'),
 });
+
+export const nameSchema = yup.object({
+    name: yup
+        .string()
+        .trim()
+        .min(2, 'Name must be at least 2 characters')
+        .required('Name is required'),
+});

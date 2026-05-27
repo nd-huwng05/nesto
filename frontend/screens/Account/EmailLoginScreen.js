@@ -1,11 +1,11 @@
-import {Alert, Text} from 'react-native';
-import {useForm} from 'react-hook-form';
-import {yupResolver} from '@hookform/resolvers/yup';
-import {QuestionLayout} from '../../layout/QuestionLayout';
-import {AuthTextField} from '../../components/auth/AuthTextField';
-import {AuthAlternateButton} from '../../components/auth/AuthAlternateButton';
-import {emailSchema} from '../../validation/authSchemas';
-import {useGoogleAuth} from '../../hooks/account/useGoogleAuth';
+import { Text } from 'react-native';
+import { useForm } from 'react-hook-form';
+import { yupResolver } from '@hookform/resolvers/yup';
+import { QuestionLayout } from '../../layout/QuestionLayout';
+import { AuthTextField } from '../../components/auth/AuthTextField';
+import { AuthAlternateButton } from '../../components/auth/AuthAlternateButton';
+import { emailSchema } from '../../validation/authSchemas';
+import { useGoogleAuth } from '../../hooks/account/useGoogleAuth';
 
 const TERMS_FOOTER = (
     <Text className="text-[12px] font-sf text-gray-400 mb-4 text-center w-3/4">
@@ -15,32 +15,42 @@ const TERMS_FOOTER = (
     </Text>
 );
 
-export default function EmailLoginScreen({navigation}) {
-    const {login: googleLogin, isLoading: isGoogleLoading} = useGoogleAuth();
+const navigateByRole = (navigation, user) => {
+    const role = user?.role;
+    if (role === 'BUSINESS_OWNER') {
+        navigation.reset({
+            index: 0,
+            routes: [{ name: 'HomeFlow' }],
+        });
+    } else {
+        navigation.reset({
+            index: 0,
+            routes: [{ name: 'HomeFlow' }],
+        });
+    }
+};
+
+export default function EmailLoginScreen({ navigation }) {
+    const { login: googleLogin, isLoading: isGoogleLoading } = useGoogleAuth();
 
     const {
         control,
         handleSubmit,
-        formState: {errors, isValid},
+        formState: { errors, isValid },
     } = useForm({
         resolver: yupResolver(emailSchema),
         mode: 'onChange',
-        defaultValues: {email: ''},
+        defaultValues: { email: '' },
     });
 
-    const onSubmit = ({email}) => {
-        navigation.navigate('PasswordScreen', {identifier: email.trim(), type: 'email'});
+    const onSubmit = ({ email }) => {
+        navigation.navigate('PasswordScreen', { email: email.trim().toLowerCase() });
     };
 
     const handleGoogleLogin = async () => {
-        try {
-            await googleLogin();
-            Alert.alert(
-                'Coming soon',
-                'Google sign-in will be available in a future release.'
-            );
-        } catch {
-            Alert.alert('Sign in failed', 'Google sign-in failed. Please try again.');
+        const result = await googleLogin();
+        if (result.success && result.user) {
+            navigateByRole(navigation, result.user);
         }
     };
 
@@ -63,13 +73,8 @@ export default function EmailLoginScreen({navigation}) {
             />
 
             <AuthAlternateButton
-                icon="phone"
-                label="Use phone instead"
-                onPress={() => navigation.replace('PhoneLoginScreen')}
-            />
-            <AuthAlternateButton
                 icon="google"
-                label={isGoogleLoading ? 'Connecting...' : 'Use Google instead'}
+                label={isGoogleLoading ? 'Connecting...' : 'Continue with Google'}
                 onPress={handleGoogleLogin}
             />
         </QuestionLayout>

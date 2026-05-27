@@ -1,8 +1,11 @@
-import React, {useMemo, useState} from 'react';
-import {Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useMemo, useState} from 'react';
+import {ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
+import {fetchMyUpcomingBookings, fetchMyPastBookings} from '../../../services/CustomerService';
+import {wsManager} from '../../../services/WebSocketService';
+import {getSession} from '../../../utils/authStorage';
 
 const UPCOMING_BOOKINGS = [
     {
@@ -14,7 +17,7 @@ const UPCOMING_BOOKINGS = [
         bookingId: '#AQRZO01',
         actionLabel: 'Online Check-in',
         actionColor: '#8294FF',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
+        image: '../../../assets/images/hotels/sun-suites-business.jpg',
     },
     {
         id: 'upcoming-2',
@@ -25,7 +28,7 @@ const UPCOMING_BOOKINGS = [
         bookingId: '#AQRZO01',
         actionLabel: 'Payment',
         actionColor: '#2aa8b9',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
+        image: '../../../assets/images/hotels/sun-suites-business.jpg',
     },
 ];
 
@@ -71,11 +74,126 @@ function BookingCard({item}) {
     );
 }
 
+function CustomerBookingCard({item, onPress}) {
+    const formatDate = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        try {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('vi-VN');
+        } catch {
+            return dateStr;
+        }
+    };
+
+    return (
+        <TouchableOpacity style={styles.bookingCardWrap} onPress={onPress} activeOpacity={0.8}>
+            <View style={styles.bookingBody}>
+                <View style={styles.bookingTopRow}>
+                    <Text style={styles.bookingHotelName}>{item.branch_name || 'Hotel'}</Text>
+                    <View style={[styles.statusBadge, getStatusBadgeStyle(item.status)]}>
+                        <Text style={[styles.statusBadgeText, {color: getStatusBadgeStyle(item.status).textColor}]}>
+                            {item.status || 'PENDING'}
+                        </Text>
+                    </View>
+                </View>
+
+                <View style={styles.dateRow}>
+                    <View style={styles.dateCol}>
+                        <Text style={styles.dateLabel}>Check-in:</Text>
+                        <Text style={styles.dateValue}>{formatDate(item.check_in)}</Text>
+                    </View>
+                    <View style={styles.dateCol}>
+                        <Text style={styles.dateLabel}>Check-out:</Text>
+                        <Text style={styles.dateValue}>{formatDate(item.check_out)}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.bookingIdRow}>
+                    <Text style={styles.bookingIdLabel}>Booking ID: </Text>
+                    <Text style={styles.bookingIdValue}>#{item.id?.slice(0, 8).toUpperCase() || 'N/A'}</Text>
+                </View>
+            </View>
+        </TouchableOpacity>
+    );
+}
+
+function getStatusBadgeStyle(status) {
+    switch (status) {
+        case 'CONFIRMED':
+            return {backgroundColor: '#dcfce7', textColor: '#166534'};
+        case 'CHECKED_IN':
+            return {backgroundColor: '#dbeafe', textColor: '#1d4ed8'};
+        case 'CHECKED_OUT':
+            return {backgroundColor: '#f1f5f9', textColor: '#475569'};
+        case 'CANCELLED':
+            return {backgroundColor: '#fee2e2', textColor: '#991b1b'};
+        default:
+            return {backgroundColor: '#fef3c7', textColor: '#92400e'};
+    }
+}
+
 export default function CustomerBookingUpcomingScreen({navigation}) {
-    const bookings = useMemo(() => UPCOMING_BOOKINGS, []);
     const [activeTab, setActiveTab] = useState('Upcoming');
     const [searchQuery, setSearchQuery] = useState('');
+    const [upcomingBookings, setUpcomingBookings] = useState([]);
+    const [pastBookings, setPastBookings] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [customerId, setCustomerId] = useState(null);
     const bottomNavIconSize = 22;
+
+    useEffect(() => {
+        (async () => {
+            const session = await getSession();
+            if (session?.user?.customer_id) {
+                setCustomerId(session.user.customer_id);
+            }
+        })();
+    }, []);
+
+    useEffect(() => {
+        if (!customerId) {
+            setIsLoading(false);
+            return;
+        }
+        setIsLoading(true);
+        (async () => {
+            const upcoming = await fetchMyUpcomingBookings(customerId);
+            if (upcoming.status === 'success') {
+                setUpcomingBookings(upcoming.data || []);
+            }
+            const past = await fetchMyPastBookings(customerId);
+            if (past.status === 'success') {
+                setPastBookings(past.data || []);
+            }
+            setIsLoading(false);
+        })();
+    }, [customerId]);
+
+    useEffect(() => {
+        if (!customerId) return;
+        const unsubscribe = wsManager.subscribe(`bookings_notifications_${customerId}`, (data) => {
+            if (data.type === 'booking') {
+                setUpcomingBookings((prev) => {
+                    const exists = prev.find((b) => b.id === data.booking_id);
+                    if (!exists) {
+                        return [{...data, branch_name: data.branch_name}, ...prev];
+                    }
+                    return prev.map((b) => b.id === data.booking_id ? {...b, ...data} : b);
+                });
+            }
+        });
+        return unsubscribe;
+    }, [customerId]);
+
+    const displayedBookings = useMemo(() => {
+        const list = activeTab === 'Upcoming' ? upcomingBookings : pastBookings;
+        if (!searchQuery.trim()) return list;
+        const q = searchQuery.toLowerCase();
+        return list.filter((b) =>
+            (b.branch_name || '').toLowerCase().includes(q) ||
+            (b.guest_name || '').toLowerCase().includes(q)
+        );
+    }, [activeTab, upcomingBookings, pastBookings, searchQuery]);
 
     return (
         <SafeAreaView style={styles.page}>
@@ -94,11 +212,11 @@ export default function CustomerBookingUpcomingScreen({navigation}) {
             </View>
 
             <View style={styles.searchWrap}>
-                <Image source={require('../../../assets/images/hotels/icon.png')} style={styles.aiSearchIcon}/>
+                <Image source={require('../../../assets/images/icon.png')} style={styles.aiSearchIcon}/>
                 <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}
-                    placeholder="AI will find room you want"
+                    placeholder="Search by hotel or guest name"
                     placeholderTextColor="#999"
                     style={styles.searchInput}
                 />
@@ -108,14 +226,14 @@ export default function CustomerBookingUpcomingScreen({navigation}) {
                 {['Upcoming', 'History'].map((tab) => {
                     const active = tab === activeTab;
                     return (
-                        <TouchableOpacity 
-                            key={tab} 
-                            style={styles.tabBtn} 
+                        <TouchableOpacity
+                            key={tab}
+                            style={styles.tabBtn}
                             onPress={() => {
                                 if (tab === 'History') {
-                                    navigation.navigate('CustomerBookingHistoryScreen');
+                                    setActiveTab('History');
                                 } else {
-                                    setActiveTab(tab);
+                                    setActiveTab('Upcoming');
                                 }
                             }}
                         >
@@ -127,9 +245,23 @@ export default function CustomerBookingUpcomingScreen({navigation}) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                {activeTab === 'Upcoming'
-                    ? bookings.map((item) => <BookingCard key={item.id} item={item}/>)
-                    : <Text style={styles.emptyText}>No booking history yet.</Text>}
+                {isLoading ? (
+                    <ActivityIndicator size="large" color="#8294FF" style={{marginTop: 40}}/>
+                ) : displayedBookings.length > 0 ? (
+                    displayedBookings.map((item) => (
+                        <CustomerBookingCard
+                            key={item.id}
+                            item={item}
+                            onPress={() => navigation.navigate('CustomerBookingScreen', {bookingId: item.id})}
+                        />
+                    ))
+                ) : (
+                    <Text style={styles.emptyText}>
+                        {activeTab === 'Upcoming'
+                            ? 'No upcoming bookings found.'
+                            : 'No booking history yet.'}
+                    </Text>
+                )}
             </ScrollView>
 
             <View style={styles.bottomNav}>
@@ -269,7 +401,7 @@ const styles = StyleSheet.create({
     bookingCardWrap: {
         borderRadius: 16,
         overflow: 'hidden',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#fff',
         marginBottom: 28,
         shadowColor: '#000',
         shadowOpacity: 0.12,
@@ -290,6 +422,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 18,
         paddingTop: 16,
         paddingBottom: 0,
+    },
+    bookingTopRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
     bookingHotelName: {
         fontFamily: 'SF-Bold',
@@ -338,6 +475,15 @@ const styles = StyleSheet.create({
         fontFamily: 'SF-Bold',
         fontSize: 16,
         color: '#202020',
+    },
+    statusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    statusBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
     },
     actionSection: {
         marginTop: 0,

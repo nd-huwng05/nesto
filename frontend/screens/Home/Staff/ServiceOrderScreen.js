@@ -19,6 +19,7 @@ import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
+import {connectServiceOrderUpdates} from '../../../services/WebSocketService';
 
 const STATUS_STYLES = {
     PENDING: {bg: '#FEF3C7', text: '#92400E', label: 'Pending'},
@@ -89,6 +90,18 @@ export default function ServiceOrderScreen() {
             loadOrders();
         }, [loadOrders])
     );
+
+    useEffect(() => {
+        if (!branchId) return;
+        connectServiceOrderUpdates(branchId, {
+            onMessage: (data) => {
+                if (data.type === 'service' || data.type === 'service_update') {
+                    loadOrders();
+                }
+            },
+        });
+        return () => {};
+    }, [branchId, loadOrders]);
 
     const refresh = async () => {
         setRefreshing(true);

@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {AUTH_ROLES, isSuperAdmin} from '../constants/authRoles';
 
-const TOKEN_KEY = 'userToken';
+const TOKEN_KEY = 'access_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
 const ROLE_KEY = 'role';
 const USER_KEY = 'user';
 
@@ -29,7 +30,7 @@ export const saveSession = async (token, userOrLegacyRole) => {
 };
 
 export const clearSession = async () => {
-    await AsyncStorage.multiRemove([TOKEN_KEY, ROLE_KEY, USER_KEY]);
+    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, ROLE_KEY, USER_KEY]);
 };
 
 export const getSession = async () => {
@@ -47,4 +48,4 @@ export const getSession = async () => {
     return {token, role, user, isSuperAdmin: isSuperAdmin(role)};
 };
 
-export {TOKEN_KEY, ROLE_KEY, USER_KEY};
+export {TOKEN_KEY, REFRESH_TOKEN_KEY, ROLE_KEY, USER_KEY};

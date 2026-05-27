@@ -3,8 +3,9 @@ import {ActivityIndicator, View} from 'react-native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import BusinessFlow from './Business/BusinessNavigator';
 import StaffFlow from './Staff/StaffNavigator';
+import CustomerFlow from './Customer/CustomerNavigator';
 import {getSession} from '../../utils/authStorage';
-import {isSuperAdmin} from '../../constants/authRoles';
+import {isSuperAdmin, isBusinessOwner, isCustomer} from '../../constants/authRoles';
 
 const HomeStack = createNativeStackNavigator();
 
@@ -30,13 +31,31 @@ export default function HomeFlow() {
         );
     }
 
-    const RootScreen = isSuperAdmin(resolvedRole) ? BusinessFlow : StaffFlow;
+    const getRootScreen = () => {
+        if (isSuperAdmin(resolvedRole) || isBusinessOwner(resolvedRole)) {
+            return BusinessFlow;
+        }
+        if (isCustomer(resolvedRole)) {
+            return CustomerFlow;
+        }
+        return StaffFlow;
+    };
+
+    const getRootScreenName = () => {
+        if (isSuperAdmin(resolvedRole) || isBusinessOwner(resolvedRole)) {
+            return 'BusinessFlow';
+        }
+        if (isCustomer(resolvedRole)) {
+            return 'CustomerFlow';
+        }
+        return 'StaffFlow';
+    };
 
     return (
         <HomeStack.Navigator screenOptions={{headerShown: false}}>
             <HomeStack.Screen
-                name={isSuperAdmin(resolvedRole) ? 'BusinessFlow' : 'StaffFlow'}
-                component={RootScreen}
+                name={getRootScreenName()}
+                component={getRootScreen()}
             />
         </HomeStack.Navigator>
     );

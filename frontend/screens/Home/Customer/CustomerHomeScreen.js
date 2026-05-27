@@ -184,7 +184,7 @@ export function HomeScreen({navigation}) {
                 </View>
 
                 <View style={styles.searchBox}>
-                    <Image source={require('../../../assets/images/hotels/icon.png')} style={styles.aiSearchIcon}/>
+                    <Image source={'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg'} style={styles.aiSearchIcon}/>
                     <TextInput
                         value={searchText}
                         onChangeText={setSearchText}

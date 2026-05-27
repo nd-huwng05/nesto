@@ -35,14 +35,14 @@ export default function Context({children}) {
                 ]
 
                 const cacheImages = images.map(image => Asset.fromModule(image).downloadAsync())
-                const [hasSeen, userToken, ...rest] = await Promise.all([
+                const [hasSeen, accessToken, ...rest] = await Promise.all([
                     AsyncStorage.getItem('hasWellcome'),
-                    AsyncStorage.getItem('userToken'),
+                    AsyncStorage.getItem('access_token'),
                     ...cacheImages
                 ]);
                 if (hasSeen === null) {
                     setInitialRoute("OnboardingFlow");
-                } else if (userToken) {
+                } else if (accessToken) {
                     setInitialRoute("HomeFlow");
                 } else {
                     setInitialRoute("AccountFlow");

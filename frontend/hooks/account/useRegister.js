@@ -1,8 +1,7 @@
-import {useState, useCallback} from 'react';
-import {Alert} from 'react-native';
-import {checkEmailExist, registerEmail, sendOTP} from '../../services/AuthService';
-import {saveSession} from '../../utils/authStorage';
-import {getErrorMessage} from '../../utils/authErrors';
+import { useState, useCallback } from 'react';
+import { Alert } from 'react-native';
+import { checkEmailExist, registerEmail, sendOTP, checkOTP, saveRegisterToken } from '../../services/AuthService';
+import { saveSession } from '../../utils/authStorage';
 
 export const useRegister = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -13,10 +12,10 @@ export const useRegister = () => {
         setIsCheckingEmail(true);
         try {
             await checkEmailExist(email);
-            return {available: true};
+            return { available: true };
         } catch (err) {
-            const message = getErrorMessage(err, 'This email is already registered');
-            return {available: false, message};
+            const message = err?.message || 'This email is already registered';
+            return { available: false, message };
         } finally {
             setIsCheckingEmail(false);
         }
@@ -26,34 +25,56 @@ export const useRegister = () => {
         setIsSendingOtp(true);
         try {
             await sendOTP(email);
-            return {success: true};
+            return { success: true };
         } catch (err) {
-            const message = getErrorMessage(err, 'Failed to send verification code. Please try again.');
-            Alert.alert('Verification error', message);
-            return {success: false, message};
+            const message = err?.message || 'Failed to send verification code. Please try again.';
+            Alert.alert('Error', message);
+            return { success: false, message };
         } finally {
             setIsSendingOtp(false);
         }
     }, []);
 
-    const handleRegister = useCallback(async (email, password, role) => {
+    const verifyOtpCode = useCallback(async (email, otpCode) => {
+        try {
+            const response = await checkOTP(email, otpCode);
+            if (response.register_token) {
+                await saveRegisterToken(response.register_token);
+            }
+            return { success: true, data: response };
+        } catch (err) {
+            const message = err?.message || 'Incorrect verification code';
+            throw new Error(message);
+        }
+    }, []);
+
+    const handleRegister = useCallback(async ({ email, password, confirmPassword, name, phone, role }) => {
         setIsLoading(true);
         try {
-            const response = await registerEmail(email, password, role);
+            const response = await registerEmail({
+                email,
+                password,
+                confirmPassword,
+                name,
+                phone,
+                role,
+            });
+
             const token = response?.data?.access_token;
+            const user = response?.data?.user;
 
             if (response?.status === 'success' && token) {
-                await saveSession(token, response?.data?.user || role);
-                return {status: 'success'};
+                await saveSession(token, user);
+                return { status: 'success', data: response.data };
             }
 
             const message = 'Registration failed. Please try again.';
             Alert.alert('Registration failed', message);
-            return {status: 'error', message};
+            return { status: 'error', message };
         } catch (err) {
-            const message = getErrorMessage(err, 'Registration failed. Please try again.');
+            const message = err?.message || 'Registration failed. Please try again.';
             Alert.alert('Registration failed', message);
-            return {status: 'error', message};
+            return { status: 'error', message };
         } finally {
             setIsLoading(false);
         }
@@ -62,6 +83,7 @@ export const useRegister = () => {
     return {
         checkEmailAvailable,
         sendVerificationOtp,
+        verifyOtpCode,
         handleRegister,
         isLoading,
         isCheckingEmail,

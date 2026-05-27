@@ -4,7 +4,8 @@ import {ActivityIndicator, Text, TextInput, TouchableOpacity, View} from 'react-
 export function OtpCodeInput({
     onComplete,
     onResend,
-    loading = false,
+    verifying = false,
+    isSending = false,
     error,
     onClearError,
     resendCooldown = 60,
@@ -55,14 +56,13 @@ export function OtpCodeInput({
     };
 
     const handleResend = async () => {
-        if (countdown > 0 || loading) return;
+        if (countdown > 0 || isSending) return;
         try {
             await onResend?.();
             setCountdown(resendCooldown);
             resetOtp();
             onClearError?.();
         } catch {
-            // Caller handles Alert for send failures
         }
     };
 
@@ -78,13 +78,15 @@ export function OtpCodeInput({
     }, [error]);
 
     useEffect(() => {
-        if (!isComplete || loading || verifyingRef.current) return;
+        if (!isComplete || verifying || isSending || verifyingRef.current) return;
 
         verifyingRef.current = true;
         Promise.resolve(onComplete?.(otpString)).finally(() => {
             verifyingRef.current = false;
         });
-    }, [otpString, isComplete, loading]);
+    }, [otpString, isComplete, verifying, isSending]);
+
+    const isLoading = verifying || isSending;
 
     return (
         <View>
@@ -92,7 +94,7 @@ export function OtpCodeInput({
                 <Text className="text-red-500 font-sf-semi text-xs text-center mb-3">{error}</Text>
             ) : null}
 
-            {loading ? (
+            {isLoading ? (
                 <ActivityIndicator size="large" color="#8294FF" className="mb-6" />
             ) : (
                 <>
@@ -115,7 +117,7 @@ export function OtpCodeInput({
                                 value={digit}
                                 onChangeText={(value) => handleOtpChange(value, index)}
                                 onKeyPress={(e) => handleKeyPress(e, index)}
-                                editable={!loading}
+                                editable={!isLoading}
                                 selectTextOnFocus
                             />
                         ))}
@@ -123,13 +125,13 @@ export function OtpCodeInput({
 
                     <View className="flex-row justify-center items-center mt-4">
                         <Text className="text-gray-500 font-sf text-sm">Didn't receive the code? </Text>
-                        <TouchableOpacity onPress={handleResend} disabled={countdown > 0 || loading}>
+                        <TouchableOpacity onPress={handleResend} disabled={countdown > 0 || isSending}>
                             <Text
                                 className={`font-sf-semi text-sm ${
-                                    countdown > 0 ? 'text-gray-400' : 'text-primary'
+                                    countdown > 0 || isSending ? 'text-gray-400' : 'text-primary'
                                 }`}
                             >
-                                Resend{countdown > 0 ? ` (${countdown}s)` : ''}
+                                {isSending ? 'Sending...' : `Resend${countdown > 0 ? ` (${countdown}s)` : ''}`}
                             </Text>
                         </TouchableOpacity>
                     </View>

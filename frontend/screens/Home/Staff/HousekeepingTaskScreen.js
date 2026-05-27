@@ -19,6 +19,7 @@ import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
+import {connectBookingUpdates} from '../../../services/WebSocketService';
 
 const normalizeStatus = (status) => String(status || '').toLowerCase();
 
@@ -66,6 +67,18 @@ export default function HousekeepingTaskScreen() {
             loadRooms();
         }, [loadRooms])
     );
+
+    useEffect(() => {
+        if (!branchId) return;
+        connectBookingUpdates(branchId, {
+            onMessage: (data) => {
+                if (data.type === 'room_status' || data.type === 'room_dirty') {
+                    loadRooms();
+                }
+            },
+        });
+        return () => {};
+    }, [branchId, loadRooms]);
 
     const refresh = async () => {
         setRefreshing(true);

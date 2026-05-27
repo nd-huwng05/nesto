@@ -5,8 +5,8 @@ import {Ionicons} from '@expo/vector-icons';
 const formatVnd = (amount) => Number(amount || 0).toLocaleString('en-US');
 
 const PAYMENT_LOGOS = {
-    momo: require('../../../assets/images/hotels/Logo-MoMo-Square-1024x1024.webp'),
-    zalo: require('../../../assets/images/hotels/Logo-ZaloPay-Square-1024x1024.webp'),
+    momo: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
+    zalo: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
 };
 
 export default function CustomerPaymentScreen({navigation, route}) {

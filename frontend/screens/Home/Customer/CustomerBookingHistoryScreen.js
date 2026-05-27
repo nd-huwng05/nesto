@@ -86,7 +86,7 @@ export default function CustomerBookingHistoryScreen({navigation}) {
             </View>
 
             <View style={styles.searchWrap}>
-                <Image source={require('../../../assets/images/hotels/icon.png')} style={styles.aiSearchIcon}/>
+                <Image source={'../../../assets/images/hotels/icon.png'} style={styles.aiSearchIcon}/>
                 <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}

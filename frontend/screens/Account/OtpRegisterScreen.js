@@ -1,31 +1,56 @@
-import {Alert, Text} from 'react-native';
-import {QuestionLayout} from '../../layout/QuestionLayout';
-import {OtpCodeInput} from '../../components/auth/OtpCodeInput';
-import {useAuthOTP} from '../../hooks/account/useAuthOTP';
-import {getErrorMessage} from '../../utils/authErrors';
+import { useState } from 'react';
+import { Alert, Text } from 'react-native';
+import { QuestionLayout } from '../../layout/QuestionLayout';
+import { OtpCodeInput } from '../../components/auth/OtpCodeInput';
+import { useRegister } from '../../hooks/account/useRegister';
 
-export default function OtpRegisterScreen({navigation, route}) {
-    const {email, role} = route.params || {};
-    const {handleVerifyOTP, handleSendOTP, loading, error, setError} = useAuthOTP();
+export default function OtpRegisterScreen({ navigation, route }) {
+    const { email, role } = route.params || {};
+    const { verifyOtpCode, sendVerificationOtp } = useRegister();
+
+    const [verifying, setVerifying] = useState(false);
+    const [isSendingOtp, setIsSendingOtp] = useState(false);
+    const [error, setError] = useState(null);
 
     const maskedEmail = email
-        ? email.replace(/(.{2})(.*)(@.*)/, (_, start, mid, domain) => `${start}${'*'.repeat(Math.min(mid.length, 6))}${domain}`)
+        ? email.replace(/(.{2})(.*)(@.*)/, (_, start, mid, domain) =>
+              `${start}${'*'.repeat(Math.min(mid.length, 6))}${domain}`
+          )
         : '';
 
     const handleComplete = async (otp) => {
+        setVerifying(true);
+        setError(null);
+
         try {
-            await handleVerifyOTP(otp);
-            navigation.navigate('PasswordRegisterScreen', {email, role});
-        } catch {
-            // Inline error is set by useAuthOTP
+            const result = await verifyOtpCode(email, otp);
+            if (result.success) {
+                navigation.navigate('PasswordRegisterScreen', { email, role });
+            }
+        } catch (err) {
+            const errorMessage = err?.message || 'Incorrect verification code. Please try again.';
+            setError(errorMessage);
+        } finally {
+            setVerifying(false);
         }
     };
 
     const handleResend = async () => {
+        if (isSendingOtp) return;
+        setIsSendingOtp(true);
+        setError(null);
+
         try {
-            await handleSendOTP(email);
+            const result = await sendVerificationOtp(email);
+            if (result.success) {
+                Alert.alert('Success', 'A new verification code has been sent to your email.');
+            } else {
+                Alert.alert('Error', result?.message || 'Failed to resend code. Please try again.');
+            }
         } catch (err) {
-            Alert.alert('Verification error', getErrorMessage(err, 'Failed to resend code.'));
+            Alert.alert('Error', err?.message || 'Failed to resend code. Please try again.');
+        } finally {
+            setIsSendingOtp(false);
         }
     };
 
@@ -35,16 +60,12 @@ export default function OtpRegisterScreen({navigation, route}) {
             title="Verify your email"
             subtitle={`Enter the 6-digit code sent to ${maskedEmail || 'your email'}`}
             hideContinue
-            footerText={
-                <Text className="text-[12px] font-sf text-gray-400 mb-4 text-center w-full">
-                    Mock code for testing: <Text className="font-sf-semi">000000</Text>
-                </Text>
-            }
         >
             <OtpCodeInput
                 onComplete={handleComplete}
                 onResend={handleResend}
-                loading={loading}
+                verifying={verifying}
+                isSending={isSendingOtp}
                 error={error}
                 onClearError={() => setError(null)}
             />

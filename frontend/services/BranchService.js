@@ -5,224 +5,172 @@ const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
 
 export {MANAGER_ID};
 
-export const fetchBusinessList = async (managerId = MANAGER_ID) => {
+export const fetchBusinessList = async () => {
     if (useMock()) {
-        const data = await branchMockStore.listBusinesses(managerId);
+        const data = await branchMockStore.listBusinesses(MANAGER_ID);
         return {status: 'success', data};
     }
-    return Apis.get(`${endpoints['get_business_list']}?managerId=${managerId}`);
+    return Apis.get(endpoints.get_business_list);
 };
 
-export const fetchBusinessDetail = async (businessId, managerId = MANAGER_ID) => {
+export const fetchBusinessDetail = async (businessId) => {
     if (useMock()) {
-        const data = await branchMockStore.getBusiness(businessId, managerId);
+        const data = await branchMockStore.getBusiness(businessId, MANAGER_ID);
         if (!data) return {status: 'error', message: 'Business not found'};
         return {status: 'success', data};
     }
-    return Apis.get(`${endpoints['get_business_detail']}/${businessId}?managerId=${managerId}`);
+    return Apis.get(`${endpoints.get_business_detail}/${businessId}/`);
 };
 
-export const createBusiness = async (businessData, managerId = MANAGER_ID) => {
+export const createBusiness = async (businessData) => {
     if (useMock()) {
-        const data = await branchMockStore.createBusiness(managerId, businessData);
+        const data = await branchMockStore.createBusiness(MANAGER_ID, businessData);
         return {status: 'success', message: 'Business created successfully!', data};
     }
-    return Apis.post(endpoints['create_business'], {...businessData, managerId});
+    return Apis.post(endpoints.create_business, businessData);
 };
 
-export const updateBusiness = async (businessId, updates, managerId = MANAGER_ID) => {
+export const updateBusiness = async (businessId, updates) => {
     if (useMock()) {
-        const data = await branchMockStore.updateBusiness(businessId, managerId, updates);
+        const data = await branchMockStore.updateBusiness(businessId, MANAGER_ID, updates);
         return {status: 'success', message: 'Business updated successfully!', data};
     }
-    return Apis.put(`${endpoints['update_business']}/${businessId}`, {...updates, managerId});
+    return Apis.patch(`${endpoints.update_business}/${businessId}/`, updates);
 };
 
-export const deleteBusiness = async (businessId, managerId = MANAGER_ID) => {
+export const deleteBusiness = async (businessId) => {
     if (useMock()) {
-        await branchMockStore.deleteBusiness(businessId, managerId);
+        await branchMockStore.deleteBusiness(businessId, MANAGER_ID);
         return {status: 'success', message: 'Business deleted successfully!'};
     }
-    return Apis.delete(`${endpoints['delete_business']}/${businessId}?managerId=${managerId}`);
+    return Apis.delete(`${endpoints.delete_business}/${businessId}/`);
 };
 
-export const fetchBranchDetail = async (branchId, managerId = MANAGER_ID) => {
+export const fetchBranchDetail = async (branchId) => {
     if (useMock()) {
-        const data = await branchMockStore.getBranch(branchId, managerId);
+        const data = await branchMockStore.getBranch(branchId, MANAGER_ID);
         if (!data) return {status: 'error', message: 'Branch not found'};
         return {status: 'success', data};
     }
-    return Apis.get(`${endpoints['get_branch_detail']}/${branchId}?managerId=${managerId}`);
+    return Apis.get(`${endpoints.get_branch_detail}/${branchId}/`);
 };
 
-export const createBranch = async (businessId, branchData, managerId = MANAGER_ID) => {
+export const createBranch = async (businessId, branchData) => {
     if (useMock()) {
-        const data = await branchMockStore.createBranch(businessId, managerId, branchData);
+        const data = await branchMockStore.createBranch(businessId, MANAGER_ID, branchData);
         return {status: 'success', message: 'Branch created successfully!', data};
     }
-    return Apis.post(endpoints['create_branch'], {...branchData, businessId, managerId});
+    return Apis.post(endpoints.create_branch, {...branchData, business: businessId});
 };
 
-export const updateBranch = async (branchId, updates, managerId = MANAGER_ID) => {
+export const updateBranch = async (branchId, updates) => {
     if (useMock()) {
-        const data = await branchMockStore.updateBranch(branchId, managerId, updates);
+        const data = await branchMockStore.updateBranch(branchId, MANAGER_ID, updates);
         return {status: 'success', message: 'Branch updated successfully!', data};
     }
-    return Apis.put(`${endpoints['update_branch']}/${branchId}`, {...updates, managerId});
+    return Apis.patch(`${endpoints.update_branch}/${branchId}/`, updates);
 };
 
-export const deleteBranch = async (branchId, managerId = MANAGER_ID) => {
+export const deleteBranch = async (branchId) => {
     if (useMock()) {
-        await branchMockStore.deleteBranch(branchId, managerId);
+        await branchMockStore.deleteBranch(branchId, MANAGER_ID);
         return {status: 'success', message: 'Branch deleted successfully!'};
     }
-    return Apis.delete(`${endpoints['delete_branch']}/${branchId}?managerId=${managerId}`);
+    return Apis.delete(`${endpoints.delete_branch}/${branchId}/`);
 };
 
-export const fetchLodgingTypes = async () => {
+export const fetchRoomTypes = async (branchId) => {
     if (useMock()) {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve({
-                    status: 'success',
-                    data: ['Hotel', 'Homestay', 'Resort', 'Villa', 'Glamping'],
-                });
-            }, 300);
-        });
-    }
-    return Apis.get(endpoints['get_lodging_types']);
-};
-
-export const fetchGuestSegments = async () => {
-    if (useMock()) {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve({
-                    status: 'success',
-                    data: branchMockStore.GUEST_SEGMENTS,
-                });
-            }, 300);
-        });
-    }
-    return Apis.get(endpoints['get_guest_segments']);
-};
-
-export const fetchAmenityOptions = async () => {
-    if (useMock()) {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve({status: 'success', data: branchMockStore.AMENITY_OPTIONS});
-            }, 200);
-        });
-    }
-    return Apis.get(endpoints['get_amenity_options']);
-};
-
-export const fetchRoomAmenityOptions = async () => {
-    if (useMock()) {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve({status: 'success', data: branchMockStore.ROOM_AMENITY_OPTIONS});
-            }, 200);
-        });
-    }
-    return Apis.get(endpoints['get_room_amenity_options']);
-};
-
-export const fetchRoomTypes = async (branchId, managerId = MANAGER_ID) => {
-    if (useMock()) {
-        const data = await branchMockStore.listRoomTypes(branchId, managerId);
+        const data = await branchMockStore.listRoomTypes(branchId, MANAGER_ID);
         return {status: 'success', data};
     }
-    return Apis.get(`${endpoints['get_room_types']}/${branchId}?managerId=${managerId}`);
+    return Apis.get(`${endpoints.get_room_types}?branch=${branchId}`);
 };
 
-export const createRoomType = async (branchId, payload, managerId = MANAGER_ID) => {
+export const createRoomType = async (branchId, payload) => {
     if (useMock()) {
-        const data = await branchMockStore.createRoomType(branchId, managerId, payload);
+        const data = await branchMockStore.createRoomType(branchId, MANAGER_ID, payload);
         return {status: 'success', data};
     }
-    return Apis.post(endpoints['create_room_type'], {...payload, branchId, managerId});
+    return Apis.post(endpoints.create_room_type, {...payload, branch: branchId});
 };
 
-export const updateRoomType = async (branchId, roomTypeId, updates, managerId = MANAGER_ID) => {
+export const updateRoomType = async (branchId, roomTypeId, updates) => {
     if (useMock()) {
-        const data = await branchMockStore.updateRoomType(branchId, roomTypeId, managerId, updates);
+        const data = await branchMockStore.updateRoomType(branchId, roomTypeId, MANAGER_ID, updates);
         return {status: 'success', data};
     }
-    return Apis.put(`${endpoints['update_room_type']}/${roomTypeId}`, {...updates, branchId, managerId});
+    return Apis.patch(`${endpoints.update_room_type}/${roomTypeId}/`, updates);
 };
 
-export const deleteRoomType = async (branchId, roomTypeId, managerId = MANAGER_ID) => {
+export const deleteRoomType = async (roomTypeId) => {
     if (useMock()) {
-        await branchMockStore.deleteRoomType(branchId, roomTypeId, managerId);
+        await branchMockStore.deleteRoomType(null, roomTypeId, MANAGER_ID);
         return {status: 'success'};
     }
-    return Apis.delete(`${endpoints['delete_room_type']}/${roomTypeId}?branchId=${branchId}&managerId=${managerId}`);
+    return Apis.delete(`${endpoints.delete_room_type}/${roomTypeId}/`);
 };
 
-export const fetchExtraServices = async (branchId, managerId = MANAGER_ID) => {
+export const fetchExtraServices = async (branchId) => {
     if (useMock()) {
-        const data = await branchMockStore.listExtraServices(branchId, managerId);
+        const data = await branchMockStore.listExtraServices(branchId, MANAGER_ID);
         return {status: 'success', data};
     }
-    return Apis.get(`${endpoints['get_extra_services']}/${branchId}?managerId=${managerId}`);
+    return Apis.get(`${endpoints.get_extra_services}?branch=${branchId}`);
 };
 
-export const createExtraService = async (branchId, payload, managerId = MANAGER_ID) => {
+export const createExtraService = async (branchId, payload) => {
     if (useMock()) {
-        const data = await branchMockStore.createExtraService(branchId, managerId, payload);
+        const data = await branchMockStore.createExtraService(branchId, MANAGER_ID, payload);
         return {status: 'success', data};
     }
-    return Apis.post(endpoints['create_extra_service'], {...payload, branchId, managerId});
+    return Apis.post(endpoints.create_extra_service, {...payload, branch: branchId});
 };
 
-export const updateExtraService = async (branchId, serviceId, updates, managerId = MANAGER_ID) => {
+export const updateExtraService = async (serviceId, updates) => {
     if (useMock()) {
-        const data = await branchMockStore.updateExtraService(branchId, serviceId, managerId, updates);
+        const data = await branchMockStore.updateExtraService(null, serviceId, MANAGER_ID, updates);
         return {status: 'success', data};
     }
-    return Apis.put(`${endpoints['update_extra_service']}/${serviceId}`, {...updates, branchId, managerId});
+    return Apis.patch(`${endpoints.update_extra_service}/${serviceId}/`, updates);
 };
 
-export const deleteExtraService = async (branchId, serviceId, managerId = MANAGER_ID) => {
+export const deleteExtraService = async (serviceId) => {
     if (useMock()) {
-        await branchMockStore.deleteExtraService(branchId, serviceId, managerId);
+        await branchMockStore.deleteExtraService(null, serviceId, MANAGER_ID);
         return {status: 'success'};
     }
-    return Apis.delete(`${endpoints['delete_extra_service']}/${serviceId}?branchId=${branchId}&managerId=${managerId}`);
+    return Apis.delete(`${endpoints.delete_extra_service}/${serviceId}/`);
 };
 
-export const fetchPhysicalRooms = async (branchId, managerId = MANAGER_ID) => {
+export const fetchPhysicalRooms = async (branchId) => {
     if (useMock()) {
-        const data = await branchMockStore.listPhysicalRooms(branchId, managerId);
+        const data = await branchMockStore.listPhysicalRooms(branchId, MANAGER_ID);
         return {status: 'success', data};
     }
-    return Apis.get(`${endpoints['get_physical_rooms']}/${branchId}?managerId=${managerId}`);
+    return Apis.get(`${endpoints.get_physical_rooms}?branch=${branchId}`);
 };
 
-export const createPhysicalRoom = async (branchId, payload, managerId = MANAGER_ID) => {
+export const createPhysicalRoom = async (branchId, payload) => {
     if (useMock()) {
-        const data = await branchMockStore.createPhysicalRoom(branchId, managerId, payload);
+        const data = await branchMockStore.createPhysicalRoom(branchId, MANAGER_ID, payload);
         return {status: 'success', data};
     }
-    return Apis.post(endpoints['create_physical_room'], {...payload, branchId, managerId});
+    return Apis.post(endpoints.create_physical_room, payload);
 };
 
-export const updatePhysicalRoom = async (branchId, physicalRoomId, updates, managerId = MANAGER_ID) => {
+export const updatePhysicalRoom = async (physicalRoomId, updates) => {
     if (useMock()) {
-        const data = await branchMockStore.updatePhysicalRoom(branchId, physicalRoomId, managerId, updates);
+        const data = await branchMockStore.updatePhysicalRoom(null, physicalRoomId, MANAGER_ID, updates);
         return {status: 'success', data};
     }
-    return Apis.put(`${endpoints['update_physical_room']}/${physicalRoomId}`, {...updates, branchId, managerId});
+    return Apis.patch(`${endpoints.update_physical_room}/${physicalRoomId}/`, updates);
 };
 
-export const deletePhysicalRoom = async (branchId, physicalRoomId, managerId = MANAGER_ID) => {
+export const deletePhysicalRoom = async (physicalRoomId) => {
     if (useMock()) {
-        await branchMockStore.deletePhysicalRoom(branchId, physicalRoomId, managerId);
+        await branchMockStore.deletePhysicalRoom(null, physicalRoomId, MANAGER_ID);
         return {status: 'success'};
     }
-    return Apis.delete(
-        `${endpoints['delete_physical_room']}/${physicalRoomId}?branchId=${branchId}&managerId=${managerId}`
-    );
+    return Apis.delete(`${endpoints.delete_physical_room}/${physicalRoomId}/`);
 };

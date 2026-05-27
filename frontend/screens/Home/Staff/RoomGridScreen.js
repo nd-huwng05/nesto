@@ -1,4 +1,4 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useState, useEffect} from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -14,6 +14,7 @@ import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {isRoomGridBlocked, staffPortalMockStore} from '../../../services/staffPortalMockStore';
+import {connectBookingUpdates, connectServiceOrderUpdates} from '../../../services/WebSocketService';
 import {UI} from '../../../styles/uiTokens';
 
 function formatHourly(amount) {
@@ -84,6 +85,18 @@ export default function RoomGridScreen({navigation}) {
             loadRooms();
         }, [loadRooms])
     );
+
+    useEffect(() => {
+        if (!branchId) return;
+        connectBookingUpdates(branchId, {
+            onMessage: (data) => {
+                if (data.type === 'room_status' || data.type === 'room_occupied' || data.type === 'room_dirty') {
+                    loadRooms();
+                }
+            },
+        });
+        return () => {};
+    }, [branchId, loadRooms]);
 
     const refresh = async () => {
         setRefreshing(true);

@@ -7,7 +7,9 @@ import EmailRegisterScreen from "./EmailRegisterScreen";
 import OtpRegisterScreen from "./OtpRegisterScreen";
 import PasswordRegisterScreen from "./PasswordRegisterScreen";
 import RePasswordRegisterScreen from "./RePasswordRegisterScreen";
+import PhoneRegisterScreen from "./PhoneRegisterScreen";
 import RolesRegisterScreen from "./RolesRegisterScreen";
+import ProfileRegisterScreen from "./ProfileRegisterScreen";
 import ForgotPasswordScreen from "./ForgotPasswordScreen";
 
 const AccountStack = createNativeStackNavigator()
@@ -25,6 +27,8 @@ export default function AccountFlow() {
             <AccountStack.Screen name={"OtpRegisterScreen"} component={OtpRegisterScreen}/>
             <AccountStack.Screen name={"PasswordRegisterScreen"} component={PasswordRegisterScreen}/>
             <AccountStack.Screen name={"RePasswordRegisterScreen"} component={RePasswordRegisterScreen}/>
+            <AccountStack.Screen name={"PhoneRegisterScreen"} component={PhoneRegisterScreen}/>
+            <AccountStack.Screen name={"ProfileRegisterScreen"} component={ProfileRegisterScreen}/>
 
         </AccountStack.Navigator>
     )
