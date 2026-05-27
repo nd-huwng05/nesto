@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
-from django.contrib.auth.models import PermissionsMixin
+from django.contrib.auth.models import PermissionsMixin, Group
 
 from core.models import BaseAuditedModel
 
@@ -28,11 +28,13 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault("role", Role.SUPER_ADMIN)
         return self._create_user(email, password, **extra_fields)
 
+
 class Role(models.TextChoices):
     SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
     CUSTOMER = "CUSTOMER", "Customer"
     BUSINESS_OWNER = "BUSINESS_OWNER", "Business_Owner"
     STAFF = "STAFF", "Staff"
+
 
 class User(AbstractBaseUser, PermissionsMixin, BaseAuditedModel):
     email = models.EmailField(unique=True)
@@ -57,10 +59,26 @@ class User(AbstractBaseUser, PermissionsMixin, BaseAuditedModel):
     def __str__(self):
         return self.name or self.email
 
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new:
+            if self.role == Role.SUPER_ADMIN:
+                admin_group, _ = Group.objects.get_or_create(name='Admin')
+                self.groups.add(admin_group)
+            elif self.role == Role.BUSINESS_OWNER:
+                business_group, _ = Group.objects.get_or_create(name='Business')
+                self.groups.add(business_group)
+            elif self.role == Role.STAFF:
+                staff_group, _ = Group.objects.get_or_create(name='Staff')
+                self.groups.add(staff_group)
+
+
 class Provider(models.TextChoices):
     EMAIL = "EMAIL", "Email"
     PHONE = "PHONE", "Phone"
     GOOGLE = "GOOGLE", "Google"
+
 
 class UserAuthMethod(BaseAuditedModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auth_methods")

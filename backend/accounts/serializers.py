@@ -1,13 +1,10 @@
 import re
-
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
-
 from accounts.models import Role, User
 
 User = get_user_model()
-
 
 class PhoneValidationMixin:
     def validate_phone(self, value):
@@ -18,15 +15,17 @@ class PhoneValidationMixin:
             raise serializers.ValidationError("Phone number must be at least 8 digits.")
         return normalized
 
-
 class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
+    groups = serializers.SerializerMethodField()
+
+    def get_groups(self, obj):
+        return [group.name for group in obj.groups.all()]
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'phone', 'name', 'avatar', 'role', 'role_display', 'is_active']
+        fields = ['id', 'email', 'phone', 'name', 'avatar', 'role', 'role_display', 'groups', 'is_active']
         read_only_fields = ['id', 'email']
-
 
 class SendOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
@@ -37,12 +36,10 @@ class SendOTPSerializer(serializers.Serializer):
             raise serializers.ValidationError("This email is already registered.")
         return email
 
-
 class VerifyOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     otp_code = serializers.CharField(max_length=6, required=True)
     session_id = serializers.CharField(required=False, allow_blank=True)
-
 
 class UserRegistrationSerializer(PhoneValidationMixin, serializers.ModelSerializer):
     confirm_password = serializers.CharField(required=True, write_only=True)
@@ -92,10 +89,8 @@ class UserRegistrationSerializer(PhoneValidationMixin, serializers.ModelSerializ
         validated_data['is_active'] = True
         return User.objects.create_user(**validated_data)
 
-
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
-
 
 class ResetPasswordSerializer(serializers.Serializer):
     token = serializers.CharField(required=True)
