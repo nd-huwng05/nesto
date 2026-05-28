@@ -73,3 +73,49 @@ export const createTransaction = async (data) => {
         return fail(err, 'Unable to create transaction.');
     }
 };
+
+export const initiateMomoPayment = async ({
+    bookingId,
+    bookingData,
+    selectedServices = [],
+    depositPercentage = 20,
+    amount,
+    orderInfo,
+} = {}) => {
+    try {
+        const response = await api.post(endpoints['payments-momo'], {
+            booking_id: bookingId,
+            booking_data: bookingData,
+            selected_services: selectedServices,
+            deposit_percentage: depositPercentage,
+            amount,
+            order_info: orderInfo,
+        });
+        return ok(response, response.data);
+    } catch (err) {
+        return fail(err, 'Unable to start MoMo payment.');
+    }
+};
+
+export const initiateZaloPayPayment = async ({
+    bookingId,
+    bookingData,
+    selectedServices = [],
+    depositPercentage = 20,
+    amount,
+    orderInfo,
+} = {}) => {
+    try {
+        const response = await api.post(endpoints['payments-zalopay'], {
+            booking_id: bookingId,
+            booking_data: bookingData,
+            selected_services: selectedServices,
+            deposit_percentage: depositPercentage,
+            amount,
+            order_info: orderInfo,
+        });
+        return ok(response, response.data);
+    } catch (err) {
+        return fail(err, 'Unable to start ZaloPay payment.');
+    }
+};

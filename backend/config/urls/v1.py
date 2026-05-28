@@ -13,5 +13,6 @@ urlpatterns = [
     path('operations/', include('bookings.urls')),
     path('operations/', include('service_orders.urls')),
     path('billing/', include('core.billing_urls')),
+    path('payments/', include('payments.urls')),
     path('search/suggestions/', SearchSuggestionsView.as_view()),
 ]

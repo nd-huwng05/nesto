@@ -11,10 +11,11 @@ import {CustomerProfileScreen} from './CustomerProfileScreen';
 import CustomerEditProfileScreen from './CustomerEditProfileScreen';
 import CustomerBookingScreen from './CustomerBookingScreen';
 import CustomerPaymentScreen from './CustomerPaymentScreen';
-import CustomerBookingUpcomingScreen from './CustomerBookingUpcomingScreen';
-import CustomerBookingHistoryScreen from './CustomerBookingHistoryScreen';
+import CustomerBookingsHubScreen from './CustomerBookingsHubScreen';
+import BookingDetailScreen from './BookingDetailScreen';
 import CustomerLocketScreen from './CustomerLocketScreen';
 import CustomerServiceScreen from './CustomerServiceScreen';
+import ServiceSelectionScreen from './ServiceSelectionScreen';
 import CustomerAddPostScreen from './CustomerAddPostScreen';
 import CustomerReviewScreen from './CustomerReviewScreen';
 import CustomerNotificationsScreen from './CustomerNotificationsScreen';
@@ -54,7 +55,7 @@ function CustomerTabs() {
             />
             <CustomerTab.Screen
                 name="BookingTab"
-                component={CustomerBookingUpcomingScreen}
+                component={CustomerBookingsHubScreen}
                 options={{
                     title: 'Booking',
                     tabBarIcon: ({color, size}) => (
@@ -91,11 +92,12 @@ export default function CustomerNavigator() {
                 <CustomerStack.Screen name="CustomerHomeDetailSceen" component={CustomerHomeDetailSceen} />
                 <CustomerStack.Screen name="CustomerRoomDetailScreen" component={HomeDetailScreen} />
                 <CustomerStack.Screen name="CustomerEditProfileScreen" component={CustomerEditProfileScreen} />
-                <CustomerStack.Screen name="CustomerBookingHistoryScreen" component={CustomerBookingHistoryScreen} />
+                <CustomerStack.Screen name="BookingDetailScreen" component={BookingDetailScreen} />
                 <CustomerStack.Screen name="CustomerAddPostScreen" component={CustomerAddPostScreen} />
                 <CustomerStack.Screen name="CustomerBookingScreen" component={CustomerBookingScreen} />
                 <CustomerStack.Screen name="CustomerPaymentScreen" component={CustomerPaymentScreen} />
                 <CustomerStack.Screen name="CustomerServiceScreen" component={CustomerServiceScreen} />
+                <CustomerStack.Screen name="ServiceSelectionScreen" component={ServiceSelectionScreen} />
                 <CustomerStack.Screen name="CustomerReviewScreen" component={CustomerReviewScreen} />
                 <CustomerStack.Screen name="CustomerNotificationsScreen" component={CustomerNotificationsScreen} />
             </CustomerStack.Navigator>

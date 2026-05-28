@@ -1,14 +1,17 @@
 import React, {useMemo, useState} from 'react';
-import {Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import {getSession} from '../../../utils/authStorage';
-import {normalizeServiceLine} from '../../../utils/serviceLineIdentity';
-import {nextLocalBookingId, normalizeBookingId} from '../../../utils/bookingId';
+import {normalizeBookingId} from '../../../utils/bookingId';
 import {pushCustomerNotification} from '../../../services/NotificationService';
+import {initiateMomoPayment, initiateZaloPayPayment} from '../../../services/PaymentService';
+import ScreenHeader from '../../../components/common/ScreenHeader';
+import {formatVnd} from '../../../utils/formatCurrency';
 
-const formatUsd = (amount) => Number(amount || 0).toLocaleString('en-US');
+WebBrowser.maybeCompleteAuthSession();
 
 const PAYMENT_LOGOS = {
     momo: STAFF_MEDIA.MOMO_LOGO,
@@ -44,37 +47,44 @@ const toUpcomingDateLabel = (value) => {
 };
 
 export default function CustomerPaymentScreen({navigation, route}) {
-    const insets = useSafeAreaInsets();
     const {
         heroImage = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
-        hotelName = 'Swiss Hotel',
-        roomName = 'Room 121',
-        checkIn = "9h00' 23 Mar 2026",
-        checkOut = "9h00' 24 Mar 2026",
+        hotelName = '',
+        roomName = '',
+        checkIn = '',
+        checkOut = '',
         checkInDateIso = '',
         checkOutDateIso = '',
-        name = 'Nguyen Ngoc Lan',
-        email = 'customer@nesto.vn',
+        name = '',
+        email = '',
         phone = 'N/A',
-        totalAmount = 312,
-        depositAmount = 62,
-        subtotalPrice = 283,
-        vatAmount = 29,
-        pricePerHour = 11,
-        discountPerHour = 1,
-        stayTimeLabel = '24h00',
-        selectedService = null,
+        totalAmount = 0,
+        subtotalAmount = 0,
+        depositAmount = 0,
+        depositPercent = 20,
+        holdMinutes = 0,
+        stayMinutes = 0,
+        roomTotal = 0,
+        servicesTotal = 0,
+        stayTimeLabel = '',
         selectedServices = [],
         bookingId = null,
+        backendBookingId = null,
+        branchId = null,
+        rating = 0,
+        reviews = 0,
     } = route?.params ?? {};
+
+    const safeRating = Number.isFinite(rating) ? rating : 0;
+    const safeReviews = Number.isFinite(reviews) ? reviews : 0;
+    const shouldShowRating = safeRating > 0 || safeReviews > 0;
 
     const [paymentMethod, setPaymentMethod] = useState('momo');
     const [failedLogos, setFailedLogos] = useState({});
-    const [showAmountModal, setShowAmountModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [paymentAmountInput, setPaymentAmountInput] = useState('');
     const [paidAmount, setPaidAmount] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isPaying, setIsPaying] = useState(false);
 
     const paymentRows = useMemo(
         () => [
@@ -84,67 +94,31 @@ export default function CustomerPaymentScreen({navigation, route}) {
         []
     );
 
-    const normalizedServices = useMemo(() => {
-        const services = Array.isArray(selectedServices)
-            ? selectedServices.filter((item) => item && typeof item === 'object' && item.id)
-            : [];
+    const normalizedServices = useMemo(
+        () => (Array.isArray(selectedServices) ? selectedServices.filter((item) => item && item.id) : []),
+        [selectedServices]
+    );
 
-        if (services.length) {
-            return services.map((item, index) => normalizeServiceLine(item, {
-                lineNo: index + 1,
-                lineId: `line-${item?.id || 'service'}-${index + 1}`,
-                serviceCode: item?.code || '',
-            }));
-        }
+    const resolvedSubtotal = useMemo(() => {
+        const explicit = Number(subtotalAmount || totalAmount || 0);
+        if (explicit > 0) return explicit;
+        return Number(roomTotal || 0) + Number(servicesTotal || 0);
+    }, [subtotalAmount, totalAmount, roomTotal, servicesTotal]);
 
-        if (selectedService && typeof selectedService === 'object' && selectedService.id) {
-            return [normalizeServiceLine(selectedService, {
-                lineNo: 1,
-                lineId: `line-${selectedService?.id || 'service'}-1`,
-                serviceCode: selectedService?.code || '',
-            })];
-        }
+    const resolvedDepositAmount = useMemo(() => {
+        const explicit = Number(depositAmount || 0);
+        if (explicit > 0) return explicit;
+        const pct = Math.max(20, Number(depositPercent || 20));
+        return Math.round(resolvedSubtotal * (pct / 100));
+    }, [depositAmount, depositPercent, resolvedSubtotal]);
 
-        return [];
-    }, [selectedService, selectedServices]);
-
-    const payableServiceTotal = useMemo(() => {
-        return normalizedServices.reduce((sum, service) => {
-            const isDirectPay =
-                service?.id === 'airport_shuttle' && service?.paymentMode === 'direct_with_driver';
-
-            if (isDirectPay) {
-                return sum;
-            }
-
-            const price = Number(service?.price || 0);
-            return sum + (Number.isFinite(price) ? price : 0);
-        }, 0);
-    }, [normalizedServices]);
-
-    const maxPayableAmount = useMemo(() => {
-        const amount = Number(totalAmount || 0);
-        if (!Number.isFinite(amount) || amount <= 0) return 0;
-        return Math.round(amount * 100) / 100;
-    }, [totalAmount]);
-
-    const minPayableAmount = useMemo(() => {
-        const amount = Number(depositAmount || 0);
-        if (!Number.isFinite(amount) || amount <= 0) return 0;
-        return Math.min(Math.round(amount * 100) / 100, maxPayableAmount || amount);
-    }, [depositAmount, maxPayableAmount]);
-
-    const parsePaymentAmount = (value) => {
-        const normalized = String(value || '')
-            .replace(/,/g, '')
-            .replace(/\s+/g, '')
-            .trim();
-
-        if (!normalized) return NaN;
-        const amount = Number(normalized);
-        if (!Number.isFinite(amount)) return NaN;
-        return Math.round(amount * 100) / 100;
-    };
+    const resolvedHoldMinutes = useMemo(() => {
+        const explicit = Number(holdMinutes || 0);
+        if (explicit > 0) return explicit;
+        const duration = Math.max(1, Number(stayMinutes || 0));
+        const pct = Math.max(20, Number(depositPercent || 20));
+        return Math.max(1, Math.round(duration * (pct / 100)));
+    }, [holdMinutes, stayMinutes, depositPercent]);
 
     const resolveUpcomingDateLabel = (isoValue, fallbackLabel) => {
         const parsedIso = typeof isoValue === 'string' ? new Date(isoValue) : null;
@@ -161,146 +135,177 @@ export default function CustomerPaymentScreen({navigation, route}) {
         setFailedLogos((prev) => ({...prev, [id]: true}));
     };
 
+    const buildPaymentPayload = (amountToPay) => ({
+        bookingId: normalizeBookingId(bookingId) || String(backendBookingId || ''),
+        bookingData: {
+            booking_id: normalizeBookingId(bookingId) || String(backendBookingId || ''),
+            branch_id: branchId,
+            hotel_name: hotelName,
+            room_name: roomName,
+            check_in: checkIn,
+            check_out: checkOut,
+            total_amount: resolvedSubtotal,
+            room_total: Number(roomTotal || 0),
+            services_total: Number(servicesTotal || 0),
+            deposit_amount: amountToPay,
+            hold_minutes: resolvedHoldMinutes,
+        },
+        selectedServices: normalizedServices,
+        depositPercentage: Math.max(20, Number(depositPercent || 20)),
+        amount: amountToPay,
+        orderInfo: `Nesto ${hotelName} - ${roomName}`,
+    });
+
     const handleProcessPayment = async (amountToPay) => {
-        const session = await getSession();
-        const sessionUser = session?.user || {};
-        const customerName = String(sessionUser?.name || sessionUser?.full_name || name || 'N/A').trim() || 'N/A';
-        const customerEmail = String(sessionUser?.email || email || '').trim().toLowerCase();
-        const customerPhone = String(sessionUser?.phone || phone || 'N/A').trim() || 'N/A';
-        const paidAt = new Date().toISOString();
-        const normalizedBookingId = normalizeBookingId(bookingId);
-        const safeBookingId = normalizedBookingId || await nextLocalBookingId();
-        const upcomingCheckIn = resolveUpcomingDateLabel(checkInDateIso, checkIn);
-        const upcomingCheckOut = resolveUpcomingDateLabel(checkOutDateIso, checkOut);
-        const remainingAmount = Math.max(0, Number((maxPayableAmount - amountToPay).toFixed(2)));
-        const stayHours = Number.parseInt(String(stayTimeLabel || '').replace(/[^\d]/g, ''), 10);
-        const lateCheckoutHours = Number.isFinite(stayHours) ? Math.max(0, stayHours - 24) : 0;
-        const invoiceDetails = {
-            subtotalPrice,
-            vatAmount,
-            payableServiceTotal,
-            totalAmount: maxPayableAmount,
-            depositAmount: minPayableAmount,
-            paidAmount: amountToPay,
-            remainingAmount,
-            selectedServices: normalizedServices,
-            paymentMethod,
-        };
-        const bookedItem = {
-            id: `upcoming-${Date.now()}`,
-            hotelName,
-            roomName,
-            checkIn: upcomingCheckIn,
-            checkOut: upcomingCheckOut,
-            checkInDateIso,
-            checkOutDateIso,
-            bookingId: safeBookingId,
-            actionLabel: 'Online Check-in',
-            actionColor: '#8294FF',
-            image: heroImage,
-            paymentStatus: 'completed',
-            paidAt,
-            customerName,
-            customerEmail,
-            customerPhone,
-            paidAmount: amountToPay,
-            totalAmount: maxPayableAmount,
-            depositAmount: minPayableAmount,
-            payableServiceTotal,
-            subtotalPrice,
-            vatAmount,
-            selectedServices: normalizedServices,
-            selectedService: normalizedServices[0] || null,
-            remainingAmount,
-            paymentMethod,
-            invoiceDetails,
-        };
-
-        const historyItem = {
-            id: `history-${Date.now()}`,
-            roomName,
-            roomCode: hotelName,
-            bookingId: safeBookingId,
-            stayDate: `${upcomingCheckIn} - ${upcomingCheckOut}`,
-            status: 'Complete',
-            image: heroImage,
-            paidAt,
-            paymentMethod,
-            customerName,
-            customerEmail,
-            customerPhone,
-            paidAmount: amountToPay,
-            totalAmount: maxPayableAmount,
-            depositAmount: minPayableAmount,
-            payableServiceTotal,
-            subtotalPrice,
-            vatAmount,
-            selectedServices: normalizedServices,
-            selectedService: normalizedServices[0] || null,
-            remainingAmount,
-            invoiceDetails,
-        };
-
-        setPaidAmount(amountToPay);
-        setShowSuccessModal(true);
-
-        const paymentStatusText = remainingAmount > 0
-            ? `prepaid ${formatUsd(amountToPay)} USD, remaining ${formatUsd(remainingAmount)} USD`
-            : `paid in full ${formatUsd(amountToPay)} USD`;
-
-        await pushCustomerNotification({
-            title: 'Booking payment confirmed',
-            type: 'booking-payment',
-            message: `You booked room ${roomName} (Booking ID ${safeBookingId}). ${paymentStatusText}. Check-in ${upcomingCheckIn}, check-out ${upcomingCheckOut}. Late checkout: ${lateCheckoutHours}h.`,
-            meta: {
-                bookingId: safeBookingId,
+        try {
+            const session = await getSession();
+            const sessionUser = session?.user || {};
+            const customerName = String(sessionUser?.name || sessionUser?.full_name || name || 'N/A').trim() || 'N/A';
+            const customerEmail = String(sessionUser?.email || email || '').trim().toLowerCase();
+            const customerPhone = String(sessionUser?.phone || phone || 'N/A').trim() || 'N/A';
+            const paidAt = new Date().toISOString();
+            const normalizedBookingId = normalizeBookingId(bookingId);
+            const safeBookingId = normalizedBookingId || String(backendBookingId || '').trim();
+            const upcomingCheckIn = resolveUpcomingDateLabel(checkInDateIso, checkIn);
+            const upcomingCheckOut = resolveUpcomingDateLabel(checkOutDateIso, checkOut);
+            const remainingAmount = Math.max(0, resolvedSubtotal - amountToPay);
+            const invoiceDetails = {
+                subtotalAmount: resolvedSubtotal,
+                roomTotal: Number(roomTotal || 0),
+                servicesTotal: Number(servicesTotal || 0),
+                totalAmount: resolvedSubtotal,
+                depositAmount: resolvedDepositAmount,
+                depositPercent: Math.max(20, Number(depositPercent || 20)),
+                holdMinutes: resolvedHoldMinutes,
+                paidAmount: amountToPay,
+                remainingAmount,
+                selectedServices: normalizedServices,
+                paymentMethod,
+            };
+            const bookedItem = {
+                id: `upcoming-${Date.now()}`,
                 hotelName,
                 roomName,
                 checkIn: upcomingCheckIn,
                 checkOut: upcomingCheckOut,
-                amount: amountToPay,
-                remainingAmount,
-                lateCheckoutHours,
-            },
-        });
-
-        await pushCustomerNotification({
-            title: 'Payment recorded',
-            type: 'payment',
-            message: `You paid invoice for Booking ID ${safeBookingId} with ${paymentMethod === 'zalo' ? 'ZaloPay' : 'MoMo'}: ${formatUsd(amountToPay)} USD.`,
-            meta: {
+                checkInDateIso,
+                checkOutDateIso,
                 bookingId: safeBookingId,
+                actionLabel: 'Online Check-in',
+                actionColor: '#8294FF',
+                image: heroImage,
+                paymentStatus: 'completed',
+                paidAt,
+                customerName,
+                customerEmail,
+                customerPhone,
+                paidAmount: amountToPay,
+                totalAmount: resolvedSubtotal,
+                depositAmount: resolvedDepositAmount,
+                payableServiceTotal: Number(servicesTotal || 0),
+                subtotalPrice: resolvedSubtotal,
+                selectedServices: normalizedServices,
+                selectedService: normalizedServices[0] || null,
+                remainingAmount,
                 paymentMethod,
-                amount: amountToPay,
-            },
-        });
+                invoiceDetails,
+            };
+
+            const historyItem = {
+                id: `history-${Date.now()}`,
+                roomName,
+                roomCode: hotelName,
+                bookingId: safeBookingId,
+                stayDate: `${upcomingCheckIn} - ${upcomingCheckOut}`,
+                status: 'Complete',
+                image: heroImage,
+                paidAt,
+                paymentMethod,
+                customerName,
+                customerEmail,
+                customerPhone,
+                paidAmount: amountToPay,
+                totalAmount: resolvedSubtotal,
+                depositAmount: resolvedDepositAmount,
+                payableServiceTotal: Number(servicesTotal || 0),
+                subtotalPrice: resolvedSubtotal,
+                selectedServices: normalizedServices,
+                selectedService: normalizedServices[0] || null,
+                remainingAmount,
+                invoiceDetails,
+            };
+
+            const paymentStatusText = remainingAmount > 0
+                ? `prepaid ${formatVnd(amountToPay)}, remaining ${formatVnd(remainingAmount)}`
+                : `paid in full ${formatVnd(amountToPay)}`;
+
+            await pushCustomerNotification({
+                title: 'Booking payment confirmed',
+                type: 'booking-payment',
+                message: `You booked room ${roomName} (Booking ID ${safeBookingId}). ${paymentStatusText}. Check-in ${upcomingCheckIn}, check-out ${upcomingCheckOut}. Late hold: ${resolvedHoldMinutes} minutes.`,
+                meta: {
+                    bookingId: safeBookingId,
+                    hotelName,
+                    roomName,
+                    checkIn: upcomingCheckIn,
+                    checkOut: upcomingCheckOut,
+                    amount: amountToPay,
+                    remainingAmount,
+                    holdMinutes: resolvedHoldMinutes,
+                },
+            });
+
+            await pushCustomerNotification({
+                title: 'Payment recorded',
+                type: 'payment',
+                message: `You paid invoice for Booking ID ${safeBookingId} with ${paymentMethod === 'zalo' ? 'ZaloPay' : 'MoMo'}: ${formatVnd(amountToPay)}.`,
+                meta: {
+                    bookingId: safeBookingId,
+                    paymentMethod,
+                    amount: amountToPay,
+                },
+            });
+
+            void bookedItem;
+            void historyItem;
+        } catch (error) {
+            Alert.alert('Payment error', 'Unable to process payment right now. Please try again.');
+        }
     };
 
-    const handleConfirmPayment = () => {
-        setPaymentAmountInput(String(minPayableAmount || ''));
-        setShowAmountModal(true);
-    };
-
-    const handleSubmitPaymentAmount = async () => {
-        const amount = parsePaymentAmount(paymentAmountInput);
-
-        if (!Number.isFinite(amount)) {
-            Alert.alert('Invalid amount', 'Please enter a valid payment amount.');
+    const handleConfirmPayment = async () => {
+        const amountToPay = resolvedDepositAmount;
+        if (!amountToPay || amountToPay <= 0) {
+            Alert.alert('Payment', 'Deposit amount is invalid. Go back and review your booking.');
             return;
         }
 
-        if (amount < minPayableAmount) {
-            Alert.alert('Amount too low', `Minimum payment is ${formatUsd(minPayableAmount)} USD.`);
-            return;
-        }
+        setIsPaying(true);
+        try {
+            const payload = buildPaymentPayload(amountToPay);
+            const gatewayResult = paymentMethod === 'zalo'
+                ? await initiateZaloPayPayment(payload)
+                : await initiateMomoPayment(payload);
 
-        if (amount > maxPayableAmount) {
-            Alert.alert('Amount too high', `Maximum payment is ${formatUsd(maxPayableAmount)} USD.`);
-            return;
-        }
+            if (gatewayResult.status !== 'success' || !gatewayResult.data?.payUrl) {
+                Alert.alert('Payment', gatewayResult.message || 'Unable to start payment gateway.');
+                return;
+            }
 
-        setShowAmountModal(false);
-        await handleProcessPayment(amount);
+            const browserResult = await WebBrowser.openBrowserAsync(gatewayResult.data.payUrl);
+            if (browserResult.type === 'cancel') {
+                Alert.alert('Payment cancelled', 'You closed the payment page before completing checkout.');
+                return;
+            }
+
+            setPaidAmount(amountToPay);
+            await handleProcessPayment(amountToPay);
+            setShowSuccessModal(true);
+        } catch {
+            Alert.alert('Payment', 'Unable to process payment right now. Please try again.');
+        } finally {
+            setIsPaying(false);
+        }
     };
 
     const handleGoHome = () => {
@@ -318,8 +323,10 @@ export default function CustomerPaymentScreen({navigation, route}) {
     };
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+            <ScreenHeader onBack={() => navigation.goBack()} title="Payment" />
             <ScrollView
+                style={styles.scroll}
                 contentContainerStyle={styles.content}
                 refreshControl={
                     <RefreshControl
@@ -330,26 +337,20 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     />
                 }
             >
-                <View style={[styles.heroWrap, {marginTop: insets.top + 8}] }>
+                <View style={styles.heroWrap}>
                     <Image source={{uri: heroImage}} style={styles.heroImage} resizeMode="cover"/>
-                    <View style={[styles.heroActions, {top: Math.max(12, insets.top + 4)}]}>
-                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.heroBtn}>
-                            <Ionicons name="arrow-back" size={22} color="#222"/>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.heroBtn}>
-                            <Ionicons name="ellipsis-horizontal" size={22} color="#222"/>
-                        </TouchableOpacity>
-                    </View>
                 </View>
 
                 <View style={styles.cardTop}>
                     <Text style={styles.roomName}>{roomName}</Text>
                     <Text style={styles.hotelName}>{hotelName}</Text>
-                    <View style={styles.ratingRow}>
-                        <Ionicons name="star" size={16} color="#f5c51a"/>
-                        <Text style={styles.rating}>4.8</Text>
-                        <Text style={styles.review}>- 4231 Reviews</Text>
-                    </View>
+                    {shouldShowRating ? (
+                        <View style={styles.ratingRow}>
+                            <Ionicons name="star" size={16} color="#f5c51a"/>
+                            {safeRating > 0 ? <Text style={styles.rating}>{safeRating.toFixed(1)}</Text> : null}
+                            {safeReviews > 0 ? <Text style={styles.review}>{`${safeRating > 0 ? '• ' : ''}${safeReviews} Reviews`}</Text> : null}
+                        </View>
+                    ) : null}
                 </View>
 
                 <View style={styles.sectionCard}>
@@ -365,33 +366,13 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     <View style={styles.row}><Text style={styles.label}>Check-in:</Text><Text style={styles.value}>{checkIn}</Text></View>
                     <View style={styles.row}><Text style={styles.label}>Check-out:</Text><Text style={styles.value}>{checkOut}</Text></View>
                     <View style={styles.divider}/>
-                    <View style={styles.row}><Text style={styles.label}>Time:</Text><Text style={styles.value}>{stayTimeLabel}</Text></View>
-                    <View style={styles.row}><Text style={styles.label}>Price:</Text><Text style={styles.value}>{formatUsd(pricePerHour)} USD/h</Text></View>
-                    <View style={styles.row}><Text style={styles.label}>Discount:</Text><Text style={styles.value}>{formatUsd(discountPerHour)} USD/h</Text></View>
-                    <View style={styles.row}><Text style={styles.label}>Subtotal:</Text><Text style={styles.value}>{formatUsd(subtotalPrice)} USD</Text></View>
-                    {normalizedServices.length ? <View style={styles.divider}/> : null}
-                    {normalizedServices.length ? <View style={styles.row}><Text style={styles.label}>Selected services:</Text><Text style={styles.value}>{normalizedServices.length}</Text></View> : null}
-                    {normalizedServices.length ? normalizedServices.map((service, index) => {
-                        const isDirectPay = service?.id === 'airport_shuttle' && service?.paymentMode === 'direct_with_driver';
-                        const displayCode = String(service?.display_code || '').trim() || String(service?.service_code || service?.code || 'N/A').trim() || 'N/A';
-                        return (
-                            <View key={String(service?.line_id || '').trim() || `${service.id}-${index}`}>
-                                <View style={styles.row}><Text style={styles.label}>Service code:</Text><Text style={styles.value}>{displayCode}</Text></View>
-                                <View style={styles.row}><Text style={styles.label}>Service name:</Text><Text style={styles.value}>{service.name || 'N/A'}</Text></View>
-                                <View style={styles.row}><Text style={styles.label}>Service fee:</Text><Text style={styles.value}>{isDirectPay ? 'Paid directly to driver' : `${formatUsd(service.price)} USD`}</Text></View>
-                                <View style={styles.row}><Text style={styles.label}>Date:</Text><Text style={styles.value}>{service.date || 'N/A'}</Text></View>
-                                <View style={styles.row}><Text style={styles.label}>Time:</Text><Text style={styles.value}>{service.time || 'N/A'}</Text></View>
-                                {service?.notes ? <Text style={styles.serviceHint}>Notes: {service.notes}</Text> : null}
-                                {service?.paymentNote ? <Text style={styles.serviceHint}>{service.paymentNote}</Text> : null}
-                                {index < normalizedServices.length - 1 ? <View style={styles.divider}/> : null}
-                            </View>
-                        );
-                    }) : null}
-                    {normalizedServices.length ? <View style={styles.row}><Text style={styles.label}>Service total:</Text><Text style={styles.value}>{formatUsd(payableServiceTotal)} USD</Text></View> : null}
-                    <View style={styles.row}><Text style={styles.label}>VAT (10%):</Text><Text style={styles.value}>{formatUsd(vatAmount)} USD</Text></View>
+                    {stayTimeLabel ? <View style={styles.row}><Text style={styles.label}>Stay:</Text><Text style={styles.value}>{stayTimeLabel}</Text></View> : null}
+                    <View style={styles.row}><Text style={styles.label}>Room total:</Text><Text style={styles.value}>{formatVnd(roomTotal)}</Text></View>
+                    <View style={styles.row}><Text style={styles.label}>Services total:</Text><Text style={styles.value}>{formatVnd(servicesTotal)}</Text></View>
                     <View style={styles.divider}/>
-                    <View style={styles.row}><Text style={styles.labelBold}>Total Price:</Text><Text style={styles.valueBold}>{formatUsd(totalAmount)} USD</Text></View>
-                    <View style={styles.row}><Text style={styles.labelBold}>Deposit (20%):</Text><Text style={styles.valueBold}>{formatUsd(depositAmount)} USD</Text></View>
+                    <View style={styles.row}><Text style={styles.labelBold}>Subtotal:</Text><Text style={styles.valueBold}>{formatVnd(resolvedSubtotal)}</Text></View>
+                    <View style={styles.row}><Text style={styles.labelBold}>Required deposit ({depositPercent}%):</Text><Text style={styles.valueBold}>{formatVnd(resolvedDepositAmount)}</Text></View>
+                    <Text style={styles.holdSummary}>Room will be held for {resolvedHoldMinutes} minutes if you arrive late.</Text>
                 </View>
 
                 <View style={styles.sectionCard}>
@@ -430,46 +411,13 @@ export default function CustomerPaymentScreen({navigation, route}) {
                 </View>
             </ScrollView>
 
-            <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirmPayment}>
-                <Text style={styles.confirmBtnText}>Confirm payment</Text>
+            <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirmPayment} disabled={isPaying}>
+                {isPaying ? (
+                    <ActivityIndicator color="#fff" />
+                ) : (
+                    <Text style={styles.confirmBtnText}>Confirm payment · {formatVnd(resolvedDepositAmount)}</Text>
+                )}
             </TouchableOpacity>
-
-            <Modal
-                visible={showAmountModal}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowAmountModal(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.amountModalCard}>
-                        <TouchableOpacity
-                            style={styles.modalCloseBtn}
-                            onPress={() => setShowAmountModal(false)}
-                            activeOpacity={0.85}
-                        >
-                            <Ionicons name="close" size={20} color="#4f4f4f"/>
-                        </TouchableOpacity>
-
-                        <Text style={styles.amountModalTitle}>Enter payment amount</Text>
-                        <Text style={styles.amountModalHint}>
-                            Min: {formatUsd(minPayableAmount)} USD | Max: {formatUsd(maxPayableAmount)} USD
-                        </Text>
-
-                        <TextInput
-                            value={paymentAmountInput}
-                            onChangeText={setPaymentAmountInput}
-                            placeholder="Enter amount in USD"
-                            placeholderTextColor="#9a9a9a"
-                            keyboardType="decimal-pad"
-                            style={styles.amountInput}
-                        />
-
-                        <TouchableOpacity style={styles.amountPayBtn} onPress={handleSubmitPaymentAmount} activeOpacity={0.88}>
-                            <Text style={styles.amountPayBtnText}>Pay now</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
 
             <Modal
                 visible={showSuccessModal}
@@ -491,7 +439,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
                         </View>
                         <Text style={styles.modalTitle}>Payment successful</Text>
                         <Text style={styles.modalHint}>
-                            Your payment of {formatUsd(paidAmount)} USD with {paymentMethod === 'momo' ? 'MoMo' : 'ZaloPay'} has been completed.
+                            Your payment of {formatVnd(paidAmount)} with {paymentMethod === 'momo' ? 'MoMo' : 'ZaloPay'} has been completed.
                         </Text>
 
                         <TouchableOpacity style={styles.homeBtn} onPress={handleGoHome} activeOpacity={0.88}>
@@ -501,7 +449,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     </View>
                 </View>
             </Modal>
-        </View>
+        </SafeAreaView>
     );
 }
 
@@ -509,6 +457,9 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f0f0f0',
+    },
+    scroll: {
+        flex: 1,
     },
     content: {
         paddingBottom: 110,
@@ -524,22 +475,6 @@ const styles = StyleSheet.create({
     heroImage: {
         width: '100%',
         height: '100%',
-    },
-    heroActions: {
-        position: 'absolute',
-        top: 12,
-        left: 12,
-        right: 12,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    heroBtn: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(255,255,255,0.88)',
     },
     cardTop: {
         marginTop: -30,
@@ -601,6 +536,12 @@ const styles = StyleSheet.create({
         color: '#8f8f8f',
         marginTop: 2,
         marginBottom: 8,
+    },
+    holdSummary: {
+        marginTop: 8,
+        fontSize: 14,
+        lineHeight: 20,
+        color: '#374151',
     },
     row: {
         flexDirection: 'row',

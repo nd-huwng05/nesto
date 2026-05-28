@@ -9,12 +9,18 @@ export default function CustomerBottomTabBar({navigation, activeTab = 'Home'}) {
 
     return (
         <View style={styles.bottomNav}>
-            <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerHomeScreen')}>
+            <TouchableOpacity
+                style={styles.bottomItem}
+                onPress={() => navigation.navigate('MainTabs', {screen: 'HomeTab'})}
+            >
                 <Ionicons name="home" size={ICON_SIZE} color={isActive('Home') ? '#8294FF' : '#8f8f8f'}/>
                 <Text style={[styles.bottomLabel, isActive('Home') ? styles.bottomLabelActive : null]}>Home</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerBookingUpcomingScreen')}>
+            <TouchableOpacity
+                style={styles.bottomItem}
+                onPress={() => navigation.navigate('MainTabs', {screen: 'BookingTab'})}
+            >
                 <MaterialCommunityIcons
                     name="map-marker-radius-outline"
                     size={ICON_SIZE}
@@ -23,12 +29,18 @@ export default function CustomerBottomTabBar({navigation, activeTab = 'Home'}) {
                 <Text style={[styles.bottomLabel, isActive('Booking') ? styles.bottomLabelActive : null]}>Booking</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerLocketScreen')}>
+            <TouchableOpacity
+                style={styles.bottomItem}
+                onPress={() => navigation.navigate('MainTabs', {screen: 'WatchlistTab'})}
+            >
                 <Ionicons name="heart-outline" size={ICON_SIZE} color={isActive('Watchlist') ? '#8294FF' : '#8f8f8f'}/>
                 <Text style={[styles.bottomLabel, isActive('Watchlist') ? styles.bottomLabelActive : null]}>Watchlist</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerProfileScreen')}>
+            <TouchableOpacity
+                style={styles.bottomItem}
+                onPress={() => navigation.navigate('MainTabs', {screen: 'ProfileTab'})}
+            >
                 <Feather name="user" size={ICON_SIZE} color={isActive('Profile') ? '#8294FF' : '#8f8f8f'}/>
                 <Text style={[styles.bottomLabel, isActive('Profile') ? styles.bottomLabelActive : null]}>Profile</Text>
             </TouchableOpacity>

@@ -12,6 +12,7 @@ import {getUnreadCustomerNotificationCount, pushCustomerNotification} from '../.
 import {fetchMyBookings} from '../../../services/CustomerBookingService';
 import {createReview, fetchReviews, toggleReviewHeart} from '../../../services/ReviewService';
 import Avatar from '../../../components/common/Avatar';
+import {formatVnd} from '../../../utils/formatCurrency';
 
 const HISTORY_BOOKINGS_KEY = 'customer_paid_history_bookings';
 const UPCOMING_BOOKINGS_KEY = 'customer_paid_upcoming_bookings';
@@ -20,7 +21,6 @@ const REVIEW_FORUM_KEY = 'customer_room_review_forum_posts';
 const BOOKING_TEST_RESET_FLAG = 'customer_booking_test_reset_done_v4';
 const DEFAULT_BOOKING_IMAGE = STAFF_MEDIA.ROOM_IMAGE;
 const ANDROID_REFRESH_TOP_OFFSET = -170;
-const formatUsd = (amount) => Number(amount || 0).toLocaleString('en-US');
 
 const normalizeBookingId = (value) => String(value || '').trim().toUpperCase().replace(/^#/, '');
 const FORCE_REMOVED_BOOKING_IDS = new Set(['BK296489']);
@@ -728,6 +728,7 @@ export default function CustomerBookingHistoryScreen({navigation}) {
                 .catch(() => {
                     setAvatarUrl('');
                     setAvatarName('');
+                    Alert.alert('Profile', 'Unable to load your profile details right now.');
                 });
 
             return () => {
@@ -775,8 +776,8 @@ export default function CustomerBookingHistoryScreen({navigation}) {
                 <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}
-                    placeholder="AI will find room you want"
-                    placeholderTextColor="#999"
+                    placeholder="Search bookings"
+                    placeholderTextColor="#6B7280"
                     style={styles.searchInput}
                 />
             </View>
@@ -891,7 +892,7 @@ export default function CustomerBookingHistoryScreen({navigation}) {
                     <View style={styles.paymentRequiredCard}>
                         <Text style={styles.paymentRequiredTitle}>Payment required</Text>
                         <Text style={styles.paymentRequiredMessage}>
-                            Customer has not fully paid. Remaining amount: {formatUsd(paymentRequiredAmount)} USD.
+                            Customer has not fully paid. Remaining amount: {formatVnd(paymentRequiredAmount)}.
                         </Text>
 
                         <View style={styles.paymentRequiredActions}>
@@ -1034,7 +1035,7 @@ export default function CustomerBookingHistoryScreen({navigation}) {
 const styles = StyleSheet.create({
     page: {
         flex: 1,
-        backgroundColor: '#efefef',
+        backgroundColor: '#F5F7FA',
     },
     headerRow: {
         paddingHorizontal: 16,
@@ -1046,14 +1047,15 @@ const styles = StyleSheet.create({
     },
     currentLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#383838',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     currentValue: {
         fontFamily: 'SF-Bold',
-        fontSize: 20,
+        fontSize: 22,
         lineHeight: 24,
-        color: '#1b1b1b',
+        color: '#111111',
     },
     headerActions: {
         flexDirection: 'row',
@@ -1096,13 +1098,13 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
         marginBottom: 16,
         borderWidth: 1.2,
-        borderColor: '#3f3f3f',
+        borderColor: '#111111',
         borderRadius: 16,
         height: 40,
         paddingHorizontal: 10,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#efefef',
+        backgroundColor: '#FFFFFF',
         shadowColor: '#000',
         shadowOpacity: 0.15,
         shadowRadius: 8,
@@ -1121,8 +1123,9 @@ const styles = StyleSheet.create({
         flex: 1,
         marginLeft: 8,
         fontFamily: 'SF-Regular',
-        fontSize: 14,
-        color: '#1f1f1f',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
         paddingVertical: 0,
     },
     tabRow: {
@@ -1138,8 +1141,9 @@ const styles = StyleSheet.create({
     },
     tabText: {
         fontFamily: 'SF-Regular',
-        fontSize: 15,
-        color: '#9a9a9a',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         marginBottom: 8,
     },
     tabTextActive: {
@@ -1196,7 +1200,8 @@ const styles = StyleSheet.create({
     },
     imageOverlayTag: {
         fontFamily: 'SF-Semibold',
-        fontSize: 11,
+        fontSize: 15,
+        lineHeight: 22,
         color: '#d7e7ff',
         marginBottom: 2,
         letterSpacing: 0.4,
@@ -1221,7 +1226,8 @@ const styles = StyleSheet.create({
     },
     statusText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
+        fontSize: 15,
+        lineHeight: 22,
         color: '#1e7e34',
         letterSpacing: 0.2,
     },
@@ -1240,8 +1246,9 @@ const styles = StyleSheet.create({
     },
     roomCode: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#94949c',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginBottom: 8,
         textTransform: 'capitalize',
     },
@@ -1259,19 +1266,21 @@ const styles = StyleSheet.create({
     },
     metaLabel: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#5f5f66',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     metaValue: {
         fontFamily: 'SF-Bold',
-        fontSize: 14,
-        color: '#4a4a50',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     stayDateText: {
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        lineHeight: 18,
-        color: '#66666d',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     actionRow: {
         flexDirection: 'row',
@@ -1292,8 +1301,9 @@ const styles = StyleSheet.create({
     },
     actionBtnSecondaryText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#3f3f45',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     actionBtnPrimary: {
         flex: 1,
@@ -1305,13 +1315,15 @@ const styles = StyleSheet.create({
     },
     actionBtnPrimaryText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#fff',
     },
     emptyText: {
         fontFamily: 'SF-Regular',
-        color: '#8f8f8f',
-        fontSize: 15,
+        color: '#333333',
+        fontSize: 16,
+        lineHeight: 22,
         textAlign: 'center',
         marginTop: 30,
     },
@@ -1340,7 +1352,7 @@ const styles = StyleSheet.create({
         fontFamily: 'SF-Regular',
         fontSize: 15,
         lineHeight: 22,
-        color: '#50505a',
+        color: '#333333',
         marginBottom: 14,
     },
     ratingLabel: {
@@ -1372,8 +1384,9 @@ const styles = StyleSheet.create({
     },
     modalCancelBtnText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#4a4a50',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     modalSubmitBtn: {
         flex: 1.4,
@@ -1389,7 +1402,8 @@ const styles = StyleSheet.create({
     },
     modalSubmitBtnText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#fff',
         textAlign: 'center',
     },
@@ -1465,8 +1479,9 @@ const styles = StyleSheet.create({
     reviewSubtitle: {
         marginTop: 4,
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
-        color: '#5f6678',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     reviewCloseBtn: {
         width: 32,
@@ -1481,9 +1496,9 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
         marginBottom: 10,
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        lineHeight: 17,
-        color: '#747b8f',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     reviewComposerWrap: {
         marginHorizontal: 16,
@@ -1497,8 +1512,9 @@ const styles = StyleSheet.create({
     reviewComposerInput: {
         minHeight: 88,
         fontFamily: 'SF-Regular',
-        fontSize: 14,
-        color: '#20242e',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
         marginBottom: 10,
     },
     reviewSubmitBtn: {
@@ -1513,7 +1529,8 @@ const styles = StyleSheet.create({
     },
     reviewSubmitBtnText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#fff',
     },
     reviewList: {
@@ -1541,19 +1558,21 @@ const styles = StyleSheet.create({
     },
     reviewPostAuthor: {
         fontFamily: 'SF-Bold',
-        fontSize: 14,
-        color: '#212530',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     reviewPostTime: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#7a8193',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     reviewPostContent: {
         fontFamily: 'SF-Regular',
-        fontSize: 14,
-        lineHeight: 20,
-        color: '#333945',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         marginBottom: 10,
     },
     reviewLikeBtn: {
@@ -1565,8 +1584,9 @@ const styles = StyleSheet.create({
     },
     reviewLikeText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 12,
-        color: '#6e7486',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     reviewLikeTextActive: {
         color: '#ef4d7a',
@@ -1574,9 +1594,9 @@ const styles = StyleSheet.create({
     reviewEmptyText: {
         marginTop: 22,
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        lineHeight: 19,
-        color: '#7f8597',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         textAlign: 'center',
     },
     paymentRequiredCard: {
@@ -1615,8 +1635,9 @@ const styles = StyleSheet.create({
     },
     paymentRequiredCancelText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#4a4a50',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     paymentRequiredGoBtn: {
         flex: 1.3,
@@ -1628,7 +1649,8 @@ const styles = StyleSheet.create({
     },
     paymentRequiredGoText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#fff',
     },
 });

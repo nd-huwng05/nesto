@@ -2,7 +2,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from drf_spectacular.utils import extend_schema
 from django.db import models
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, Q
 from django.utils import timezone
 import math
 from django.db.utils import OperationalError
@@ -20,6 +20,7 @@ from rooms.serializers import (
     HousekeepingTaskSerializer,
     MaintenanceIssueSerializer,
     RoomCategorySerializer,
+    RoomCategoryAvailabilitySerializer,
     RoomSerializer,
     RoomThemeSerializer,
 )
@@ -279,6 +280,30 @@ class FavoriteBranchViewSet(viewsets.ViewSet):
             return Response({"detail": "Branch not found."}, status=status.HTTP_404_NOT_FOUND)
         FavoriteBranch.objects.create(customer=request.user, branch=branch)
         return Response({"favorited": True, "branchId": str(branch_id)}, status=status.HTTP_200_OK)
+
+
+@extend_schema(tags=["Customer"])
+class BranchRoomTypesAvailabilityViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated, IsCustomerMember]
+
+    def list(self, request):
+        branch_id = str(request.query_params.get("branch_id") or request.query_params.get("branchId") or "").strip()
+        if not branch_id:
+            return Response({"detail": "branch_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = (
+            RoomCategory.objects.filter(branch_id=branch_id)
+            .annotate(
+                available_count=Count(
+                    "rooms",
+                    filter=Q(rooms__status="AVAILABLE"),
+                    distinct=True,
+                )
+            )
+            .order_by("name")
+        )
+        data = RoomCategoryAvailabilitySerializer(qs, many=True, context={"request": request}).data
+        return Response({"results": data}, status=status.HTTP_200_OK)
 
 
 @extend_schema(tags=["Themes"])

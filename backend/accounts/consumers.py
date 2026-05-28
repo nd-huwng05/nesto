@@ -51,7 +51,13 @@ class AuthConsumer(AsyncWebsocketConsumer):
                 await self.close(code=4004)
                 return
 
-        self.subscription_groups = ["customer_global_role_CUSTOMER"] if self.room_name == "customer" else []
+        if self.room_name == "customer":
+            self.subscription_groups = [
+                "customer_global_role_CUSTOMER",
+                f"user_{self.user.id}_bookings",
+            ]
+        else:
+            self.subscription_groups = []
         if branch_id:
             self.subscription_groups.extend(
                 [

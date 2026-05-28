@@ -10,9 +10,3 @@ export const STAFF_MEDIA = {
         'https://cdn.haitrieu.com/wp-content/uploads/2022/10/Logo-ZaloPay-Square.png',
     USER_PLACEHOLDER: 'https://i.pravatar.cc/256?img=32',
 };
-
-export const QUICK_ADD_SERVICES = [
-    {id: 'coffee', emoji: '☕', label: 'Coffee', price: 20_000, summary: 'Coffee'},
-    {id: 'noodles', emoji: '🍜', label: 'Noodles', price: 35_000, summary: 'Noodles'},
-    {id: 'laundry', emoji: '🧺', label: 'Laundry', price: 50_000, summary: 'Laundry'},
-];

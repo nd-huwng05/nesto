@@ -12,10 +12,8 @@ class BranchFilterMixin:
             return queryset
         if user.role == 'BUSINESS_OWNER':
             return queryset.filter(
-                Q(branch__company__owner=user) |
-                Q(branch__business__owner=user) |
-                Q(business__owner=user) |
-                Q(company__owner=user)
+                Q(branch__company__manager=user) |
+                Q(company__manager=user)
             )
         if hasattr(user, 'staff_profile'):
             staff_branch = user.staff_profile.branch
@@ -35,7 +33,7 @@ class CompanyFilterMixin:
         if user.role == 'SUPER_ADMIN':
             return queryset
         if user.role == 'BUSINESS_OWNER':
-            return queryset.filter(owner=user)
+            return queryset.filter(manager=user)
         if hasattr(user, 'staff_profile'):
             staff_branch = user.staff_profile.branch
             if staff_branch.company:
@@ -62,7 +60,7 @@ class TenantFilterMixin:
                 if company:
                     return queryset.filter(tenant=company)
         if user.role == 'BUSINESS_OWNER':
-            return queryset.filter(company__owner=user)
+            return queryset.filter(company__manager=user)
         return queryset.none()
 
 

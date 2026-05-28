@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from bookings.billing import build_booking_bill
 from bookings.models import Booking, BookingExtraService
 
 
@@ -21,6 +22,20 @@ class BookingSerializer(serializers.ModelSerializer):
     hourlyRate = serializers.IntegerField(source="hourly_rate", required=False)
     basePrice = serializers.IntegerField(source="base_price", required=False)
     extraServices = BookingExtraServiceSerializer(source="extra_services", many=True, read_only=True)
+    servicesTotal = serializers.SerializerMethodField()
+    roomTotal = serializers.SerializerMethodField()
+    subtotal = serializers.SerializerMethodField()
+    overtimeCharge = serializers.SerializerMethodField()
+    lateMinutes = serializers.SerializerMethodField()
+    isOvertime = serializers.SerializerMethodField()
+    stayNights = serializers.SerializerMethodField()
+    stayMinutes = serializers.SerializerMethodField()
+    stayLabel = serializers.SerializerMethodField()
+    nightlyRate = serializers.SerializerMethodField()
+    totalAmount = serializers.SerializerMethodField()
+    heroImage = serializers.SerializerMethodField()
+    guestEmail = serializers.EmailField(source="email", read_only=True)
+    guestPhone = serializers.CharField(source="phone", read_only=True)
     statusLabel = serializers.SerializerMethodField()
     isUnassigned = serializers.SerializerMethodField()
     branchId = serializers.UUIDField(source="branch_id", read_only=True)
@@ -38,6 +53,8 @@ class BookingSerializer(serializers.ModelSerializer):
             "roomType",
             "bookingCode",
             "guestName",
+            "guestEmail",
+            "guestPhone",
             "email",
             "phone",
             "status",
@@ -55,6 +72,18 @@ class BookingSerializer(serializers.ModelSerializer):
             "roomChangeNote",
             "hourlyRate",
             "basePrice",
+            "roomTotal",
+            "servicesTotal",
+            "subtotal",
+            "overtimeCharge",
+            "lateMinutes",
+            "isOvertime",
+            "stayNights",
+            "stayMinutes",
+            "stayLabel",
+            "nightlyRate",
+            "totalAmount",
+            "heroImage",
             "discount",
             "payment_method",
             "extraServices",
@@ -71,6 +100,67 @@ class BookingSerializer(serializers.ModelSerializer):
     def get_isUnassigned(self, obj):
         return obj.room_id is None
 
+    def _bill_cache(self):
+        if not hasattr(self, "_booking_bill_cache"):
+            self._booking_bill_cache = {}
+        return self._booking_bill_cache
+
+    def _bill(self, obj):
+        cache = self._bill_cache()
+        key = str(obj.pk)
+        if key not in cache:
+            cache[key] = build_booking_bill(obj)
+        return cache[key]
+
+    def get_servicesTotal(self, obj):
+        return self._bill(obj)["servicesTotal"]
+
+    def get_roomTotal(self, obj):
+        return self._bill(obj)["roomTotal"]
+
+    def get_subtotal(self, obj):
+        return self._bill(obj)["subtotal"]
+
+    def get_overtimeCharge(self, obj):
+        return self._bill(obj)["overtimeCharge"]
+
+    def get_lateMinutes(self, obj):
+        return self._bill(obj)["lateMinutes"]
+
+    def get_isOvertime(self, obj):
+        return self._bill(obj)["isOvertime"]
+
+    def get_stayNights(self, obj):
+        return self._bill(obj)["stayNights"]
+
+    def get_stayMinutes(self, obj):
+        return self._bill(obj)["stayMinutes"]
+
+    def get_stayLabel(self, obj):
+        return self._bill(obj)["stayLabel"]
+
+    def get_nightlyRate(self, obj):
+        return self._bill(obj)["nightlyRate"]
+
+    def get_totalAmount(self, obj):
+        return self._bill(obj)["totalAmount"]
+
+    def get_heroImage(self, obj):
+        branch = getattr(obj, "branch", None)
+        if not branch:
+            return ""
+        images = getattr(branch, "images", None) or []
+        if isinstance(images, list) and images:
+            first = images[0]
+            if isinstance(first, str) and first.strip():
+                return first.strip()
+            if isinstance(first, dict):
+                return str(first.get("url") or first.get("image") or "").strip()
+        image = getattr(branch, "image", None)
+        if not image:
+            return ""
+        return str(getattr(image, "url", image) or "").strip()
+
     def _format_dt(self, dt):
         if not dt:
             return ""
@@ -84,17 +174,29 @@ class BookingSerializer(serializers.ModelSerializer):
 
 
 class CustomerBookingCreateSerializer(serializers.ModelSerializer):
+    room_type_id = serializers.UUIDField(required=False, allow_null=True)
+    service_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+    )
+    check_in_at = serializers.DateTimeField(required=False, allow_null=True)
+
     class Meta:
         model = Booking
         fields = [
             "branch",
             "room_type",
+            "room_type_id",
             "hotel_name",
             "hotel_address",
             "guest_name",
             "email",
             "phone",
+            "check_in_at",
             "expected_check_out_at",
+            "service_ids",
         ]
 
     def validate(self, attrs):
@@ -102,11 +204,17 @@ class CustomerBookingCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"branch": "branch is required."})
         hotel_name = str(attrs.get("hotel_name") or "").strip()
         room_type = str(attrs.get("room_type") or "").strip()
+        room_type_id = attrs.get("room_type_id", None)
         if not hotel_name:
             raise serializers.ValidationError({"hotel_name": "hotel_name is required."})
-        if not room_type:
-            raise serializers.ValidationError({"room_type": "room_type is required."})
+        if not room_type and not room_type_id:
+            raise serializers.ValidationError({"room_type": "room_type or room_type_id is required."})
         return attrs
+
+    def create(self, validated_data):
+        validated_data.pop("room_type_id", None)
+        validated_data.pop("service_ids", None)
+        return super().create(validated_data)
 
 
 from bookings.models import ReviewForumPost

@@ -1,11 +1,39 @@
-import React, {useEffect, useMemo, useState} from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Modal, RefreshControl } from 'react-native';
-import { Ionicons, Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
+import {
+  ActivityIndicator,
+  Alert,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Image,
+  Modal,
+  RefreshControl,
+} from 'react-native';
+import {Ionicons, Feather} from '@expo/vector-icons';
+import {useNavigation, useRoute} from '@react-navigation/native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {getSession} from '../../../utils/authStorage';
-import {normalizeServiceLine} from '../../../utils/serviceLineIdentity';
+import {formatVnd} from '../../../utils/formatCurrency';
 import {createMyBooking} from '../../../services/CustomerBookingService';
+
+const DEPOSIT_OPTIONS = [20, 50, 100];
+
+const normalizeSelectedServices = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item && item.id)
+    .map((item) => ({
+      id: String(item.id),
+      name: String(item.name || 'Service'),
+      price: Number(item.price || 0),
+      icon: String(item.icon || ''),
+      category: String(item.category || ''),
+      description: String(item.description || ''),
+    }));
+};
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const getToday = () => {
@@ -16,12 +44,12 @@ const getToday = () => {
 const CustomerBookingScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const insets = useSafeAreaInsets();
   const {
-    hotelName = 'Swiss Hotel',
+    hotelName = '',
     roomName: routeRoomName = '',
-    checkIn: initialCheckIn = "9h00' 23 Mar 2026",
-    checkOut: initialCheckOut = "9h00' 24 Mar 2026",
+    roomTypeId,
+    checkIn: initialCheckIn = '',
+    checkOut: initialCheckOut = '',
     startDateIso,
     endDateIso,
     startDate,
@@ -36,11 +64,12 @@ const CustomerBookingScreen = () => {
     total: legacyTotal,
     deposit: legacyDeposit,
     syncToken,
+    serviceSyncToken,
     selectedService: routeSelectedService = null,
     selectedServices: routeSelectedServices = [],
-    reviews = 3,
-    rating = 4.5,
-    heroImage = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
+    reviews = 0,
+    rating = 0,
+    heroImage = '',
   } = route.params || {};
 
   const resolveRoomName = (...values) => {
@@ -91,13 +120,13 @@ const CustomerBookingScreen = () => {
   const safeStartDate = parsedStartIso
     ? parsedStartIso
     : Number.isFinite(startDate)
-    ? new Date(2026, 6, startDate)
-    : parseDateFromLabel(initialCheckIn, new Date(2026, 6, 8));
+    ? new Date(new Date().getFullYear(), new Date().getMonth(), startDate)
+    : parseDateFromLabel(initialCheckIn, getToday());
   const safeEndDateCandidate = parsedEndIso
     ? parsedEndIso
     : Number.isFinite(endDate)
-    ? new Date(2026, 6, endDate)
-    : parseDateFromLabel(initialCheckOut, new Date(2026, 6, safeStartDate.getDate() + 1));
+    ? new Date(new Date().getFullYear(), new Date().getMonth(), endDate)
+    : parseDateFromLabel(initialCheckOut, new Date(safeStartDate.getFullYear(), safeStartDate.getMonth(), safeStartDate.getDate() + 1));
   const safeEndDate = safeEndDateCandidate > safeStartDate
     ? safeEndDateCandidate
     : new Date(safeStartDate.getFullYear(), safeStartDate.getMonth(), safeStartDate.getDate() + 1);
@@ -112,13 +141,13 @@ const CustomerBookingScreen = () => {
     const syncedStart = parsedStartIso
       ? parsedStartIso
       : Number.isFinite(startDate)
-      ? new Date(2026, 6, startDate)
-      : parseDateFromLabel(initialCheckIn, new Date(2026, 6, 8));
+      ? new Date(new Date().getFullYear(), new Date().getMonth(), startDate)
+      : parseDateFromLabel(initialCheckIn, getToday());
     const syncedEndCandidate = parsedEndIso
       ? parsedEndIso
       : Number.isFinite(endDate)
-      ? new Date(2026, 6, endDate)
-      : parseDateFromLabel(initialCheckOut, new Date(2026, 6, syncedStart.getDate() + 1));
+      ? new Date(new Date().getFullYear(), new Date().getMonth(), endDate)
+      : parseDateFromLabel(initialCheckOut, new Date(syncedStart.getFullYear(), syncedStart.getMonth(), syncedStart.getDate() + 1));
     const syncedEnd = syncedEndCandidate > syncedStart
       ? syncedEndCandidate
       : new Date(syncedStart.getFullYear(), syncedStart.getMonth(), syncedStart.getDate() + 1);
@@ -150,101 +179,59 @@ const CustomerBookingScreen = () => {
     return Math.max(1, Math.round(stayHours / 24));
   }, [stayHours]);
 
-  const dailyPrice = useMemo(() => {
+  const nightlyPrice = useMemo(() => {
     if (Number.isFinite(roomPrice) && roomPrice > 0) return roomPrice;
     if (Number.isFinite(legacyPricePerHour) && legacyPricePerHour > 0) return legacyPricePerHour * 24;
-    return 270;
+    return 0;
   }, [roomPrice, legacyPricePerHour]);
 
-  const subtotalPrice = useMemo(() => {
-    return dailyPrice * stayDays;
-  }, [dailyPrice, stayDays]);
+  const roomTotal = useMemo(() => nightlyPrice * stayDays, [nightlyPrice, stayDays]);
 
-  const selectedServices = useMemo(() => {
-    const services = Array.isArray(routeSelectedServices)
-      ? routeSelectedServices.filter((item) => item && typeof item === 'object' && item.id)
-      : [];
+  const [selectedServices, setSelectedServices] = useState(() => {
+    const fromRoute = normalizeSelectedServices(routeSelectedServices);
+    if (fromRoute.length) return fromRoute;
+    if (routeSelectedService?.id) return normalizeSelectedServices([routeSelectedService]);
+    return [];
+  });
 
-    if (services.length) {
-      return services.map((item, index) => {
-        const price = Number(item.price || 0);
-        const normalized = {
-          ...item,
-          price: Number.isFinite(price) ? price : 0,
-        };
+  useFocusEffect(
+    useCallback(() => {
+      if (Array.isArray(route.params?.selectedServices)) {
+        setSelectedServices(normalizeSelectedServices(route.params.selectedServices));
+      }
+    }, [route.params?.selectedServices, route.params?.serviceSyncToken, serviceSyncToken])
+  );
 
-        return normalizeServiceLine(normalized, {
-          lineNo: index + 1,
-          lineId: `line-${normalized?.id || 'service'}-${index + 1}`,
-          serviceCode: normalized?.code || '',
-        });
-      });
-    }
+  const selectedServiceIds = useMemo(
+    () => selectedServices.map((service) => service.id),
+    [selectedServices]
+  );
 
-    if (!routeSelectedService || typeof routeSelectedService !== 'object') return [];
-    const price = Number(routeSelectedService.price || 0);
-    const fallbackService = {
-      ...routeSelectedService,
-      price: Number.isFinite(price) ? price : 0,
-    };
+  const servicesTotal = useMemo(
+    () => selectedServices.reduce((sum, service) => sum + Number(service.price || 0), 0),
+    [selectedServices]
+  );
 
-    return [normalizeServiceLine(fallbackService, {
-      lineNo: 1,
-      lineId: `line-${fallbackService?.id || 'service'}-1`,
-      serviceCode: fallbackService?.code || '',
-    })];
-  }, [routeSelectedServices, routeSelectedService]);
-  const selectedService = selectedServices[0] || null;
-
-  const discountAmount = useMemo(() => {
-    if (Number.isFinite(legacyDiscountPerHour) && legacyDiscountPerHour > 0) {
-      return legacyDiscountPerHour * stayHours;
-    }
-    return Math.round(subtotalPrice * 0.1);
-  }, [legacyDiscountPerHour, stayHours, subtotalPrice]);
-
-  const roomSubtotal = Math.max(0, subtotalPrice - discountAmount);
-  const serviceFee = useMemo(() => {
-    return selectedServices.reduce((sum, item) => {
-      const isDirectPay = item?.id === 'airport_shuttle' && item?.paymentMode === 'direct_with_driver';
-      if (isDirectPay) return sum;
-      return sum + Number(item?.price || 0);
-    }, 0);
-  }, [selectedServices]);
-  const bookingSubtotal = roomSubtotal + serviceFee;
-  const taxableAmount = bookingSubtotal;
-  const vatAmount = Number.isFinite(legacyVat) && legacyVat > 0 ? legacyVat : Math.round(taxableAmount * 0.1);
-  const totalAmount = Number.isFinite(legacyTotal) && legacyTotal > 0 ? legacyTotal : taxableAmount + vatAmount;
-  const depositPercent = 20;
-  const lateCheckInPercent = 10;
-  const depositAmount = Number.isFinite(legacyDeposit) && legacyDeposit > 0 ? legacyDeposit : Math.round(totalAmount * 0.2);
-  const pricePerHour = useMemo(() => {
-    const value = dailyPrice / 24;
-    if (!Number.isFinite(value) || value <= 0) return 1;
-    return Number(value.toFixed(2));
-  }, [dailyPrice]);
-  const discountPerHour = useMemo(() => {
-    if (!Number.isFinite(stayHours) || stayHours <= 0) return 0;
-    return Number((discountAmount / stayHours).toFixed(2));
-  }, [discountAmount, stayHours]);
-  const stayTimeLabel = `${stayHours}h00`;
-  const [bookingId, setBookingId] = useState(null);
+  const subtotalAmount = roomTotal + servicesTotal;
+  const [depositPercent, setDepositPercent] = useState(20);
+  const depositAmount = useMemo(
+    () => Math.round(subtotalAmount * (depositPercent / 100)),
+    [subtotalAmount, depositPercent]
+  );
+  const stayMinutes = useMemo(() => Math.max(1, Math.round(stayHours * 60)), [stayHours]);
+  const holdMinutes = useMemo(
+    () => Math.max(1, Math.round(stayMinutes * (depositPercent / 100))),
+    [stayMinutes, depositPercent]
+  );
+  const stayTimeLabel = `${stayDays} night${stayDays === 1 ? '' : 's'} · ${stayMinutes} min`;
   const [bookingError, setBookingError] = useState('');
   const [accountLoaded, setAccountLoaded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const lateCheckInLabel = useMemo(() => {
-    const lateHours = stayHours * (lateCheckInPercent / 100);
-    const hours = Math.floor(lateHours);
-    const minutes = Math.round((lateHours - hours) * 60);
-    return `${String(hours).padStart(2, '0')}h${String(minutes).padStart(2, '0')}'`;
-  }, [stayHours, lateCheckInPercent]);
-
-  const formatUsd = (amount) => Number(amount || 0).toLocaleString('en-US');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [account, setAccount] = useState({
-    name: 'Nguyen Ngoc Lan',
-    email: 'customer@nesto.vn',
+    name: '',
+    email: '',
     phone: 'N/A',
   });
 
@@ -256,16 +243,16 @@ const CustomerBookingScreen = () => {
         const session = await getSession();
         const user = session?.user ?? {};
         const rawName = String(user?.name || user?.full_name || '').trim();
-        const shouldUseDefaultName = rawName.toLowerCase() === 'nesto customer' || rawName.length === 0;
 
         if (mounted) {
           setAccount({
-            name: shouldUseDefaultName ? 'Nguyen Ngoc Lan' : rawName,
+            name: rawName,
             email: String(user?.email || '').trim() || 'N/A',
             phone: String(user?.phone || '').trim() || 'N/A',
           });
         }
       } catch {
+        Alert.alert('Account', 'Unable to load your account details right now.');
       } finally {
         if (mounted) {
           setAccountLoaded(true);
@@ -282,7 +269,7 @@ const CustomerBookingScreen = () => {
 
   const displayName = useMemo(() => {
     const value = String(account.name || '').trim();
-    if (!value) return 'Nguyen Ngoc Lan';
+    if (!value) return 'Guest';
     return value
       .split(' ')
       .filter(Boolean)
@@ -351,46 +338,83 @@ const CustomerBookingScreen = () => {
   const handleBookNow = async () => {
     if (!branchId) {
       setBookingError('Missing branch for booking');
+      Alert.alert('Booking', 'This property is missing branch information. Go back and choose a room again.');
+      return;
+    }
+    if (!roomTypeId && !roomName) {
+      Alert.alert('Booking', 'Please choose a room type before booking.');
+      return;
+    }
+    if (nightlyPrice <= 0) {
+      Alert.alert('Booking', 'Room price is unavailable for this stay. Go back and select a room again.');
       return;
     }
 
-    const created = await createMyBooking({
+    setIsSubmitting(true);
+    setBookingError('');
+    try {
+      const created = await createMyBooking({
+        branchId,
+        hotelName,
+        hotelAddress: hotelAddress || '',
+        roomType: roomName,
+        roomTypeId,
+        guestName: displayName,
+        email: account.email,
+        phone: account.phone,
+        checkInAt: selectedStartDate.toISOString(),
+        expectedCheckOutAt: selectedEndDate.toISOString(),
+        serviceIds: selectedServiceIds,
+      });
+      if (created.status !== 'success') {
+        setBookingError(created.message || 'Unable to create booking');
+        Alert.alert('Booking', String(created.message || 'Unable to create booking. Please try again.'));
+        return;
+      }
+      const bookingCode = created?.data?.bookingCode || created?.data?.booking_code || created?.data?.bookingId || '';
+
+      navigation.navigate('CustomerPaymentScreen', {
+        bookingId: bookingCode,
+        backendBookingId: created?.data?.id || null,
+        heroImage,
+        hotelName,
+        roomName,
+        branchId,
+        checkIn,
+        checkOut,
+        checkInDateIso: selectedStartDate.toISOString(),
+        checkOutDateIso: selectedEndDate.toISOString(),
+        name: displayName,
+        email: account.email,
+        phone: account.phone,
+        subtotalAmount,
+        totalAmount: subtotalAmount,
+        depositAmount,
+        depositPercent,
+        holdMinutes,
+        stayMinutes,
+        roomTotal,
+        servicesTotal,
+        nightlyPrice,
+        stayDays,
+        stayTimeLabel,
+        selectedServices,
+      });
+    } catch {
+      setBookingError('Unable to create booking');
+      Alert.alert('Booking', 'Unable to create booking right now. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenServiceSelection = () => {
+    if (!branchId) {
+      Alert.alert('Services', 'Branch information is missing for this booking.');
+      return;
+    }
+    navigation.navigate('ServiceSelectionScreen', {
       branchId,
-      hotelName,
-      hotelAddress: hotelAddress || '',
-      roomType: roomName,
-      guestName: displayName,
-      email: account.email,
-      phone: account.phone,
-      expectedCheckOutAt: selectedEndDate.toISOString(),
-    });
-    if (created.status !== 'success') {
-      setBookingError(created.message || 'Unable to create booking');
-      return;
-    }
-    const bookingCode = created?.data?.bookingCode || created?.data?.booking_code || created?.data?.bookingId || '';
-
-    navigation.navigate('CustomerPaymentScreen', {
-      bookingId: bookingCode,
-      backendBookingId: created?.data?.id || null,
-      heroImage,
-      hotelName,
-      roomName,
-      checkIn,
-      checkOut,
-      checkInDateIso: selectedStartDate.toISOString(),
-      checkOutDateIso: selectedEndDate.toISOString(),
-      name: displayName,
-      email: account.email,
-      phone: account.phone,
-      totalAmount,
-      depositAmount,
-      subtotalPrice: bookingSubtotal,
-      vatAmount,
-      pricePerHour,
-      discountPerHour,
-      stayTimeLabel,
-      selectedService,
       selectedServices,
     });
   };
@@ -401,8 +425,18 @@ const CustomerBookingScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <View style={styles.checkoutHeader}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} activeOpacity={0.85}>
+          <Ionicons name="arrow-back" size={22} color="#000000" />
+        </TouchableOpacity>
+        <View style={styles.checkoutHeaderText}>
+          <Text style={styles.checkoutRoomTitle} numberOfLines={1}>{roomName}</Text>
+          <Text style={styles.checkoutHotelTitle} numberOfLines={1}>{hotelName}</Text>
+        </View>
+      </View>
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={
           <RefreshControl
@@ -413,21 +447,10 @@ const CustomerBookingScreen = () => {
           />
         }
       >
-        <View style={[styles.heroWrap, {marginTop: insets.top + 8}] }>
+        <View style={styles.heroWrap}>
           <Image source={{ uri: heroImage }} style={styles.heroImage} resizeMode="cover" />
-          <View style={[styles.heroActions, {top: Math.max(12, insets.top + 4)}]}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <Ionicons name="arrow-back" size={22} color="#222" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.menuBtn}>
-              <Feather name="more-horizontal" size={22} color="#222" />
-            </TouchableOpacity>
-          </View>
         </View>
-        {/* Room Info */}
         <View style={styles.roomInfoBox}>
-          <Text style={styles.roomName}>{roomName}</Text>
-          <Text style={styles.hotelName}>{hotelName}</Text>
           <View style={styles.ratingRow}>
             <Ionicons name="star" size={16} color="#FFD700" />
             <Text style={styles.ratingText}>{rating}</Text>
@@ -457,82 +480,86 @@ const CustomerBookingScreen = () => {
             <Text style={styles.checkText}>{checkOut}</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.depositNote}>Can check-in late is {lateCheckInPercent}% of total booking hours.</Text>
-        <View style={styles.depositRow}>
-          <Text style={styles.depositLabel}>Deposit:</Text>
-          <View style={styles.depositValue}><Text style={styles.depositPercent}>{depositPercent}%</Text></View>
-          <Text style={styles.lateLabel}>Can check-in late:</Text>
-          <View style={styles.lateValue}><Text style={styles.lateTime}>{lateCheckInLabel}</Text></View>
-        </View>
-        {/* Order summary */}
+        <TouchableOpacity style={styles.addServicesBtn} onPress={handleOpenServiceSelection} activeOpacity={0.88}>
+          <View style={styles.addServicesLeft}>
+            <Ionicons name="add-circle-outline" size={22} color="#5b79df" />
+            <Text style={styles.addServicesText}>Add services (+)</Text>
+          </View>
+          <Text style={styles.addServicesMeta}>
+            {selectedServices.length ? `${selectedServices.length} · ${formatVnd(servicesTotal)}` : 'Optional'}
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.summaryBox}>
-          <Text style={styles.summaryTitle}>Order summary</Text>
-          <Text style={styles.summaryNote}>Check information order before payment</Text>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Name:</Text><Text style={styles.summaryValue}>{displayName}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Email:</Text><Text style={styles.summaryValue}>{account.email}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Phone number:</Text><Text style={styles.summaryValue}>{account.phone}</Text></View>
+          <Text style={styles.summaryTitle}>Checkout summary</Text>
+          <Text style={styles.summaryNote}>Review your stay before confirming</Text>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Guest</Text><Text style={styles.summaryValue}>{displayName}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Email</Text><Text style={styles.summaryValue}>{account.email}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Phone</Text><Text style={styles.summaryValue}>{account.phone}</Text></View>
           <View style={styles.summaryDivider} />
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Hotel:</Text><Text style={styles.summaryValue}>{hotelName}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Room:</Text><Text style={styles.summaryValue}>{roomName}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Check-in:</Text><Text style={styles.summaryValue}>{checkIn}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Check-out:</Text><Text style={styles.summaryValue}>{checkOut}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Hotel</Text><Text style={styles.summaryValue}>{hotelName}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Room</Text><Text style={styles.summaryValue}>{roomName}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Stay</Text><Text style={styles.summaryValue}>{stayTimeLabel}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Check-in</Text><Text style={styles.summaryValue}>{checkIn}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Check-out</Text><Text style={styles.summaryValue}>{checkOut}</Text></View>
           <View style={styles.summaryDivider} />
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Time:</Text><Text style={styles.summaryValue}>{stayTimeLabel}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Price:</Text><Text style={styles.summaryValue}>{formatUsd(pricePerHour)} USD/h</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Discount:</Text><Text style={styles.summaryValue}>{formatUsd(discountPerHour)} USD/h</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Room price:</Text><Text style={styles.summaryValue}>{formatUsd(roomSubtotal)} USD</Text></View>
-          {selectedServices.length ? <View style={styles.summaryDivider} /> : null}
-          {selectedServices.length ? <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Selected services:</Text><Text style={styles.summaryValue}>{selectedServices.length}</Text></View> : null}
-          {selectedServices.length ? selectedServices.map((service, index) => {
-            const isDirectPay = service?.id === 'airport_shuttle' && service?.paymentMode === 'direct_with_driver';
-            const displayCode = String(service?.display_code || '').trim() || String(service?.service_code || service?.code || 'N/A').trim() || 'N/A';
-            return (
-              <View key={String(service?.line_id || '').trim() || `${service.id}-${index}`}>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Service code:</Text><Text style={styles.summaryValue}>{displayCode}</Text></View>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Service name:</Text><Text style={styles.summaryValue}>{service.name || 'N/A'}</Text></View>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Service fee:</Text><Text style={styles.summaryValue}>{isDirectPay ? 'Paid directly to driver' : `${formatUsd(service.price)} USD`}</Text></View>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Date:</Text><Text style={styles.summaryValue}>{service.date || 'Select date'}</Text></View>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Time:</Text><Text style={styles.summaryValue}>{service.time || 'Select time'}</Text></View>
-                {service?.notes ? <Text style={styles.summaryServiceHint}>Notes: {service.notes}</Text> : null}
-                {service?.paymentNote ? <Text style={styles.summaryServiceHint}>{service.paymentNote}</Text> : null}
-                {index < selectedServices.length - 1 ? <View style={styles.summaryDivider} /> : null}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Room ({formatVnd(nightlyPrice)} × {stayDays})</Text>
+            <Text style={styles.summaryValue}>{formatVnd(roomTotal)}</Text>
+          </View>
+          {selectedServices.length ? (
+            <>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Services ({selectedServices.length})</Text>
+                <Text style={styles.summaryValue}>{formatVnd(servicesTotal)}</Text>
               </View>
-            );
-          }) : null}
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Subtotal:</Text><Text style={styles.summaryValue}>{formatUsd(bookingSubtotal)} USD</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>VAT (10%):</Text><Text style={styles.summaryValue}>{formatUsd(vatAmount)} USD</Text></View>
+              {selectedServices.map((service) => (
+                <Text key={service.id} style={styles.summaryServiceHint}>• {service.name}</Text>
+              ))}
+            </>
+          ) : null}
           <View style={styles.summaryDivider} />
-          <View style={styles.summaryRow}><Text style={styles.summaryLabelBold}>Total Price:</Text><Text style={styles.summaryValueBold}>{formatUsd(totalAmount)} USD</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabelBold}>Deposit (20%):</Text><Text style={styles.summaryValueBold}>{formatUsd(depositAmount)} USD</Text></View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabelBold}>Subtotal</Text>
+            <Text style={styles.summaryValueBold}>{formatVnd(subtotalAmount)}</Text>
+          </View>
+
+          <Text style={styles.depositSectionTitle}>Deposit amount</Text>
+          <View style={styles.depositOptionsRow}>
+            {DEPOSIT_OPTIONS.map((option) => {
+              const active = depositPercent === option;
+              return (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.depositOption, active ? styles.depositOptionActive : null]}
+                  onPress={() => setDepositPercent(option)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.depositOptionText, active ? styles.depositOptionTextActive : null]}>
+                    {option}%
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.holdNote}>Required deposit: {formatVnd(depositAmount)}</Text>
+          <Text style={styles.holdNote}>
+            Room will be held for {holdMinutes} minutes if you arrive late.
+          </Text>
+          {bookingError ? <Text style={styles.bookingError}>{bookingError}</Text> : null}
         </View>
       </ScrollView>
-      <TouchableOpacity
-        style={[styles.addServiceBtn, !bookingId ? styles.addServiceBtnDisabled : null]}
-        onPress={() => navigation.push('CustomerServiceScreen', {
-          bookingId,
-          hotelName,
-          hotelAddress,
-          roomName,
-          checkIn,
-          checkOut,
-          startDateIso: selectedStartDate.toISOString(),
-          endDateIso: selectedEndDate.toISOString(),
-          bookingMinDateIso: selectedStartDate.toISOString(),
-          bookingMaxDateIso: selectedEndDate.toISOString(),
-          bookingStartDateIso: selectedStartDate.toISOString(),
-          bookingEndDateIso: selectedEndDate.toISOString(),
-          selectedService,
-          selectedServices,
-        })}
-      >
-        <Text style={styles.addServiceBtnText}>{selectedServices.length ? 'Edit services' : 'Choose services'}</Text>
-      </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.bookBtn}
+        style={[styles.bookBtn, isSubmitting ? styles.bookBtnDisabled : null]}
         onPress={handleBookNow}
+        disabled={isSubmitting}
       >
-        <Text style={styles.bookBtnText}>Book now</Text>
+        {isSubmitting ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.bookBtnText}>Book now · {formatVnd(subtotalAmount)}</Text>
+        )}
       </TouchableOpacity>
 
       <Modal
@@ -645,14 +672,201 @@ const CustomerBookingScreen = () => {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F8F8',
+    backgroundColor: '#F4F6FB',
+  },
+  scroll: {
+    flex: 1,
+  },
+  checkoutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F4F6FB',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkoutHeaderText: {
+    flex: 1,
+    paddingLeft: 4,
+    minWidth: 0,
+  },
+  checkoutRoomTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  checkoutHotelTitle: {
+    fontSize: 15,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  addServicesBtn: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  addServicesLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addServicesText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  addServicesMeta: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5b79df',
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 15,
+    color: '#6B7280',
+    marginBottom: 12,
+  },
+  servicesCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  servicesLoader: {
+    marginVertical: 12,
+  },
+  servicesError: {
+    fontSize: 15,
+    color: '#DC2626',
+    marginBottom: 8,
+  },
+  servicesEmpty: {
+    fontSize: 15,
+    color: '#6B7280',
+  },
+  serviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: '#FAFAFA',
+  },
+  serviceRowSelected: {
+    borderColor: '#5b79df',
+    backgroundColor: '#F3F6FF',
+  },
+  serviceIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  serviceCopy: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  serviceName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  serviceDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  servicePriceCol: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  servicePrice: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  bookingError: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#DC2626',
+  },
+  depositSectionTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  depositOptionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  depositOption: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  depositOptionActive: {
+    borderColor: '#5b79df',
+    backgroundColor: '#EEF2FF',
+  },
+  depositOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  depositOptionTextActive: {
+    color: '#5b79df',
+  },
+  holdNote: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#374151',
+    marginTop: 4,
+  },
+  bookBtnDisabled: {
+    opacity: 0.7,
   },
   heroWrap: {
     height: 180,
@@ -665,33 +879,6 @@ const styles = StyleSheet.create({
   heroImage: {
     width: '100%',
     height: '100%',
-  },
-  heroActions: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  backBtn: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  menuBtn: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
   },
   roomInfoBox: {
     backgroundColor: '#fff',

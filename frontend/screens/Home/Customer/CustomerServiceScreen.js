@@ -1,10 +1,12 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {Alert, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons, Feather} from '@expo/vector-icons';
 import {UI} from '../../../styles/uiTokens';
 import {buildServiceDisplayCode} from '../../../utils/serviceLineIdentity';
 import {fetchExtraServices} from '../../../services/BranchService';
+import ScreenHeader from '../../../components/common/ScreenHeader';
+import {formatVnd} from '../../../utils/formatCurrency';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -108,10 +110,12 @@ function buildScheduleKey(service) {
 }
 
 export default function CustomerServiceScreen({navigation, route}) {
+    const params = route?.params ?? {};
     const {
         sourceScreen = '',
         bookingId = '',
-        hotelName = 'Swiss Hotel',
+        branchId: routeBranchId,
+        hotelName = '',
         hotelAddress = '',
         roomName: routeRoomName = '',
         checkIn,
@@ -126,7 +130,16 @@ export default function CustomerServiceScreen({navigation, route}) {
         bookingEndDateIso,
         selectedService: initialSelectedService = null,
         selectedServices: routeSelectedServices = [],
-    } = route.params || {};
+    } = params;
+
+    const branchId = String(
+        routeBranchId
+        ?? params?.branch_id
+        ?? params?.branch
+        ?? params?.room?.branchId
+        ?? params?.room?.branch_id
+        ?? ''
+    ).trim();
 
     const resolveRoomName = (...values) => {
         for (const raw of values) {
@@ -164,6 +177,8 @@ export default function CustomerServiceScreen({navigation, route}) {
         return items;
     }, [routeSelectedServices, initialSelectedService]);
     const [serviceOptions, setServiceOptions] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [loadError, setLoadError] = useState('');
     const [activeServiceIds, setActiveServiceIds] = useState(() => {
         const existingIds = selectedServices
             .map((service) => service?.id)
@@ -204,10 +219,20 @@ export default function CustomerServiceScreen({navigation, route}) {
         let mounted = true;
         (async () => {
             if (!branchId) return;
-            const res = await fetchExtraServices(branchId);
+            setIsLoading(true);
+            setLoadError('');
+            let res = null;
+            try {
+                res = await fetchExtraServices(branchId);
+            } catch (error) {
+                res = {status: 'error', message: 'Unable to load services. Please try again.'};
+            }
             if (!mounted) return;
             if (res.status !== 'success') {
                 setServiceOptions([]);
+                Alert.alert('Services', String(res?.message || 'Unable to load services. Please try again.'));
+                setLoadError(String(res?.message || 'Unable to load services. Please try again.'));
+                setIsLoading(false);
                 return;
             }
             const rows = Array.isArray(res.data) ? res.data : [];
@@ -221,13 +246,14 @@ export default function CustomerServiceScreen({navigation, route}) {
                         title: String(row?.name || 'Service'),
                         subtitle: String(row?.description || '').trim(),
                         price: Number.isFinite(price) ? price : 0,
-                        priceLabel: `${Number.isFinite(price) ? price : 0} USD`,
+                        priceLabel: formatVnd(Number.isFinite(price) ? price : 0),
                         icon: theme.icon,
                         accent: theme.accent,
                         raw: row,
                     };
                 }).filter((x) => x.id)
             );
+            setIsLoading(false);
         })();
         return () => {
             mounted = false;
@@ -441,7 +467,7 @@ export default function CustomerServiceScreen({navigation, route}) {
                         name: service.title,
                         roomName,
                         price: Number(service.price || 0),
-                        priceLabel: `${Number(service.price || 0).toLocaleString('en-US')} USD`,
+                        priceLabel: formatVnd(service.price || 0),
                         paymentMode: 'prepaid',
                         paymentNote: '',
                         date: String(schedule?.date || existing?.date || '').trim(),
@@ -539,16 +565,12 @@ export default function CustomerServiceScreen({navigation, route}) {
                 style={styles.keyboardWrap}
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.85}>
-                        <Ionicons name="chevron-back" size={22} color="#1f1f1f" />
-                    </TouchableOpacity>
-                    <View style={styles.headerTextWrap}>
-                        <Text style={styles.headerTitle}>Customer Service</Text>
-                        <Text style={styles.headerSubtitle}>{hotelName} • {roomName}</Text>
-                    </View>
-                    <View style={styles.headerSpacer} />
-                </View>
+                <ScreenHeader
+                    onBack={() => navigation.goBack()}
+                    icon="chevron-back"
+                    title="Customer Service"
+                    subtitle={`${hotelName} • ${roomName}`}
+                />
 
                 <ScrollView
                     showsVerticalScrollIndicator={false}
@@ -582,7 +604,14 @@ export default function CustomerServiceScreen({navigation, route}) {
                 </View>
 
                 <Text style={styles.sectionTitle}>Select service</Text>
-                {serviceOptions.map((item) => {
+                {isLoading ? (
+                    <View style={styles.loadingWrap}>
+                        <ActivityIndicator size="large" color="#5b79df" />
+                        <Text style={styles.loadingText}>Loading services...</Text>
+                    </View>
+                ) : loadError ? (
+                    <Text style={styles.errorText}>{loadError}</Text>
+                ) : serviceOptions.map((item) => {
                     const active = activeServiceIds.includes(item.id);
                     const confirmedServices = selectedServices.filter((service) => service?.id === item.id);
                     const hasConfirmedData = confirmedServices.length > 0;
@@ -656,7 +685,7 @@ export default function CustomerServiceScreen({navigation, route}) {
                                     </>
                                 ) : null}
                                 {shouldShowConfirmedPrice ? (
-                                    <Text style={[styles.servicePrice, {color: item.accent}]}>Confirmed: {servicePriceValue.toLocaleString('en-US')} USD</Text>
+                                    <Text style={[styles.servicePrice, {color: item.accent}]}>Confirmed: {formatVnd(servicePriceValue)}</Text>
                                 ) : null}
                                 {shouldShowDirectPay ? (
                                     <Text style={[styles.servicePrice, {color: item.accent}]}>Confirmed: Pay directly to driver</Text>
@@ -712,7 +741,7 @@ export default function CustomerServiceScreen({navigation, route}) {
                                 </View>
                                 <View style={styles.summaryRow}>
                                     <Text style={styles.summaryLabel}>Service fee</Text>
-                                    <Text style={styles.summaryValue}>{isDirectPay ? 'Paid directly to driver' : `${serviceFee.toLocaleString('en-US')} USD`}</Text>
+                                    <Text style={styles.summaryValue}>{isDirectPay ? 'Paid directly to driver' : formatVnd(serviceFee)}</Text>
                                 </View>
                                 {service?.selectedShuttleMode ? (
                                     <View style={styles.summaryRow}>
@@ -750,7 +779,7 @@ export default function CustomerServiceScreen({navigation, route}) {
                     {selectedServices.length ? <View style={styles.summaryDivider} /> : null}
                     <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>Payable service total</Text>
-                        <Text style={styles.summaryValue}>{payableServiceTotal.toLocaleString('en-US')} USD</Text>
+                        <Text style={styles.summaryValue}>{formatVnd(payableServiceTotal)}</Text>
                     </View>
                 </View>
 
@@ -900,43 +929,6 @@ const styles = StyleSheet.create({
     keyboardWrap: {
         flex: 1,
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingTop: 8,
-        paddingBottom: 12,
-    },
-    backBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#fff',
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-        elevation: 2,
-    },
-    headerTextWrap: {
-        flex: 1,
-        paddingHorizontal: 12,
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: '800',
-        color: '#0f172a',
-    },
-    headerSubtitle: {
-        fontSize: 13,
-        color: '#667085',
-        marginTop: 2,
-    },
-    headerSpacer: {
-        width: 40,
-        height: 40,
-    },
     content: {
         paddingHorizontal: 16,
         paddingBottom: 24,
@@ -1002,6 +994,24 @@ const styles = StyleSheet.create({
         color: '#121826',
         marginTop: 6,
         marginBottom: 10,
+    },
+    loadingWrap: {
+        paddingVertical: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
+        fontWeight: '600',
+    },
+    errorText: {
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
+        paddingVertical: 10,
     },
     serviceCard: {
         flexDirection: 'row',

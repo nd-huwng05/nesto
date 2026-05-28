@@ -12,6 +12,7 @@ class ExtraService(BaseAuditedModel):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default="")
     price = models.IntegerField(default=0)
+    icon = models.CharField(max_length=64, blank=True, default="sparkles-outline")
     category = models.CharField(max_length=64, default="RESTAURANT")
 
     def __str__(self) -> str:

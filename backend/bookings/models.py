@@ -7,6 +7,7 @@ from django.utils import timezone
 class Booking(models.Model):
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending"
+        CONFIRMED = "CONFIRMED", "Confirmed"
         CHECKED_IN = "CHECKED_IN", "Checked in"
         CHECKED_OUT = "CHECKED_OUT", "Checked out"
         CANCELLED = "CANCELLED", "Cancelled"

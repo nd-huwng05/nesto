@@ -1,24 +1,25 @@
 import {useEffect, useState} from 'react';
-import {Image, RefreshControl, ScrollView, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, Alert, Image, RefreshControl, ScrollView, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons} from '@expo/vector-icons';
 import {GalleryStrip, RatingRow, WatchlistCard} from '../../../components/customer/CustomerHotelDetailSections';
+import ScreenHeader from '../../../components/common/ScreenHeader';
 import {fetchReviews} from '../../../services/ReviewService';
 
 export function HomeDetailScreen({navigation, route}) {
     const params = route?.params ?? {};
     const room = params.room ?? {};
-    const hotelId = params.hotelId ?? 'hotel-1';
-    const hotelName = params.hotelName ?? 'Swiss Hotel';
+    const hotelId = params.hotelId ?? null;
+    const hotelName = params.hotelName ?? '';
     const hotelAddress = params.hotelAddress ?? '';
     const resolvedRoomName =
         room?.name
         || room?.roomName
         || (room?.roomNumber ? `Room ${room.roomNumber}` : '')
         || (room?.number ? `Room ${room.number}` : 'Room');
-    const heroImage = room.image ?? params.heroImage ?? 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
-    const checkIn = typeof params.checkIn === 'string' ? params.checkIn : "9h00' 23 Mar 2026";
-    const checkOut = typeof params.checkOut === 'string' ? params.checkOut : "9h00' 24 Mar 2026";
+    const heroImage = room.image ?? params.heroImage ?? '';
+    const checkIn = typeof params.checkIn === 'string' ? params.checkIn : '';
+    const checkOut = typeof params.checkOut === 'string' ? params.checkOut : '';
     const startDateIso = typeof params.startDateIso === 'string' ? params.startDateIso : null;
     const endDateIso = typeof params.endDateIso === 'string' ? params.endDateIso : null;
     const startDate = Number.isFinite(params.startDate) ? params.startDate : null;
@@ -30,55 +31,70 @@ export function HomeDetailScreen({navigation, route}) {
     const reviews = Number.isFinite(params.reviews) ? params.reviews : 0;
     const watchlist = params.watchlist ?? null;
 
-    const detailGallery = Array.isArray(params.gallery) && params.gallery.length
-        ? params.gallery
-        : [room.image ?? heroImage, room.image ?? heroImage, room.image ?? heroImage];
-    const defaultDescription = 'Hotel Room means an area that is designed and constructed to be occupied by one or more persons on Hotel Property, which is separate from sleeping area.';
     const roomDescription = typeof room.description === 'string' ? room.description.trim() : '';
     const hotelDescription = typeof params.hotelDescription === 'string' ? params.hotelDescription.trim() : '';
-    const detailDescription = roomDescription.length >= 60
-        ? roomDescription
-        : (hotelDescription.length ? hotelDescription : defaultDescription);
+    const detailDescription = roomDescription.length ? roomDescription : hotelDescription;
     const [isDescriptionExpanded, setDescriptionExpanded] = useState(false);
-    const [reviewsList, setReviewsList] = useState(Array.isArray(params.reviewsList) ? params.reviewsList : []);
+    const [reviewsList, setReviewsList] = useState([]);
+    const [isReviewsLoading, setIsReviewsLoading] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const extraDescription = params.extraDescription
-        ?? 'Guests can enjoy daily breakfast, free high-speed Wi-Fi, and 24/7 room service with airport transfer support.';
-    const fullDescription = `${detailDescription} ${extraDescription}`.trim();
+    const fullDescription = String(detailDescription || '').trim();
     const DESCRIPTION_PREVIEW_LENGTH = 130;
     const hasLongDescription = fullDescription.length > DESCRIPTION_PREVIEW_LENGTH;
     const previewDescription = hasLongDescription
         ? `${fullDescription.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd()}...`
         : fullDescription;
 
+    const detailGallery = (() => {
+        const raw = Array.isArray(params.gallery) ? params.gallery : [];
+        const fallback = [room?.image, heroImage].map((x) => String(x || '').trim()).filter(Boolean);
+        const merged = [...raw, ...fallback].map((x) => String(x || '').trim()).filter(Boolean);
+        return Array.from(new Set(merged));
+    })();
+
     useEffect(() => {
         let alive = true;
         (async () => {
-            const seeded = Array.isArray(params.reviewsList) ? params.reviewsList : [];
-            if (seeded.length) {
-                if (alive) setReviewsList(seeded);
+            const branchId = String(params.branchId || '').trim();
+            if (!branchId) {
+                if (alive) setReviewsList([]);
                 return;
             }
+            setIsReviewsLoading(true);
             try {
-                const res = await fetchReviews({hotelName, roomName: resolvedRoomName, branchId: params.branchId});
+                const res = await fetchReviews({hotelName, roomName: resolvedRoomName, branchId});
                 if (!alive) return;
-                if (res.status === 'success') setReviewsList(Array.isArray(res.data) ? res.data : []);
-                else setReviewsList([]);
-            } catch {
-                if (alive) setReviewsList([]);
+                if (res.status === 'success') {
+                    setReviewsList(Array.isArray(res.data) ? res.data : []);
+                } else {
+                    setReviewsList([]);
+                    Alert.alert('Reviews', String(res?.message || 'Unable to load reviews.'));
+                }
+            } catch (error) {
+                if (alive) {
+                    setReviewsList([]);
+                    Alert.alert('Reviews', 'Unable to load reviews right now. Please try again.');
+                }
+            } finally {
+                if (alive) setIsReviewsLoading(false);
             }
         })();
         return () => {
             alive = false;
         };
-    }, [hotelId, params.reviewsList]);
+    }, [hotelId, params.branchId, resolvedRoomName, hotelName]);
 
     const handleRefresh = () => {
         setIsRefreshing(true);
         (async () => {
             try {
-                const res = await fetchReviews({hotelName, roomName: resolvedRoomName, branchId: params.branchId});
+                const branchId = String(params.branchId || '').trim();
+                if (!branchId) return;
+                const res = await fetchReviews({hotelName, roomName: resolvedRoomName, branchId});
                 if (res.status === 'success') setReviewsList(Array.isArray(res.data) ? res.data : []);
+                else Alert.alert('Reviews', String(res?.message || 'Unable to refresh reviews.'));
+            } catch (error) {
+                Alert.alert('Reviews', 'Unable to refresh reviews right now. Please try again.');
             } finally {
                 setIsRefreshing(false);
             }
@@ -87,6 +103,7 @@ export function HomeDetailScreen({navigation, route}) {
 
     return (
         <SafeAreaView className="flex-1 bg-[#ececec]">
+            <ScreenHeader onBack={() => navigation.goBack()} icon="chevron-back" />
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 className="flex-1 bg-[#ececec]"
@@ -103,16 +120,6 @@ export function HomeDetailScreen({navigation, route}) {
                 <View className="mx-3 mt-2 rounded-[26px] overflow-hidden bg-[#ececec]">
                     <View className="relative">
                         <Image source={{uri: heroImage}} className="w-full h-[220px]" resizeMode="cover"/>
-                        <View className="absolute top-5 left-5 right-5 flex-row justify-between">
-                            <TouchableOpacity
-                                className="w-11 h-11 rounded-full bg-[#eef2f3]/40 items-center justify-center"
-                                onPress={() => navigation.goBack()}>
-                                <Ionicons name="chevron-back" size={22} color="#2d2d2d"/>
-                            </TouchableOpacity>
-                            <TouchableOpacity className="w-11 h-11 rounded-full bg-[#eef2f3]/40 items-center justify-center">
-                                <Feather name="more-horizontal" size={20} color="#2d2d2d"/>
-                            </TouchableOpacity>
-                        </View>
                     </View>
 
                     <View className="bg-[#ececec] rounded-t-[34px] -mt-8 px-5 pt-6 pb-5">
@@ -166,10 +173,15 @@ export function HomeDetailScreen({navigation, route}) {
                 </View>
 
                 <View className="mt-3 px-3">
-                    <WatchlistCard watchlist={watchlist || null} reviews={reviewsList}/>
+                    {isReviewsLoading ? (
+                        <View className="py-6 items-center justify-center">
+                            <ActivityIndicator size="small" color="#5b79df" />
+                        </View>
+                    ) : (
+                        <WatchlistCard watchlist={watchlist || null} reviews={reviewsList}/>
+                    )}
                 </View>
             </ScrollView>
-
         </SafeAreaView>
     );
 }

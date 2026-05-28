@@ -11,11 +11,11 @@ import {getUnreadCustomerNotificationCount, pushCustomerNotification} from '../.
 import {fetchMyBookings} from '../../../services/CustomerBookingService';
 import {getSession} from '../../../utils/authStorage';
 import Avatar from '../../../components/common/Avatar';
+import {formatVnd} from '../../../utils/formatCurrency';
 
 const DEFAULT_BOOKING_IMAGE = STAFF_MEDIA.ROOM_IMAGE;
 const MOMO_LOGO = STAFF_MEDIA.MOMO_LOGO;
 const ZALOPAY_LOGO = STAFF_MEDIA.ZALOPAY_LOGO;
-const formatUsd = (amount) => Number(amount || 0).toLocaleString('en-US');
 const normalizeBookingId = (value) => String(value || '').trim().toUpperCase().replace(/^#/, '');
 const FORCE_REMOVED_BOOKING_IDS = new Set(['BK296489']);
 
@@ -370,7 +370,9 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
                     setAvatarUrl('');
                     setAvatarName('');
                 });
-            getUnreadCustomerNotificationCount().then(setUnreadNotificationCount).catch(() => setUnreadNotificationCount(0));
+            getUnreadCustomerNotificationCount()
+                .then(setUnreadNotificationCount)
+                .catch(() => Alert.alert('Notifications', 'Unable to load notification count right now.'));
 
             return () => {
                 mounted = false;
@@ -578,7 +580,7 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
             await pushCustomerNotification({
                 title: 'Payment recorded',
                 type: 'payment',
-                message: `You paid invoice for Booking ID ${bookingId}: ${formatUsd(summary.remainingAmount)} USD via ${getPaymentMethodLabel(invoicePaymentMethod)}.`,
+                message: `You paid invoice for Booking ID ${bookingId}: ${formatVnd(summary.remainingAmount)} via ${getPaymentMethodLabel(invoicePaymentMethod)}.`,
                 meta: {
                     bookingId,
                     amount: summary.remainingAmount,
@@ -805,8 +807,8 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
                 <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}
-                    placeholder="AI will find room you want"
-                    placeholderTextColor="#999"
+                    placeholder="Search bookings"
+                    placeholderTextColor="#6B7280"
                     style={styles.searchInput}
                 />
             </View>
@@ -1043,12 +1045,12 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
 
                             <View style={styles.invoiceSummaryCard}>
                                 <Text style={styles.invoiceServicesTitle}>Charge breakdown</Text>
-                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Room subtotal</Text><Text style={styles.invoiceValue}>{formatUsd(selectedPaymentSummary?.subtotalPrice)} USD</Text></View>
-                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Service total</Text><Text style={styles.invoiceValue}>{formatUsd(selectedPaymentSummary?.payableServiceTotal)} USD</Text></View>
-                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>VAT</Text><Text style={styles.invoiceValue}>{formatUsd(selectedPaymentSummary?.vatAmount)} USD</Text></View>
-                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Deposit</Text><Text style={styles.invoiceValue}>{formatUsd(selectedPaymentSummary?.depositAmount)} USD</Text></View>
-                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Guest paid</Text><Text style={styles.invoiceValueAccent}>{formatUsd(selectedPaymentSummary?.paidAmount)} USD</Text></View>
-                                <View style={[styles.invoiceRow, styles.invoiceRowLast]}><Text style={styles.invoiceLabel}>Remaining payment</Text><Text style={styles.invoiceValueDue}>{formatUsd(selectedPaymentSummary?.remainingAmount)} USD</Text></View>
+                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Room subtotal</Text><Text style={styles.invoiceValue}>{formatVnd(selectedPaymentSummary?.subtotalPrice)}</Text></View>
+                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Service total</Text><Text style={styles.invoiceValue}>{formatVnd(selectedPaymentSummary?.payableServiceTotal)}</Text></View>
+                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>VAT</Text><Text style={styles.invoiceValue}>{formatVnd(selectedPaymentSummary?.vatAmount)}</Text></View>
+                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Deposit</Text><Text style={styles.invoiceValue}>{formatVnd(selectedPaymentSummary?.depositAmount)}</Text></View>
+                                <View style={styles.invoiceRow}><Text style={styles.invoiceLabel}>Guest paid</Text><Text style={styles.invoiceValueAccent}>{formatVnd(selectedPaymentSummary?.paidAmount)}</Text></View>
+                                <View style={[styles.invoiceRow, styles.invoiceRowLast]}><Text style={styles.invoiceLabel}>Remaining payment</Text><Text style={styles.invoiceValueDue}>{formatVnd(selectedPaymentSummary?.remainingAmount)}</Text></View>
                             </View>
 
                             <View style={styles.invoiceSummaryCard}>
@@ -1076,7 +1078,7 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
                                                 <Text style={styles.invoiceServiceMeta}>{service?.date || 'N/A'} {service?.time ? `• ${service.time}` : ''}</Text>
                                             </View>
                                             <View style={styles.invoiceServiceFeeWrap}>
-                                                <Text style={styles.invoiceServiceFee}>{formatUsd(service?.price || 0)} USD</Text>
+                                                <Text style={styles.invoiceServiceFee}>{formatVnd(service?.price || 0)}</Text>
                                             </View>
                                         </View>
                                     ))}
@@ -1092,7 +1094,7 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
                         <View style={styles.invoiceFooter}>
                             {selectedPaymentSummary?.remainingAmount > 0 ? (
                                 <TouchableOpacity style={styles.invoicePayRemainingBtn} onPress={handlePayRemaining}>
-                                    <Text style={styles.invoicePayRemainingBtnText}>Pay remaining {formatUsd(selectedPaymentSummary?.remainingAmount)} USD</Text>
+                                    <Text style={styles.invoicePayRemainingBtnText}>Pay remaining {formatVnd(selectedPaymentSummary?.remainingAmount)}</Text>
                                 </TouchableOpacity>
                             ) : (
                                 <View style={styles.invoicePaidChip}>
@@ -1217,7 +1219,7 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
 const styles = StyleSheet.create({
     page: {
         flex: 1,
-        backgroundColor: '#efefef',
+        backgroundColor: '#F5F7FA',
     },
     headerRow: {
         paddingHorizontal: 16,
@@ -1229,14 +1231,15 @@ const styles = StyleSheet.create({
     },
     currentLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#383838',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     currentValue: {
         fontFamily: 'SF-Bold',
-        fontSize: 20,
+        fontSize: 22,
         lineHeight: 24,
-        color: '#1b1b1b',
+        color: '#111111',
     },
     headerActions: {
         flexDirection: 'row',
@@ -1278,13 +1281,13 @@ const styles = StyleSheet.create({
         marginTop: 16,
         marginHorizontal: 16,
         borderWidth: 1.2,
-        borderColor: '#3f3f3f',
+        borderColor: '#111111',
         borderRadius: 16,
         height: 40,
         paddingHorizontal: 10,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#efefef',
+        backgroundColor: '#FFFFFF',
     },
     aiIconWrap: {
         width: 30,
@@ -1298,8 +1301,9 @@ const styles = StyleSheet.create({
         flex: 1,
         marginLeft: 8,
         fontFamily: 'SF-Regular',
-        fontSize: 15,
-        color: '#1f1f1f',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
         paddingVertical: 0,
     },
     tabRow: {
@@ -1315,8 +1319,9 @@ const styles = StyleSheet.create({
     },
     tabText: {
         fontFamily: 'SF-Regular',
-        fontSize: 15,
-        color: '#9a9a9a',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         marginBottom: 8,
     },
     tabTextActive: {
@@ -1459,7 +1464,8 @@ const styles = StyleSheet.create({
     actionBtnSecondaryText: {
         marginLeft: 6,
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#2aa8b9',
     },
     noticeBar: {
@@ -1475,9 +1481,9 @@ const styles = StyleSheet.create({
     noticeText: {
         textAlign: 'center',
         fontFamily: 'SF-Regular',
-        fontSize: 10,
-        lineHeight: 14,
-        color: '#1b1b1b',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     modalBackdrop: {
         flex: 1,
@@ -1538,9 +1544,9 @@ const styles = StyleSheet.create({
     },
     modalSubtitle: {
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        lineHeight: 18,
-        color: '#676772',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginBottom: 10,
     },
     stepsWrap: {
@@ -1568,14 +1574,16 @@ const styles = StyleSheet.create({
     },
     invoiceRoomName: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#5e6070',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginTop: 2,
     },
     invoiceBookingId: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#767887',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginTop: 6,
     },
     invoiceSummaryCard: {
@@ -1612,14 +1620,16 @@ const styles = StyleSheet.create({
     },
     invoiceDetailLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 11,
-        color: '#7a7b85',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginBottom: 4,
     },
     invoiceDetailValue: {
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
-        color: '#1f1f24',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     invoiceRow: {
         flexDirection: 'row',
@@ -1641,13 +1651,15 @@ const styles = StyleSheet.create({
     },
     invoiceStatusLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        color: '#5f5f67',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     invoiceStatusValue: {
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
-        color: '#202028',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     invoiceStatusPending: {
         color: '#cf5a2d',
@@ -1657,22 +1669,26 @@ const styles = StyleSheet.create({
     },
     invoiceLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        color: '#5f5f67',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     invoiceValue: {
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
-        color: '#202028',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     invoiceValueAccent: {
         fontFamily: 'SF-Bold',
-        fontSize: 13,
+        fontSize: 15,
+        lineHeight: 22,
         color: '#2a8d5d',
     },
     invoiceValueDue: {
         fontFamily: 'SF-Bold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#cf5a2d',
     },
     invoiceServicesCard: {
@@ -1684,8 +1700,9 @@ const styles = StyleSheet.create({
     },
     invoiceMethodHint: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#797b88',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginBottom: 8,
     },
     invoicePaymentMethodBtn: {
@@ -1721,13 +1738,15 @@ const styles = StyleSheet.create({
     },
     invoicePaymentMethodLabel: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#22242b',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     invoiceServicesTitle: {
         fontFamily: 'SF-Bold',
-        fontSize: 14,
-        color: '#1f1f24',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
         marginBottom: 8,
     },
     invoiceServiceItem: {
@@ -1748,19 +1767,22 @@ const styles = StyleSheet.create({
     },
     invoiceServiceName: {
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
-        color: '#26262d',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     invoiceServiceCode: {
         fontFamily: 'SF-Regular',
-        fontSize: 11,
-        color: '#7a7b85',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginTop: 2,
     },
     invoiceServiceMeta: {
         fontFamily: 'SF-Regular',
-        fontSize: 11,
-        color: '#7a7b85',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
         marginTop: 2,
     },
     invoiceServiceFeeWrap: {
@@ -1770,13 +1792,15 @@ const styles = StyleSheet.create({
     },
     invoiceServiceFee: {
         fontFamily: 'SF-Bold',
-        fontSize: 13,
-        color: '#26262d',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#111111',
     },
     invoiceEmptyText: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#7a7b85',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
     },
     invoiceFooter: {
         paddingHorizontal: 18,
@@ -1798,7 +1822,8 @@ const styles = StyleSheet.create({
     },
     invoicePayRemainingBtnText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#fff',
     },
     invoicePaidChip: {
@@ -1813,14 +1838,15 @@ const styles = StyleSheet.create({
     },
     invoicePaidChipText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#2b8b5e',
     },
     stepText: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        lineHeight: 18,
-        color: '#3a3a44',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
     },
     modalInput: {
         borderWidth: 1,
@@ -1830,8 +1856,9 @@ const styles = StyleSheet.create({
         height: 42,
         marginBottom: 8,
         fontFamily: 'SF-Regular',
-        fontSize: 14,
-        color: '#151520',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
         backgroundColor: '#fff',
     },
     modalTimePickerBtn: {
@@ -1848,8 +1875,9 @@ const styles = StyleSheet.create({
     },
     modalTimePickerBtnText: {
         fontFamily: 'SF-Regular',
-        fontSize: 14,
-        color: '#151520',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     modalTimePickerBtnTextPlaceholder: {
         color: '#9a9a9a',
@@ -1874,8 +1902,9 @@ const styles = StyleSheet.create({
     },
     modalBtnSecondaryText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#2c2d31',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     modalBtnPrimary: {
         flex: 1,
@@ -1887,7 +1916,8 @@ const styles = StyleSheet.create({
     },
     modalBtnPrimaryText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: 22,
         color: '#fff',
     },
     pickerBackdrop: {
@@ -1939,8 +1969,9 @@ const styles = StyleSheet.create({
     },
     pickerCloseBtnText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 14,
-        color: '#2c2d31',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     paymentSuccessCard: {
         backgroundColor: '#fff',
@@ -1962,9 +1993,9 @@ const styles = StyleSheet.create({
     },
     paymentSuccessDescription: {
         fontFamily: 'SF-Regular',
-        fontSize: 14,
-        lineHeight: 20,
-        color: '#5f5f67',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         textAlign: 'center',
         marginBottom: 14,
     },
@@ -2011,9 +2042,9 @@ const styles = StyleSheet.create({
     },
     checkInSuccessDescription: {
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        lineHeight: 19,
-        color: '#616370',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         textAlign: 'center',
         marginBottom: 14,
     },
@@ -2040,15 +2071,17 @@ const styles = StyleSheet.create({
     },
     checkInSuccessLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#6d7280',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         flex: 1,
         paddingRight: 10,
     },
     checkInSuccessValue: {
         fontFamily: 'SF-Semibold',
-        fontSize: 13,
-        color: '#20242d',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
         flex: 1.1,
         textAlign: 'right',
     },
@@ -2066,8 +2099,9 @@ const styles = StyleSheet.create({
     },
     emptyText: {
         fontFamily: 'SF-Regular',
-        color: '#8f8f8f',
-        fontSize: 15,
+        color: '#333333',
+        fontSize: 16,
+        lineHeight: 22,
         textAlign: 'center',
         marginTop: 30,
     },

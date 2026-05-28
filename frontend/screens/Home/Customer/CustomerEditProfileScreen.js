@@ -15,7 +15,7 @@ export default function CustomerEditProfileScreen({navigation}) {
     const [isLocating, setIsLocating] = useState(false);
 
     useEffect(() => {
-        loadProfile().catch(() => {});
+        loadProfile().catch(() => Alert.alert('Profile', 'Unable to load profile right now. Please try again.'));
     }, [loadProfile]);
 
     useEffect(() => {

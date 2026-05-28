@@ -23,10 +23,19 @@ class ExtraServiceViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated(), IsBusinessMember()]
 
     def get_queryset(self):
-        qs = ExtraService.objects.select_related("branch").order_by("-created_at")
+        qs = ExtraService.objects.select_related("branch", "branch__company").order_by("name")
         user = self.request.user
         role = getattr(user, "role", None)
-        if role in {"SUPER_ADMIN", "BUSINESS_OWNER"}:
+        branch_id = self.request.query_params.get("branch_id") or self.request.query_params.get("branch")
+
+        if role == "CUSTOMER":
+            if branch_id:
+                return qs.filter(branch_id=branch_id, branch__is_active=True)
+            return qs.none()
+
+        if role in {"SUPER_ADMIN"}:
+            pass
+        elif role in {"BUSINESS_OWNER"}:
             qs = qs.filter(branch__company__manager=user)
         else:
             staff_branch_id = (
@@ -36,7 +45,7 @@ class ExtraServiceViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(branch_id=staff_branch_id)
             else:
                 qs = qs.none()
-        branch_id = self.request.query_params.get("branch_id") or self.request.query_params.get("branch")
+
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
         return qs

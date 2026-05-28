@@ -6,6 +6,7 @@ from django.db import transaction
 from accounts.models import Role, User
 from businesses.models import Branch, Company
 from rooms.models import BranchTheme, Room, RoomCategory, RoomTheme, RoomThemeLink
+from service_orders.models import ExtraService
 
 
 THEMES = [
@@ -25,6 +26,14 @@ BRANCH_IMAGES = [
     "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=1600&q=80",
     "https://images.unsplash.com/photo-1551887373-6d7f0e5d95c3?auto=format&fit=crop&w=1600&q=80",
     "https://images.unsplash.com/photo-1501117716987-c8e2a2b2c0b1?auto=format&fit=crop&w=1600&q=80",
+]
+
+BRANCH_SERVICE_TEMPLATES = [
+    ("Airport Transfer", 350000, "car-sport-outline", "TRANSPORT"),
+    ("Breakfast Buffet", 220000, "restaurant-outline", "RESTAURANT"),
+    ("Spa Package", 680000, "flower-outline", "SPA"),
+    ("Late Checkout", 200000, "time-outline", "ROOM_SERVICE"),
+    ("Laundry Express", 120000, "shirt-outline", "ROOM_SERVICE"),
 ]
 
 ROOM_IMAGES = [
@@ -176,9 +185,30 @@ class Command(BaseCommand):
             for t in random.sample(theme_rows, k=random.randint(2, 4)):
                 BranchTheme.objects.get_or_create(branch=b, theme=t)
 
+        services_created = 0
+        for b in branches:
+            picked = random.sample(
+                BRANCH_SERVICE_TEMPLATES,
+                k=random.randint(3, min(5, len(BRANCH_SERVICE_TEMPLATES))),
+            )
+            for name, price, icon, category in picked:
+                _, created = ExtraService.objects.get_or_create(
+                    branch=b,
+                    name=name,
+                    defaults={
+                        "price": price,
+                        "icon": icon,
+                        "category": category,
+                        "description": f"{name} at {b.name}",
+                    },
+                )
+                if created:
+                    services_created += 1
+
         self.stdout.write(
             self.style.SUCCESS(
-                f"Seeded themes={RoomTheme.objects.count()} branches={len(branches)} rooms_total={Room.objects.count()}"
+                f"Seeded themes={RoomTheme.objects.count()} branches={len(branches)} "
+                f"rooms_total={Room.objects.count()} branch_services={services_created}"
             )
         )
 

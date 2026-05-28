@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'bookings',
     'staff',
     'service_orders',
+    'payments',
 ]
 
 MIDDLEWARE = [
@@ -294,6 +295,19 @@ else:
     EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
     EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
     EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+
+MOMO_PARTNER_CODE = os.getenv('MOMO_PARTNER_CODE', 'MOMO')
+MOMO_ACCESS_KEY = os.getenv('MOMO_ACCESS_KEY', '')
+MOMO_SECRET_KEY = os.getenv('MOMO_SECRET_KEY', '')
+MOMO_REDIRECT_URL = os.getenv('MOMO_REDIRECT_URL', 'https://nesto.local/payments/momo/return')
+MOMO_IPN_URL = os.getenv('MOMO_IPN_URL', 'https://nesto.local/payments/momo/ipn')
+MOMO_ENDPOINT = os.getenv('MOMO_ENDPOINT', 'https://test-payment.momo.vn/v2/gateway/api/create')
+
+ZALOPAY_APP_ID = os.getenv('ZALOPAY_APP_ID', '2553')
+ZALOPAY_KEY1 = os.getenv('ZALOPAY_KEY1', '')
+ZALOPAY_APP_USER = os.getenv('ZALOPAY_APP_USER', 'nesto_guest')
+ZALOPAY_REDIRECT_URL = os.getenv('ZALOPAY_REDIRECT_URL', 'https://nesto.local/payments/zalopay/return')
+ZALOPAY_ENDPOINT = os.getenv('ZALOPAY_ENDPOINT', 'https://sb-openapi.zalopay.vn/v2/create')
 
 GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID', '')
 GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', '')

@@ -39,6 +39,7 @@ export const endpoints = {
     'rooms': '/operations/rooms/',
     'room-detail': (roomId) => `/operations/rooms/${roomId}/`,
     'customer-catalog': '/operations/customer-catalog/',
+    'branch-room-types': '/operations/branch-room-types/',
     'housekeeping-tasks': '/operations/housekeeping-tasks/',
     'housekeeping-task-detail': (taskId) => `/operations/housekeeping-tasks/${taskId}/`,
     'housekeeping-task-complete': (taskId) => `/operations/housekeeping-tasks/${taskId}/complete/`,
@@ -51,6 +52,9 @@ export const endpoints = {
     'booking-checkout': (bookingId) => `/operations/bookings/${bookingId}/checkout/`,
     'booking-add-extra-service': (bookingId) => `/operations/bookings/${bookingId}/add-extra-service/`,
     'customer-bookings': '/operations/customer-bookings/',
+    'customer-booking-detail': (bookingId) => `/operations/customer-bookings/${bookingId}/`,
+    'customer-booking-check-in': (bookingId) => `/operations/customer-bookings/${bookingId}/check-in/`,
+    'customer-booking-add-service': (bookingId) => `/operations/customer-bookings/${bookingId}/add-service/`,
     'reviews': '/operations/reviews/',
     'review-toggle-heart': (reviewId) => `/operations/reviews/${reviewId}/toggle-heart/`,
     'ai-search': '/operations/ai-search/',
@@ -74,6 +78,8 @@ export const endpoints = {
     'invoice-detail': (invoiceId) => `/billing/invoices/${invoiceId}/`,
     'transactions': '/billing/transactions/',
     'transaction-detail': (transactionId) => `/billing/transactions/${transactionId}/`,
+    'payments-momo': '/payments/momo/',
+    'payments-zalopay': '/payments/zalopay/',
 };
 
 api.interceptors.request.use(async (config) => {

@@ -1,5 +1,5 @@
 import React, {useCallback, useState} from 'react';
-import {RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
@@ -26,10 +26,16 @@ const formatRelativeTime = (isoTime) => {
 export default function CustomerNotificationsScreen({navigation}) {
     const [notifications, setNotifications] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     const loadNotifications = useCallback(async () => {
-        const items = await listCustomerNotifications();
-        setNotifications(items);
+        try {
+            const items = await listCustomerNotifications();
+            setNotifications(Array.isArray(items) ? items : []);
+        } catch (error) {
+            setNotifications([]);
+            Alert.alert('Notifications', 'Unable to load notifications. Please try again.');
+        }
     }, []);
 
     useFocusEffect(
@@ -37,9 +43,19 @@ export default function CustomerNotificationsScreen({navigation}) {
             let mounted = true;
 
             const run = async () => {
-                await markAllCustomerNotificationsRead();
-                const items = await listCustomerNotifications();
-                if (mounted) setNotifications(items);
+                setIsLoading(true);
+                try {
+                    await markAllCustomerNotificationsRead();
+                    const items = await listCustomerNotifications();
+                    if (mounted) setNotifications(Array.isArray(items) ? items : []);
+                } catch (error) {
+                    if (mounted) {
+                        setNotifications([]);
+                        Alert.alert('Notifications', 'Unable to sync notifications right now.');
+                    }
+                } finally {
+                    if (mounted) setIsLoading(false);
+                }
             };
 
             run();
@@ -76,7 +92,11 @@ export default function CustomerNotificationsScreen({navigation}) {
                     />
                 }
             >
-                {notifications.length ? notifications.map((item) => (
+                {isLoading ? (
+                    <View style={styles.loadingWrap}>
+                        <ActivityIndicator size="large" color="#5b79df" />
+                    </View>
+                ) : notifications.length ? notifications.map((item) => (
                     <View key={item.id} style={styles.card}>
                         <View style={styles.cardTop}>
                             <Text style={styles.cardTitle}>{item.title}</Text>
@@ -97,7 +117,7 @@ export default function CustomerNotificationsScreen({navigation}) {
 const styles = StyleSheet.create({
     page: {
         flex: 1,
-        backgroundColor: '#efefef',
+        backgroundColor: '#F5F7FA',
     },
     headerRow: {
         flexDirection: 'row',
@@ -128,6 +148,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingBottom: 108,
         gap: 10,
+    },
+    loadingWrap: {
+        paddingVertical: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     card: {
         borderRadius: 14,

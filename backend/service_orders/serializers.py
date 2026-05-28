@@ -12,6 +12,7 @@ class ExtraServiceSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "price",
+            "icon",
             "category",
             "created_at",
             "updated_at",

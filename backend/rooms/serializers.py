@@ -23,6 +23,13 @@ class RoomCategorySerializer(serializers.ModelSerializer):
         ]
 
 
+class RoomCategoryAvailabilitySerializer(RoomCategorySerializer):
+    available_count = serializers.IntegerField(read_only=True)
+
+    class Meta(RoomCategorySerializer.Meta):
+        fields = RoomCategorySerializer.Meta.fields + ["available_count"]
+
+
 class RoomThemeSerializer(serializers.ModelSerializer):
     class Meta:
         model = RoomTheme

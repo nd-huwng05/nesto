@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import {getSession} from '../../../utils/authStorage';
 import {fetchReviews, createReview} from '../../../services/ReviewService';
+import {fetchMyBookings} from '../../../services/CustomerBookingService';
 import EmptyState from '../../../components/common/EmptyState';
 import Avatar from '../../../components/common/Avatar';
 
@@ -114,9 +115,10 @@ export default function CustomerLocketScreen({navigation}) {
                     if (mounted) setCurrentUser({name: userName, email: userEmail});
                     if (mounted) setAvatarUrl(String(session?.user?.avatar || '').trim());
 
-                    const [mineRes, globalRes] = await Promise.all([
+                    const [mineRes, globalRes, bookingsRes] = await Promise.all([
                         fetchReviews({mine: true}),
                         fetchReviews({}),
+                        fetchMyBookings(),
                     ]);
                     const minePosts = mineRes.status === 'success' && Array.isArray(mineRes.data) ? mineRes.data : [];
                     const globalPosts = globalRes.status === 'success' && Array.isArray(globalRes.data) ? globalRes.data : [];
@@ -143,8 +145,18 @@ export default function CustomerLocketScreen({navigation}) {
                         };
                     }).filter((row) => row.id);
 
+                    const bookingRows = bookingsRes.status === 'success' && Array.isArray(bookingsRes.data)
+                        ? bookingsRes.data
+                        : [];
+                    const records = bookingRows.map((booking) => ({
+                        bookingId: booking?.bookingCode || booking?.booking_code || '',
+                        hotelName: booking?.hotel_name || booking?.hotelName || 'Hotel',
+                        roomName: booking?.room_type || booking?.roomType || booking?.roomNumber || 'Room',
+                        status: booking?.status || '',
+                    })).filter((row) => String(row.bookingId || '').trim());
+
                     if (mounted) {
-                        setBookingRecords([]);
+                        setBookingRecords(records);
                         setLockets(mapped);
                     }
                 } catch {
@@ -530,14 +542,16 @@ const styles = StyleSheet.create({
     },
     gridHotel: {
         fontFamily: 'SF-Bold',
-        fontSize: 13,
-        color: '#111827',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     gridRoom: {
         marginTop: 2,
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#374151',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     gridMeta: {
         paddingHorizontal: 12,
@@ -545,18 +559,19 @@ const styles = StyleSheet.create({
     },
     gridTime: {
         fontFamily: 'SF-SemiBold',
-        fontSize: 11,
-        color: '#6b7280',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     gridCaption: {
         marginTop: 6,
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#111827',
-        lineHeight: 16,
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     gridAuthorRow: {marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8},
-    gridAuthorName: {flex: 1, fontFamily: 'SF-SemiBold', fontSize: 12, color: '#111827'},
+    gridAuthorName: {flex: 1, fontFamily: 'SF-SemiBold', fontSize: 15, lineHeight: 22, color: '#111111'},
     fab: {
         position: 'absolute',
         right: 18,

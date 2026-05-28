@@ -11,7 +11,7 @@ import Avatar from '../../../components/common/Avatar';
 import * as Location from 'expo-location';
 import {connectCustomerUpdates} from '../../../services/WebSocketService';
 
-const STATIC_TABS = ['AI ✨', 'ALL'];
+const BASE_TABS = ['AI ✨', 'ALL'];
 const DEFAULT_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
 const DEFAULT_RATING_VALUE = 0;
 
@@ -23,6 +23,17 @@ const toImageUri = (image) => {
         return image;
     }
     return DEFAULT_HOTEL_IMAGE;
+};
+
+const normalizeThemeNames = (themes) => {
+    const list = Array.isArray(themes) ? themes : [];
+    const names = list
+        .map((t) => {
+            if (typeof t === 'string') return t;
+            return String(t?.name || '').trim();
+        })
+        .filter(Boolean);
+    return Array.from(new Set(names));
 };
 
 function HotelCard({item, onPress, cardWidth}) {
@@ -37,7 +48,9 @@ function HotelCard({item, onPress, cardWidth}) {
             <View style={styles.hotelMeta}>
                 <View style={styles.hotelTitleRow}>
                     <Text style={styles.hotelTitle} numberOfLines={1}>{item.title}</Text>
-                    <Text style={styles.hotelPrice} numberOfLines={1}>{item.price}</Text>
+                    {String(item?.price || '').trim() ? (
+                        <Text style={styles.hotelPrice} numberOfLines={1}>{String(item.price).trim()}</Text>
+                    ) : null}
                 </View>
                 <View style={styles.hotelInfoRow}>
                     <Text style={styles.hotelCity} numberOfLines={1}>{item.city}</Text>
@@ -111,28 +124,9 @@ function Section({title, data, cardWidth, navigation}) {
 }
 
 function filterHotelsByTab(tab, catalog) {
-    return catalog.filter((item) => {
-        const title = String(item?.title || '').toLowerCase();
-        const city = String(item?.city || '').toLowerCase();
-        const rating = Number.parseFloat(item?.rating || '0');
-
-        if (tab === 'ALL') {
-            return true;
-        }
-        if (tab === 'Family' || tab === 'Business') {
-            return item.category === tab;
-        }
-        if (tab === 'Featured') {
-            return rating >= 4.7;
-        }
-        if (tab === 'Suite') {
-            return title.includes('suite');
-        }
-        if (tab === 'View') {
-            return true;
-        }
-        return city.length > 0 || title.length > 0;
-    });
+    const key = String(tab || '').trim();
+    if (!key || key === 'ALL') return catalog;
+    return catalog.filter((row) => Array.isArray(row?.themes) && row.themes.includes(key));
 }
 
 function filterHotelsByKeyword(items, keyword) {
@@ -163,7 +157,7 @@ export function HomeScreen({navigation}) {
     const [avatarUrl, setAvatarUrl] = useState('');
     const [avatarName, setAvatarName] = useState('');
     const hasLoadedRef = useRef(false);
-    const [tabs, setTabs] = useState(STATIC_TABS);
+    const [tabs, setTabs] = useState(BASE_TABS);
     const [themes, setThemes] = useState([]);
     const [isSyncing, setIsSyncing] = useState(false);
     const [accessToken, setAccessToken] = useState('');
@@ -182,7 +176,8 @@ export function HomeScreen({navigation}) {
             const res = await api.get(endpoints['customer-catalog'], {params});
             const rows = res?.data?.results || res?.data || [];
             setCatalog(Array.isArray(rows) ? rows : []);
-        } catch {
+        } catch (error) {
+            if (!silent) Alert.alert('Error', 'Failed to load stays. Please try again.');
         } finally {
             if (shouldBlock) setIsLoading(false);
             if (silent) setIsSyncing(false);
@@ -197,11 +192,11 @@ export function HomeScreen({navigation}) {
             setThemes(list);
             const names = list
                 .map((t) => String(t?.name || '').trim())
-                .filter((name) => Boolean(name) && !STATIC_TABS.includes(name));
-            setTabs([...STATIC_TABS, ...names]);
-        } catch {
+                .filter((name) => Boolean(name) && !BASE_TABS.includes(name));
+            setTabs([...BASE_TABS, ...names]);
+        } catch (error) {
             setThemes([]);
-            setTabs(STATIC_TABS);
+            setTabs(BASE_TABS);
         }
     }, []);
 
@@ -231,7 +226,8 @@ export function HomeScreen({navigation}) {
             const branches = res?.data?.results?.branches || [];
             setCatalog(Array.isArray(branches) ? branches : []);
             setActiveTab('ALL');
-        } catch {
+        } catch (error) {
+            Alert.alert('Error', 'AI search failed. Please try again.');
         } finally {
             setIsSearching(false);
         }
@@ -249,7 +245,7 @@ export function HomeScreen({navigation}) {
             const res = await api.get(endpoints['search-suggestions'], {params});
             const rows = res?.data?.results || [];
             setAiSuggestions(Array.isArray(rows) ? rows : []);
-        } catch {
+        } catch (error) {
             setAiSuggestions([]);
         } finally {
             setIsAiLoading(false);
@@ -324,7 +320,8 @@ export function HomeScreen({navigation}) {
         try {
             await loadCatalog();
             setUnreadNotificationCount(await getUnreadCustomerNotificationCount());
-        } catch {
+        } catch (error) {
+            Alert.alert('Error', 'Failed to refresh. Please try again.');
         } finally {
             setIsRefreshing(false);
         }
@@ -336,8 +333,8 @@ export function HomeScreen({navigation}) {
             ...item,
             syncedRating: Number.isFinite(item?.rating) ? item.rating : DEFAULT_RATING_VALUE,
             reviewCount: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
-            themes: Array.isArray(item?.themes) ? item.themes : [],
-            price: item?.price || 'From 250,000',
+            themes: normalizeThemeNames(item?.themes),
+            price: String(item?.price || '').trim(),
         }));
     }, [catalog]);
 
@@ -417,8 +414,8 @@ export function HomeScreen({navigation}) {
                     <TextInput
                         value={searchText}
                         onChangeText={setSearchText}
-                        placeholder="AI will find room you want"
-                        placeholderTextColor="#8e8e8e"
+                        placeholder="Search with AI"
+                        placeholderTextColor="#6B7280"
                         style={styles.searchInput}
                         returnKeyType="search"
                         onFocus={() => setActiveTab('AI ✨')}
@@ -509,7 +506,7 @@ export function HomeScreen({navigation}) {
 const styles = StyleSheet.create({
     page: {
         flex: 1,
-        backgroundColor: '#efefef',
+        backgroundColor: '#F5F7FA',
     },
     loadingWrap: {
         flex: 1,
@@ -520,8 +517,9 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         marginTop: 10,
-        color: '#4b5563',
-        fontSize: 14,
+        color: '#333333',
+        fontSize: 16,
+        lineHeight: 22,
         fontFamily: 'SF-Bold',
     },
     scrollContent: {
@@ -541,14 +539,15 @@ const styles = StyleSheet.create({
     },
     locationLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        color: '#272727',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     locationValue: {
         fontFamily: 'SF-Bold',
-        fontSize: 20,
+        fontSize: 22,
         lineHeight: 24,
-        color: '#1b1b1b',
+        color: '#111111',
     },
     headerActions: {
         flexDirection: 'row',
@@ -588,7 +587,7 @@ const styles = StyleSheet.create({
     searchBox: {
         marginTop: 8,
         borderWidth: 1,
-        borderColor: '#4a4a4a',
+        borderColor: '#111111',
         borderRadius: 18,
         height: 40,
         flexDirection: 'row',
@@ -596,7 +595,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 10,
         paddingVertical: 0,
-        backgroundColor: '#efefef',
+        backgroundColor: '#FFFFFF',
     },
     aiIconWrap: {
         width: 30,
@@ -613,10 +612,10 @@ const styles = StyleSheet.create({
         minHeight: 40,
         maxHeight: 40,
         fontFamily: 'SF-Regular',
-        fontSize: 15,
-        lineHeight: 18,
+        fontSize: 16,
+        lineHeight: 22,
         paddingVertical: 0,
-        color: '#8e8e8e',
+        color: '#111111',
         includeFontPadding: false,
         textAlignVertical: 'center',
     },
@@ -631,13 +630,14 @@ const styles = StyleSheet.create({
     },
     tabLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 15,
-        color: '#4d4d4d',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
     },
     tabLabelActive: {
         fontFamily: 'SF-Black',
         fontSize: 17,
-        color: '#1b1b1b',
+        color: '#111111',
     },
     activeUnderline: {
         marginTop: 2,
@@ -667,14 +667,16 @@ const styles = StyleSheet.create({
     },
     suggestionTitle: {
         fontFamily: 'SF-Bold',
-        fontSize: 14,
-        color: '#111827',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     suggestionSubtitle: {
         marginTop: 4,
         fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#6b7280',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     sectionTitle: {
         fontFamily: 'SF-Black',
@@ -717,12 +719,13 @@ const styles = StyleSheet.create({
         fontFamily: 'SF-Black',
         fontSize: 16,
         lineHeight: 20,
-        color: '#202020',
+        color: '#111111',
     },
     hotelPrice: {
         fontFamily: 'SF-Bold',
-        fontSize: 15,
-        color: '#202020',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#111111',
     },
     hotelInfoRow: {
         marginTop: 2,
@@ -734,8 +737,9 @@ const styles = StyleSheet.create({
     hotelCity: {
         flex: 1,
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        color: '#7e7e7e',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     ratingRow: {
         flexDirection: 'row',
@@ -745,13 +749,15 @@ const styles = StyleSheet.create({
     hotelRating: {
         marginLeft: 3,
         fontFamily: 'SF-Regular',
-        fontSize: 13,
-        color: '#7e7e7e',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#333333',
     },
     emptyText: {
         fontFamily: 'SF-Regular',
-        fontSize: 14,
-        color: '#7e7e7e',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#333333',
         paddingVertical: 8,
     },
 });
