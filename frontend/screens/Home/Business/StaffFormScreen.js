@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -12,13 +12,15 @@ import {
     View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import {Eye, EyeOff} from 'lucide-react-native';
-import {DEFAULT_STAFF_PASSWORD} from '../../../services/staffMockStore';
+import {DEFAULT_STAFF_PASSWORD} from '../../../services/StaffService';
 import {STAFF_ROLE_PERMISSIONS} from '../../../constants/staffRolePermissions';
 import {FormDropdown} from '../../../components/common/FormDropdown';
 import {DetailScreenHeader} from '../../../components/business/DetailScreenHeader';
 import {useStaffCRUD} from '../../../hooks/business/useStaffCRUD';
 import {STAFF_ROLES} from '../../../services/StaffService';
+import {fetchBranchList} from '../../../services/BranchService';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
 import {UI, cardStyle} from '../../../styles/uiTokens';
 
@@ -87,16 +89,54 @@ export default function StaffFormScreen({navigation, route}) {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
-    const [role, setRole] = useState('Receptionist');
+    const [role, setRole] = useState('RECEPTIONIST');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [businessId, setBusinessId] = useState(presetBusinessId || '');
     const [branchId, setBranchId] = useState(presetBranchId || '');
     const [loading, setLoading] = useState(isEdit);
+    const [branches, setBranches] = useState([]);
+    const [isBranchesLoading, setIsBranchesLoading] = useState(false);
+    const [branchesError, setBranchesError] = useState('');
 
-    useEffect(() => {
-        loadBusinesses();
-    }, [loadBusinesses]);
+    const loadBranchOptions = useCallback(
+        async (nextBusinessId) => {
+            if (!nextBusinessId) {
+                setBranches([]);
+                setBranchesError('');
+                return;
+            }
+            setIsBranchesLoading(true);
+            try {
+                const res = await fetchBranchList(nextBusinessId);
+                if (res?.status !== 'success') {
+                    setBranches([]);
+                    setBranchesError(res?.message || 'Unable to load branches.');
+                    return;
+                }
+                console.log("FRONTEND RECEIVED BRANCHES:", res?.data);
+                const branchData = res.data?.results || res.data;
+                setBranches(Array.isArray(branchData) ? branchData : []);
+                setBranchesError('');
+            } catch (err) {
+                setBranches([]);
+                setBranchesError('Unable to load branches.');
+            } finally {
+                setIsBranchesLoading(false);
+            }
+        },
+        []
+    );
+
+    useFocusEffect(
+        useCallback(() => {
+            loadBusinesses();
+            if (businessId) {
+                loadBranchOptions(businessId);
+            }
+            return () => {};
+        }, [businessId, loadBusinesses, loadBranchOptions])
+    );
 
     useEffect(() => {
         if (assignmentLocked && presetBusinessId && presetBranchId) {
@@ -104,6 +144,19 @@ export default function StaffFormScreen({navigation, route}) {
             setBranchId(presetBranchId);
         }
     }, [assignmentLocked, presetBranchId, presetBusinessId]);
+
+    useEffect(() => {
+        loadBranchOptions(businessId);
+    }, [businessId, loadBranchOptions]);
+
+    useEffect(() => {
+        if (assignmentLocked) return;
+        if (isEdit) return;
+        if (branchId) return;
+        if (Array.isArray(branches) && branches.length > 0) {
+            setBranchId(branches[0]?.id || '');
+        }
+    }, [assignmentLocked, isEdit, branchId, branches]);
 
     useEffect(() => {
         if (!isEdit) {
@@ -132,20 +185,17 @@ export default function StaffFormScreen({navigation, route}) {
         [businesses]
     );
 
-    const branchesForBusiness = useMemo(() => {
-        const business = businesses.find((b) => b.id === businessId);
-        return business?.branches || [];
-    }, [businesses, businessId]);
-
     const branchOptions = useMemo(
-        () => branchesForBusiness.map((br) => ({value: br.id, label: br.name})),
-        [branchesForBusiness]
+        () =>
+            (Array.isArray(branches) ? branches : [])
+                .filter((br) => br?.id)
+                .map((br) => ({value: br.id, label: br?.name ?? '—'})),
+        [branches]
     );
 
     const handleBusinessChange = (nextBusinessId) => {
         setBusinessId(nextBusinessId);
-        const business = businesses.find((b) => b.id === nextBusinessId);
-        setBranchId(business?.branches?.[0]?.id || '');
+        setBranchId('');
     };
 
     const handleSave = async () => {
@@ -170,28 +220,40 @@ export default function StaffFormScreen({navigation, route}) {
             return;
         }
 
+        // StaffProfileSerializer expects flattened fields (source="user.*") so DRF builds nested user internally.
         const payload = {
             name: name.trim(),
-            email: email.trim(),
+            email: email.trim().toLowerCase(),
             phone: phone.trim(),
-            role,
-            branchId,
-            businessId,
+            role: role, // maps to user.role
+            branch: branchId, // StaffProfile.branch (UUID)
+            department: role, // StaffProfile.department (RECEPTIONIST/HOUSEKEEPING/MANAGER/SERVICE)
+            job_role: '',
+            password: password.trim() || DEFAULT_STAFF_PASSWORD,
         };
+        console.log('PAYLOAD SENT:', payload);
 
-        if (isEdit) {
-            if (password.trim()) {
-                payload.password = password.trim();
+        try {
+            const res = isEdit
+                ? await update(staffId, payload)
+                : await create(payload);
+            if (res?.status === 'success') {
+                Alert.alert('Saved', isEdit ? 'Staff updated.' : 'Staff member added.', [
+                    {text: 'OK', onPress: () => navigation.goBack()},
+                ]);
+                return;
             }
-        } else {
-            payload.password = password.trim() || DEFAULT_STAFF_PASSWORD;
-        }
-
-        const res = isEdit ? await update(staffId, payload) : await create(payload);
-        if (res?.status === 'success') {
-            Alert.alert('Saved', isEdit ? 'Staff updated.' : 'Staff member added.', [
-                {text: 'OK', onPress: () => navigation.goBack()},
-            ]);
+            console.log('API ERROR:', res?.data);
+            Alert.alert('Error', res?.message || (typeof res?.data === 'object' ? JSON.stringify(res.data) : 'Unable to save staff.'));
+        } catch (error) {
+            console.log('API ERROR:', error?.response?.data);
+            const data = error?.response?.data;
+            const msg =
+                data?.detail ||
+                (data && typeof data === 'object' ? Object.values(data).flat().join('\n') : '') ||
+                error?.message ||
+                'Unable to save staff.';
+            Alert.alert('Error', msg);
         }
     };
 
@@ -277,7 +339,7 @@ export default function StaffFormScreen({navigation, route}) {
                                 </Text>
                                 <Text className="font-sf text-xs text-gray-500 mt-3">Branch</Text>
                                 <Text className="font-sf-semi text-slate-800 mt-0.5">
-                                    {branchesForBusiness.find((br) => br.id === branchId)?.name || '—'}
+                                    {branches.find((br) => br.id === branchId)?.name || '—'}
                                 </Text>
                             </View>
                         ) : (
@@ -289,15 +351,24 @@ export default function StaffFormScreen({navigation, route}) {
                                     onSelect={handleBusinessChange}
                                     placeholder="Choose a business"
                                 />
-                                <FormDropdown
-                                    label="Select Branch *"
-                                    value={branchId}
-                                    options={branchOptions}
-                                    onSelect={setBranchId}
-                                    placeholder={businessId ? 'Choose a branch' : 'Select a business first'}
-                                    disabled={!businessId || branchOptions.length === 0}
-                                />
-                                {businessId && branchOptions.length === 0 ? (
+                                {isBranchesLoading ? (
+                                    <View className="mt-1">
+                                        <ActivityIndicator size="small" color="#8294FF" />
+                                    </View>
+                                ) : (
+                                    <FormDropdown
+                                        label="Select Branch *"
+                                        value={branchId}
+                                        options={branchOptions}
+                                        onSelect={setBranchId}
+                                        placeholder={businessId ? 'Choose a branch' : 'Select a business first'}
+                                        disabled={!businessId || branchOptions.length === 0}
+                                    />
+                                )}
+                                {branchesError ? (
+                                    <Text className="font-sf text-xs text-red-500 -mt-2">{branchesError}</Text>
+                                ) : null}
+                                {businessId && !isBranchesLoading && branchOptions.length === 0 ? (
                                     <Text className="font-sf text-sm text-amber-600 -mt-2">
                                         No branches found for this business. Create a branch first.
                                     </Text>

@@ -1,9 +1,10 @@
-import {useState, useEffect} from 'react';
+import {useMemo, useState, useEffect} from 'react';
 import {Alert, Keyboard} from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import {createBusiness, fetchLodgingTypes, MANAGER_ID} from '../../services/BranchService';
+import {createBusiness, fetchLodgingTypes} from '../../services/BranchService';
 import {useAuthOTP} from '../account/useAuthOTP';
 import {useValidation, REGEX_EMAIL, REGEX_PHONE} from '../validations/useFormValidation';
+import {getImagePickerMediaTypes, resolveApiPayloadLogo} from '../../utils/mediaUrl';
 
 export function useCreateBusiness(navigation, route) {
     const [step, setStep] = useState(1);
@@ -24,7 +25,12 @@ export function useCreateBusiness(navigation, route) {
         '',
         REGEX_PHONE
     );
-    const {handleSendOTP} = useAuthOTP();
+    const {handleSendBusinessOTP} = useAuthOTP();
+    const normalizedEmail = useMemo(() => String(corporateEmail || '').trim().toLowerCase(), [corporateEmail]);
+    const normalizedPhone = useMemo(
+        () => String(contactPhone || '').replace(/[^\d+]/g, '').trim(),
+        [contactPhone]
+    );
     const [lodgingTypes, setLodgingTypes] = useState([]);
 
     useEffect(() => {
@@ -50,7 +56,7 @@ export function useCreateBusiness(navigation, route) {
                 return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: getImagePickerMediaTypes(ImagePicker),
                 allowsEditing: true,
                 aspect: [1, 1],
                 quality: 0.8,
@@ -71,10 +77,10 @@ export function useCreateBusiness(navigation, route) {
             setIsLoading(true);
             setContactError(null);
             try {
-                await handleSendOTP(corporateEmail);
+                await handleSendBusinessOTP(normalizedEmail);
                 setShowOtpModal(true);
             } catch (error) {
-                const errorMsg = error.response?.message || 'Failed to send OTP. Please try again.';
+                const errorMsg = error.message || 'Failed to send OTP. Please try again.';
                 setContactError(errorMsg);
             } finally {
                 setIsLoading(false);
@@ -88,34 +94,41 @@ export function useCreateBusiness(navigation, route) {
         setIsLoading(true);
 
         try {
+            const remoteLogo = resolveApiPayloadLogo(logo);
             const newBusinessPayload = {
-                id: 'b_' + Date.now(),
-                managerId: MANAGER_ID,
-                name,
-                logo: logo || 'https://placehold.co/100x100/png',
+                name: String(name || '').trim(),
                 lodgingType: type,
                 businessType: type,
                 scale,
                 contact: {
-                    email: corporateEmail.trim(),
-                    phone: contactPhone.trim(),
+                    email: normalizedEmail,
+                    phone: normalizedPhone,
                 },
             };
+            if (remoteLogo) {
+                newBusinessPayload.logo = remoteLogo;
+            }
 
-            const res = await createBusiness(newBusinessPayload, MANAGER_ID);
+            const res = await createBusiness(newBusinessPayload);
 
             if (res.status === 'success') {
                 Alert.alert('Success', 'Business created successfully!', [
                     {
                         text: 'OK',
                         onPress: () => {
-                            route?.params?.onBusinessCreated?.(res.data);
                             navigation.goBack();
                         },
                     },
                 ]);
+                return;
             }
+            const apiMessage =
+                res.message ||
+                (typeof res.data === 'object' ? JSON.stringify(res.data) : '') ||
+                'Failed to save business data.';
+            Alert.alert('Error', apiMessage);
         } catch (error) {
+            console.error('API Error: ', error.response?.data || error.message);
             Alert.alert('Error', 'Failed to save business data. Please try again.');
         } finally {
             setIsLoading(false);

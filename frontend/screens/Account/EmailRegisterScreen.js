@@ -8,7 +8,7 @@ import { useRegister } from '../../hooks/account/useRegister';
 
 export default function EmailRegisterScreen({ navigation, route }) {
     const { role } = route.params || {};
-    const { checkEmailAvailable, sendVerificationOtp, isCheckingEmail, isSendingOtp } = useRegister();
+    const { sendVerificationOtp, isCheckingEmail, isSendingOtp } = useRegister();
 
     const {
         control,
@@ -25,15 +25,8 @@ export default function EmailRegisterScreen({ navigation, route }) {
 
     const onSubmit = async ({ email }) => {
         const trimmed = email.trim().toLowerCase();
-
-        const availability = await checkEmailAvailable(trimmed);
-        if (!availability.available) {
-            setError('email', { type: 'manual', message: availability.message });
-            return;
-        }
-
-        const sent = await sendVerificationOtp(trimmed);
-        if (sent.success) {
+        const result = await sendVerificationOtp(trimmed);
+        if (result.success) {
             navigation.navigate('OtpRegisterScreen', { email: trimmed, role });
         }
     };

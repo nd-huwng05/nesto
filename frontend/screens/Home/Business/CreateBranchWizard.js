@@ -33,9 +33,12 @@ export default function CreateBranchWizard({navigation, route}) {
         showOtpModal,
         setShowOtpModal,
         handleOtpSuccess,
+        verificationEmail,
         phoneError,
         setPhoneError,
     } = useCreateBranch(navigation, route);
+    const amenityList = Array.isArray(amenityOptions) ? amenityOptions : [];
+    const selectedAmenityList = Array.isArray(selectedAmenities) ? selectedAmenities : [];
 
     return (
         <View className="flex-1">
@@ -81,8 +84,8 @@ export default function CreateBranchWizard({navigation, route}) {
 
                 {step === 3 && (
                     <View className="flex-row flex-wrap gap-2.5 mt-4 justify-center">
-                        {amenityOptions.map((amenity) => {
-                            const isSelected = selectedAmenities.includes(amenity);
+                        {amenityList.map((amenity) => {
+                            const isSelected = selectedAmenityList.includes(amenity);
                             return (
                                 <TouchableOpacity
                                     key={amenity}
@@ -177,7 +180,8 @@ export default function CreateBranchWizard({navigation, route}) {
                 isVisible={showOtpModal}
                 onClose={() => setShowOtpModal(false)}
                 onSuccess={handleOtpSuccess}
-                email={branchPhone}
+                email={verificationEmail}
+                variant="business"
             />
         </View>
     );

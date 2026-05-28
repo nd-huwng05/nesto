@@ -9,13 +9,7 @@ const readEnv = (...keys) => {
 };
 
 export const shouldUseMockApi = () => {
-    const raw = readEnv('EXPO_PUBLIC_MOCK', 'EXPO_PRIVATE_MOCK');
-    if (!raw) {
-        return true;
-    }
-
-    const normalized = raw.toLowerCase();
-    return normalized !== 'false' && normalized !== '0' && normalized !== 'off' && normalized !== 'no';
+    return false;
 };
 
 export const getApiBaseUrl = () => readEnv('EXPO_PUBLIC_BASE_URL', 'EXPO_BASE_URL');

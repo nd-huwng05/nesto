@@ -14,16 +14,25 @@ import {
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {CheckCircle, Car, Utensils, Flower2, Bell, Phone} from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
+import {EmptyState} from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
-import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
-import {connectServiceOrderUpdates} from '../../../services/WebSocketService';
+import {connectServiceUpdates} from '../../../services/WebSocketService';
+import {
+    listServiceOrders,
+    acceptServiceOrder,
+    completeServiceOrder,
+    cancelServiceOrder,
+} from '../../../services/staffApiService';
 
 const STATUS_STYLES = {
     PENDING: {bg: '#FEF3C7', text: '#92400E', label: 'Pending'},
     IN_PROGRESS: {bg: '#DBEAFE', text: '#1D4ED8', label: 'In Progress'},
+    COMPLETED: {bg: '#DCFCE7', text: '#166534', label: 'Completed'},
+    CANCELLED: {bg: '#FEE2E2', text: '#991b1b', label: 'Cancelled'},
 };
 
 const DEPARTMENT_META = {
@@ -49,20 +58,20 @@ const getDepartmentMeta = (department) =>
     };
 
 export default function ServiceOrderScreen() {
-    useEffect(() => {
-        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-            UIManager.setLayoutAnimationEnabledExperimental(true);
-        }
-    }, []);
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+        UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
 
     const {user, branchId} = useStaffSession();
     const branch = getStaffBranchInfo(branchId);
     const department = normalizeDepartment(user?.department);
     const departmentMeta = getDepartmentMeta(department);
     const [orders, setOrders] = useState([]);
+    const orderList = Array.isArray(orders) ? orders : [];
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [busyId, setBusyId] = useState(null);
+    const [errorMessage, setErrorMessage] = useState('');
 
     const loadOrders = useCallback(async () => {
         if (!branchId || !department) {
@@ -72,7 +81,7 @@ export default function ServiceOrderScreen() {
         }
         setIsLoading(true);
         try {
-            const data = await staffPortalMockStore.listServiceOrders(branchId);
+            const data = await listServiceOrders(branchId);
             setOrders(
                 (data || []).filter(
                     (order) =>
@@ -80,6 +89,11 @@ export default function ServiceOrderScreen() {
                         normalizeDepartment(order.category) === department
                 )
             );
+            setErrorMessage('');
+        } catch (error) {
+            console.error("API Error: ", error.response?.data || error.message);
+            setOrders([]);
+            setErrorMessage('Unable to load service orders.');
         } finally {
             setIsLoading(false);
         }
@@ -92,15 +106,25 @@ export default function ServiceOrderScreen() {
     );
 
     useEffect(() => {
-        if (!branchId) return;
-        connectServiceOrderUpdates(branchId, {
-            onMessage: (data) => {
-                if (data.type === 'service' || data.type === 'service_update') {
-                    loadOrders();
-                }
-            },
+        let unsubscribe;
+        (async () => {
+            if (!branchId) return;
+            const token = await AsyncStorage.getItem('access_token');
+            if (!token) return;
+            unsubscribe = await connectServiceUpdates(branchId, {
+                token,
+                onMessage: (data) => {
+                    if (data?.type === 'service' || data?.type === 'service_update') {
+                        loadOrders();
+                    }
+                },
+            });
+        })().catch((error) => {
+            console.error("API Error: ", error.response?.data || error.message);
         });
-        return () => {};
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
     }, [branchId, loadOrders]);
 
     const refresh = async () => {
@@ -131,17 +155,30 @@ export default function ServiceOrderScreen() {
         );
     };
 
+    const confirmCancel = (order) => {
+        Alert.alert(
+            'Cancel request?',
+            `Cancel the request for ${formatRoomLabel(order.roomNumber)}?`,
+            [
+                {text: 'Keep', style: 'cancel'},
+                {text: 'Cancel request', style: 'destructive', onPress: () => handleCancel(order.id)},
+            ]
+        );
+    };
+
     const handleAccept = async (orderId) => {
         setBusyId(orderId);
         try {
-            // pass the active staff member's name so the mock store records assignment
-            await staffPortalMockStore.acceptServiceOrder(orderId, user?.name || null);
+            const result = await acceptServiceOrder(orderId, user?.name || null);
+            if (!result.success) {
+                Alert.alert('Unable to accept', result.message || 'Please try again.');
+                return;
+            }
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setOrders((prev) =>
-                prev
-                    .map((order) =>
-                        order.id === orderId ? {...order, status: 'IN_PROGRESS'} : order
-                    )
+                prev.map((order) =>
+                    order.id === orderId ? (result.data || {...order, status: 'IN_PROGRESS'}) : order
+                )
             );
         } finally {
             setBusyId(null);
@@ -151,7 +188,26 @@ export default function ServiceOrderScreen() {
     const handleDone = async (orderId) => {
         setBusyId(orderId);
         try {
-            await staffPortalMockStore.completeServiceOrder(orderId);
+            const result = await completeServiceOrder(orderId);
+            if (!result.success) {
+                Alert.alert('Unable to complete', result.message || 'Please try again.');
+                return;
+            }
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setOrders((prev) => prev.filter((o) => o.id !== orderId));
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const handleCancel = async (orderId) => {
+        setBusyId(orderId);
+        try {
+            const result = await cancelServiceOrder(orderId);
+            if (!result.success) {
+                Alert.alert('Unable to cancel', result.message || 'Please try again.');
+                return;
+            }
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setOrders((prev) => prev.filter((o) => o.id !== orderId));
         } finally {
@@ -174,8 +230,8 @@ export default function ServiceOrderScreen() {
                     </View>
                 ) : (
                     <FlatList
-                        data={orders}
-                        keyExtractor={(item) => item.id}
+                        data={orderList}
+                        keyExtractor={(item) => String(item?.id ?? item?.roomNumber ?? Math.random())}
                         contentContainerStyle={styles.listContent}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />}
                         renderItem={({item}) => {
@@ -205,12 +261,7 @@ export default function ServiceOrderScreen() {
                                     <View style={styles.guestRow}>
                                         <Text style={styles.guestName}>{item.guestName || 'Guest'}</Text>
                                         <TouchableOpacity
-                                            onPress={() => {
-                                                try {
-                                                    const tel = `tel:${(item.guestPhone || '').replace(/\s+/g, '')}`;
-                                                    import('react-native').then(({Linking}) => Linking.openURL(tel)).catch(() => {});
-                                                } catch (e) {}
-                                            }}
+                                            onPress={() => {}}
                                             style={styles.phoneWrap}
                                         >
                                             <Phone size={16} color="#475569" />
@@ -235,20 +286,29 @@ export default function ServiceOrderScreen() {
                                                 </View>
                                             </TouchableOpacity>
                                         ) : statusKey === 'IN_PROGRESS' ? (
-                                            <TouchableOpacity
-                                                style={[styles.actionBtn, styles.doneBtn]}
-                                                disabled={busyId === item.id}
-                                                onPress={() => confirmDeliver(item)}
-                                            >
-                                                {busyId === item.id ? (
-                                                    <ActivityIndicator color="#fff" size="small" />
-                                                ) : (
-                                                    <View style={styles.buttonContent}>
-                                                        <CheckCircle size={18} color="#fff" strokeWidth={2.25} />
-                                                        <Text style={styles.actionText}>Mark Completed</Text>
-                                                    </View>
-                                                )}
-                                            </TouchableOpacity>
+                                            <View style={styles.inProgressActions}>
+                                                <TouchableOpacity
+                                                    style={[styles.actionBtn, styles.doneBtn, styles.actionHalf]}
+                                                    disabled={busyId === item.id}
+                                                    onPress={() => confirmDeliver(item)}
+                                                >
+                                                    {busyId === item.id ? (
+                                                        <ActivityIndicator color="#fff" size="small" />
+                                                    ) : (
+                                                        <View style={styles.buttonContent}>
+                                                            <CheckCircle size={18} color="#fff" strokeWidth={2.25} />
+                                                            <Text style={styles.actionText}>Complete</Text>
+                                                        </View>
+                                                    )}
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={[styles.actionBtn, styles.cancelBtn, styles.actionHalf]}
+                                                    disabled={busyId === item.id}
+                                                    onPress={() => confirmCancel(item)}
+                                                >
+                                                    <Text style={styles.actionText}>Cancel</Text>
+                                                </TouchableOpacity>
+                                            </View>
                                         ) : null}
                                     </View>
                                 </View>
@@ -256,12 +316,16 @@ export default function ServiceOrderScreen() {
                         }}
                         ItemSeparatorComponent={() => <View style={{height: 16}} />}
                         ListEmptyComponent={
-                            <View style={styles.empty}>
-                                <Text style={styles.emptyText}>No active {departmentMeta.title.toLowerCase()} for your branch.</Text>
-                            </View>
+                            <EmptyState
+                                title="No active requests"
+                                description={`No active ${String(departmentMeta.title || 'requests').toLowerCase()} for your branch.`}
+                            />
                         }
                     />
                 )}
+                {!isLoading && !!errorMessage ? (
+                    <Text style={styles.errorText}>{errorMessage}</Text>
+                ) : null}
             </View>
         </TabScreenLayout>
     );
@@ -300,6 +364,8 @@ const styles = StyleSheet.create({
     phoneWrap: {flexDirection: 'row', alignItems: 'center'},
     assignedText: {marginTop: 8, color: '#1D4ED8', fontWeight: '700'},
     actions: {marginTop: 16},
+    inProgressActions: {flexDirection: 'row', gap: 10},
+    actionHalf: {flex: 1},
     actionBtn: {
         borderRadius: 12,
         minHeight: 48,
@@ -309,8 +375,10 @@ const styles = StyleSheet.create({
     },
     acceptBtn: {backgroundColor: '#8294FF'},
     doneBtn: {backgroundColor: '#22C55E'},
+    cancelBtn: {backgroundColor: '#ef4444'},
     buttonContent: {flexDirection: 'row', alignItems: 'center'},
     actionText: {color: '#FFFFFF', fontSize: 15, fontWeight: '700', marginLeft: 8},
     empty: {flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64},
     emptyText: {fontSize: 15, color: '#64748B', textAlign: 'center'},
+    errorText: {fontSize: 13, color: '#dc2626', textAlign: 'center', paddingHorizontal: 20, paddingBottom: 12},
 });

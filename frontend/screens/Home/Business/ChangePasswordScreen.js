@@ -1,15 +1,17 @@
-import {useState} from 'react';
-import {Alert, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import {useRef, useState} from 'react';
+import {ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import {FormScreenLayout} from '../../../components/common/FormScreenLayout';
 import {DetailScreenHeader} from '../../../components/business/DetailScreenHeader';
+import {changePassword} from '../../../services/AuthService';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
 import {UI, cardStyle} from '../../../styles/uiTokens';
 
-function PasswordInput({label, value, onChangeText}) {
+function PasswordInput({label, value, onChangeText, inputRef, onSubmitEditing, returnKeyType}) {
     return (
         <View className="mb-4">
             <Text className="font-sf text-xs text-gray-500 mb-1.5">{label}</Text>
             <TextInput
+                ref={inputRef}
                 value={value}
                 onChangeText={onChangeText}
                 secureTextEntry
@@ -18,6 +20,8 @@ function PasswordInput({label, value, onChangeText}) {
                 placeholderTextColor="#94a3b8"
                 className="font-sf text-base text-slate-800 rounded-xl px-4 border border-gray-100"
                 style={[commonInputStyles.baseInput, styles.input]}
+                returnKeyType={returnKeyType}
+                onSubmitEditing={onSubmitEditing}
             />
         </View>
     );
@@ -28,6 +32,8 @@ export default function ChangePasswordScreen({navigation}) {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [saving, setSaving] = useState(false);
+    const newRef = useRef(null);
+    const confirmRef = useRef(null);
 
     const handleSave = async () => {
         if (!currentPassword.trim()) {
@@ -43,11 +49,19 @@ export default function ChangePasswordScreen({navigation}) {
             return;
         }
         setSaving(true);
-        await new Promise((r) => setTimeout(r, 500));
+        const result = await changePassword({
+            currentPassword,
+            newPassword,
+            confirmPassword,
+        });
         setSaving(false);
-        Alert.alert('Password Updated', 'Your password has been changed successfully.', [
-            {text: 'OK', onPress: () => navigation.goBack()},
-        ]);
+        if (result.status === 'success') {
+            Alert.alert('Password Updated', 'Your password has been changed successfully.', [
+                {text: 'OK', onPress: () => navigation.goBack()},
+            ]);
+            return;
+        }
+        Alert.alert('Error', result.message || 'Unable to update password.');
     };
 
     const saveButton = (
@@ -60,7 +74,7 @@ export default function ChangePasswordScreen({navigation}) {
             }`}
         >
             <Text className="text-white font-sf-bold text-base">
-                {saving ? 'Updating…' : 'Update Password'}
+                {saving ? 'Updating...' : 'Update Password'}
             </Text>
         </TouchableOpacity>
     );
@@ -82,20 +96,34 @@ export default function ChangePasswordScreen({navigation}) {
                     label="Current Password *"
                     value={currentPassword}
                     onChangeText={setCurrentPassword}
+                    returnKeyType="next"
+                    onSubmitEditing={() => newRef.current?.focus()}
                 />
                 <PasswordInput
                     label="New Password *"
                     value={newPassword}
                     onChangeText={setNewPassword}
+                    inputRef={newRef}
+                    returnKeyType="next"
+                    onSubmitEditing={() => confirmRef.current?.focus()}
                 />
                 <PasswordInput
                     label="Confirm New Password *"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
+                    inputRef={confirmRef}
+                    returnKeyType="done"
+                    onSubmitEditing={handleSave}
                 />
                 <Text className="font-sf text-xs text-gray-400 leading-5">
                     Use at least 8 characters with letters and numbers.
                 </Text>
+                {saving ? (
+                    <View style={styles.loadingRow}>
+                        <ActivityIndicator size="small" color="#8294FF" />
+                        <Text className="font-sf text-xs text-gray-500 ml-2">Updating password...</Text>
+                    </View>
+                ) : null}
             </View>
         </FormScreenLayout>
     );
@@ -107,5 +135,10 @@ const styles = StyleSheet.create({
     },
     input: {
         backgroundColor: '#f9fafb',
+    },
+    loadingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 12,
     },
 });

@@ -1,23 +1,33 @@
 import asgiref.sync
 from channels.layers import get_channel_layer
 from drf_spectacular.utils import extend_schema
+import logging
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from accounts.serializers import (
-    ForgotPasswordSerializer, ResetPasswordSerializer, SendOTPSerializer,
-    UserRegistrationSerializer, UserSerializer, VerifyOTPSerializer,
+    ChangePasswordSerializer,
+    ForgotPasswordSerializer,
+    GoogleAuthSerializer,
+    ResetPasswordSerializer,
+    SendBusinessContactOTPSerializer,
+    SendOTPSerializer,
+    UserRegistrationSerializer,
+    UserSerializer,
+    VerifyOTPSerializer,
 )
 from accounts.services.auth_service import AuthService
 from accounts.services.otp_service import OTPService
+
+logger = logging.getLogger(__name__)
 
 @extend_schema(tags=['Authentication'])
 class AuthenticationViewSet(viewsets.GenericViewSet):
     permission_classes = [permissions.AllowAny]
     serializer_class = SendOTPSerializer
 
-    @extend_schema(request=SendOTPSerializer)
+    @extend_schema(tags=['Authentication'], request=SendOTPSerializer)
     @action(detail=False, methods=['post'])
     def send_otp(self, request):
         serializer = SendOTPSerializer(data=request.data)
@@ -27,11 +37,12 @@ class AuthenticationViewSet(viewsets.GenericViewSet):
         OTPService.generate_and_send_otp(email, purpose='REGISTER')
         return Response({"detail": "OTP sent successfully. Please check your email."}, status=status.HTTP_200_OK)
 
-    @extend_schema(request=VerifyOTPSerializer)
+    @extend_schema(tags=['Authentication'], request=VerifyOTPSerializer)
     @action(detail=False, methods=['post'])
     def verify_otp(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
         if not serializer.is_valid():
+            logger.warning("verify_otp invalid payload: %s", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         email = serializer.validated_data['email']
         otp_code = serializer.validated_data['otp_code']
@@ -50,18 +61,65 @@ class AuthenticationViewSet(viewsets.GenericViewSet):
             )
         return Response({"message": "Email verified successfully.", "register_token": register_token}, status=status.HTTP_200_OK)
 
-    @extend_schema(request=UserRegistrationSerializer)
+    @extend_schema(tags=['Authentication'], request=SendBusinessContactOTPSerializer)
+    @action(detail=False, methods=['post'], url_path='send_business_otp')
+    def send_business_otp(self, request):
+        serializer = SendBusinessContactOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        email = serializer.validated_data['email']
+        OTPService.generate_and_send_otp(email, purpose='BUSINESS_CONTACT')
+        return Response({"detail": "OTP sent successfully. Please check your email."}, status=status.HTTP_200_OK)
+
+    @extend_schema(tags=['Authentication'], request=VerifyOTPSerializer)
+    @action(detail=False, methods=['post'], url_path='verify_business_otp')
+    def verify_business_otp(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            logger.warning("verify_business_otp invalid payload: %s", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        email = serializer.validated_data['email']
+        otp_code = serializer.validated_data['otp_code']
+        is_valid = OTPService.verify_otp(email, purpose='BUSINESS_CONTACT', user_otp=otp_code)
+        if not is_valid:
+            return Response({"detail": "Invalid or expired OTP code."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"message": "Business contact verified successfully.", "verified": True}, status=status.HTTP_200_OK)
+
+    @extend_schema(tags=['Authentication'], request=UserRegistrationSerializer)
     @action(detail=False, methods=['post'])
     def register(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()
-        
-        # FIX QUAN TRỌNG Ở ĐÂY: Gọi staticmethod
         tokens = AuthService.generate_tokens(user)
-        
         return Response({"user": UserSerializer(user).data, **tokens}, status=status.HTTP_201_CREATED)
+
+    @extend_schema(tags=['Authentication'], request=ChangePasswordSerializer)
+    @action(detail=False, methods=['post'], url_path='change_password', permission_classes=[permissions.IsAuthenticated])
+    def change_password(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        current_password = serializer.validated_data["current_password"]
+        if not user.check_password(current_password):
+            return Response({"detail": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return Response({"detail": "Password updated successfully."}, status=status.HTTP_200_OK)
+
+    @extend_schema(tags=['Authentication'], request=GoogleAuthSerializer)
+    @action(detail=False, methods=['post'], url_path='google')
+    def google(self, request):
+        serializer = GoogleAuthSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = AuthService.google_authenticate(serializer.validated_data["id_token"])
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        tokens = AuthService.generate_tokens(user)
+        return Response({"user": UserSerializer(user).data, **tokens}, status=status.HTTP_200_OK)
 
     @extend_schema(tags=['Authentication'])
     @action(detail=False, methods=['post'])
@@ -95,6 +153,7 @@ class UserViewSet(viewsets.GenericViewSet):
     def get_object(self):
         return self.request.user
 
+    @extend_schema(tags=['User'])
     @action(detail=False, methods=['get', 'patch'])
     def me(self, request):
         instance = self.get_object()

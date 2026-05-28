@@ -7,7 +7,7 @@ const DEFAULT_REVIEWER_AVATAR = 'https://images.unsplash.com/photo-1488426862026
 
 export function formatMoney(amount, currency) {
     const safeAmount = Number.isFinite(amount) ? amount : 0;
-    return `${safeAmount.toLocaleString('vi-VN')} ${currency ?? ''}`.trim();
+    return `${safeAmount.toLocaleString('en-US')} ${currency ?? ''}`.trim();
 }
 
 export function FilterPill({icon, label, light = false, selected = false, onPress}) {
@@ -68,7 +68,7 @@ export function RatingRow({rating, reviews}) {
         <View className="flex-row items-center mt-4 flex-wrap">
             <View className="flex-row items-center mr-3">{stars}</View>
             <Text className="font-sf-bold text-[17px] text-black mr-1">{rating.toFixed(1)}</Text>
-            <Text className="font-sf text-[17px] text-[#c7c7c7]">-{reviews.toLocaleString('vi-VN')} Reviews</Text>
+            <Text className="font-sf text-[17px] text-[#c7c7c7]">-{reviews.toLocaleString('en-US')} Reviews</Text>
         </View>
     );
 }

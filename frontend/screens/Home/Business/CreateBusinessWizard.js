@@ -33,8 +33,9 @@ export default function CreateBusinessWizard({navigation, route}) {
         contactError,
         setContactError,
     } = useCreateBusiness(navigation, route);
+    const lodgingTypeList = Array.isArray(lodgingTypes) ? lodgingTypes : [];
 
-    if (isLoading && step === 1 && lodgingTypes.length === 0) {
+    if (isLoading && step === 1 && lodgingTypeList.length === 0) {
         return (
             <View className="flex-1 justify-center items-center bg-white">
                 <ActivityIndicator size="large" color="#8294FF" />
@@ -92,7 +93,7 @@ export default function CreateBusinessWizard({navigation, route}) {
 
                 {step === 3 && (
                     <View className="gap-3 mt-4">
-                        {lodgingTypes.map((item) => (
+                        {lodgingTypeList.map((item) => (
                             <TouchableOpacity
                                 key={item}
                                 activeOpacity={0.8}
@@ -187,7 +188,8 @@ export default function CreateBusinessWizard({navigation, route}) {
                             </Text>
                         ) : (
                             <Text className="text-gray-400 text-xs font-sf text-center px-1">
-                                We will send a verification code to your corporate email.
+                                We will send a verification code to your corporate email. Enter the latest code from your
+                                inbox (check spam folder).
                             </Text>
                         )}
                     </View>
@@ -199,6 +201,7 @@ export default function CreateBusinessWizard({navigation, route}) {
                 onClose={() => setShowOtpModal(false)}
                 onSuccess={handleOtpSuccess}
                 email={corporateEmail}
+                variant="business"
             />
         </View>
     );

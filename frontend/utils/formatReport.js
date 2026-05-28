@@ -6,9 +6,9 @@ export function formatReportVnd(amount) {
     if (num >= 1_000_000) {
         return `${(num / 1_000_000).toFixed(1)}M ₫`;
     }
-    return `${num.toLocaleString('vi-VN')} ₫`;
+    return `${num.toLocaleString('en-US')} ₫`;
 }
 
 export function formatReportNumber(value) {
-    return Number(value || 0).toLocaleString('vi-VN');
+    return Number(value || 0).toLocaleString('en-US');
 }

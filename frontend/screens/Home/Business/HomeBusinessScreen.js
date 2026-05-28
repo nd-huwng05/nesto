@@ -9,6 +9,7 @@ import BusinessCard from '../../../components/business/BusinessCard';
 
 export default function HomeBusinessScreen({navigation}) {
     const {businesses, isLoading, loadList} = useBusinessCRUD();
+    const safeBusinesses = Array.isArray(businesses) ? businesses : [];
     const [refreshing, setRefreshing] = useState(false);
 
     const refresh = useCallback(async () => {
@@ -33,7 +34,7 @@ export default function HomeBusinessScreen({navigation}) {
                     </Text>
                 </View>
 
-                {isLoading && businesses.length === 0 ? (
+                {isLoading && safeBusinesses.length === 0 ? (
                     <View className="flex-1 items-center justify-center py-20">
                         <ActivityIndicator size="large" color="#8294FF" />
                     </View>
@@ -47,7 +48,7 @@ export default function HomeBusinessScreen({navigation}) {
                             <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />
                         }
                     >
-                        {businesses.map((item) => (
+                        {safeBusinesses.map((item) => (
                             <BusinessCard
                                 key={item.id}
                                 business={item}
@@ -59,7 +60,6 @@ export default function HomeBusinessScreen({navigation}) {
                                 onAddBranch={(businessId) =>
                                     navigation.navigate('CreateBranchWizard', {
                                         businessId,
-                                        onBranchCreated: () => loadList(),
                                     })
                                 }
                                 onBranchPress={(branch, businessId) =>
@@ -71,7 +71,7 @@ export default function HomeBusinessScreen({navigation}) {
                             />
                         ))}
 
-                        {businesses.length === 0 && !isLoading && (
+                        {safeBusinesses.length === 0 && !isLoading && (
                             <Text className="text-center text-gray-400 font-sf py-8">
                                 No businesses yet. Add your first business below.
                             </Text>
@@ -79,9 +79,7 @@ export default function HomeBusinessScreen({navigation}) {
 
                         <TouchableOpacity
                             onPress={() =>
-                                navigation.navigate('CreateBusinessWizard', {
-                                    onBusinessCreated: () => loadList(),
-                                })
+                                navigation.navigate('CreateBusinessWizard')
                             }
                             style={styles.addBtn}
                             className="flex-row items-center justify-center border border-gray-200 bg-white rounded-2xl py-3.5 mb-4"

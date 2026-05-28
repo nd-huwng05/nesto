@@ -1,175 +1,65 @@
-import Apis from '../configuration/Apis';
-import { getSession } from '../utils/authStorage';
-import { getErrorMessage } from '../utils/authErrors';
+import api, {endpoints} from '../configuration/Apis';
+import {extractApiErrorMessage} from '../utils/apiError';
 
-export const BookingService = {
-    async createBooking(bookingPayload) {
-        try {
-            const { user } = await getSession();
-            if (!user) {
-                return { success: false, error: 'User not authenticated' };
-            }
+const ok = (response, dataOverride = undefined) => ({
+    status: 'success',
+    data: dataOverride === undefined ? response?.data : dataOverride,
+});
 
-            const payload = {
-                ...bookingPayload,
-                guestId: user.id,
-                guestEmail: user.email,
-                guestPhone: user.phone,
-                guestName: user.name,
-                createdAt: new Date().toISOString(),
-            };
+const fail = (err, fallback) => ({
+    status: 'error',
+    message: extractApiErrorMessage(err, fallback),
+    data: err?.response?.data || null,
+});
 
-            if (process.env.EXPO_PUBLIC_MOCK === 'true' || !process.env.EXPO_PUBLIC_BASE_URL) {
-                await new Promise((resolve) => setTimeout(resolve, 800));
-                const mockBooking = {
-                    id: `booking-${Date.now()}`,
-                    bookingId: `#AQRZO${Math.floor(Math.random() * 10000)}`,
-                    status: 'pending',
-                    ...payload,
-                };
-                return { success: true, data: mockBooking };
-            }
+const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
 
-            const response = await Apis.post('/reception/bookings', payload);
-            if (response.data?.status === 'success') {
-                return { success: true, data: response.data.data };
-            }
+export const fetchBookings = async (params = {}) => {
+    try {
+        const response = await api.get(endpoints['bookings'], {params});
+        return ok(response, pickList(response.data));
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load bookings.');
+    }
+};
 
-            return { success: false, error: response.data?.message || 'Failed to create booking' };
-        } catch (err) {
-            return { success: false, error: getErrorMessage(err, 'Failed to create booking') };
-        }
-    },
+export const fetchBooking = async (id) => {
+    try {
+        const response = await api.get(endpoints['booking-detail'](id));
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load booking.');
+    }
+};
 
-    async fetchBooking(bookingId) {
-        try {
-            if (process.env.EXPO_PUBLIC_MOCK === 'true' || !process.env.EXPO_PUBLIC_BASE_URL) {
-                await new Promise((resolve) => setTimeout(resolve, 500));
-                return {
-                    success: true,
-                    data: {
-                        id: bookingId,
-                        bookingId: '#AQRZO01',
-                        status: 'confirmed',
-                        hotelName: 'Swiss Hotel',
-                        roomName: 'Room 121',
-                        checkIn: new Date(),
-                        checkOut: new Date(Date.now() + 86400000),
-                    },
-                };
-            }
+export const createBooking = async (data) => {
+    try {
+        const response = await api.post(endpoints['bookings'], data);
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to create booking.');
+    }
+};
 
-            const response = await Apis.get(`/reception/bookings/${bookingId}`);
-            if (response.data?.status === 'success') {
-                return { success: true, data: response.data.data };
-            }
+export const updateBooking = async (id, data) => {
+    try {
+        const response = await api.patch(endpoints['booking-detail'](id), data);
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to update booking.');
+    }
+};
 
-            return { success: false, error: 'Booking not found' };
-        } catch (err) {
-            return { success: false, error: getErrorMessage(err, 'Failed to fetch booking') };
-        }
-    },
-
-    async fetchBookingHistory() {
-        try {
-            const { user } = await getSession();
-            if (!user) {
-                return { success: false, error: 'User not authenticated' };
-            }
-
-            if (process.env.EXPO_PUBLIC_MOCK === 'true' || !process.env.EXPO_PUBLIC_BASE_URL) {
-                await new Promise((resolve) => setTimeout(resolve, 600));
-                return {
-                    success: true,
-                    data: [
-                        {
-                            id: 'history-1',
-                            bookingId: '#AQRZO01',
-                            status: 'completed',
-                            hotelName: 'Swiss Hotel',
-                            roomName: 'Room 301',
-                            checkIn: '2026-03-10',
-                            checkOut: '2026-03-12',
-                        },
-                        {
-                            id: 'history-2',
-                            bookingId: '#AQRZO02',
-                            status: 'completed',
-                            hotelName: 'Marina Bay Resort',
-                            roomName: 'Room 305',
-                            checkIn: '2026-02-15',
-                            checkOut: '2026-02-18',
-                        },
-                    ],
-                };
-            }
-
-            const response = await Apis.get(`/reception/bookings?guestId=${user.id}`);
-            if (response.data?.status === 'success') {
-                return { success: true, data: response.data.data || [] };
-            }
-
-            return { success: false, error: 'Failed to fetch booking history' };
-        } catch (err) {
-            return { success: false, error: getErrorMessage(err, 'Failed to fetch booking history') };
-        }
-    },
-
-    async fetchUpcomingBookings() {
-        try {
-            const { user } = await getSession();
-            if (!user) {
-                return { success: false, error: 'User not authenticated' };
-            }
-
-            if (process.env.EXPO_PUBLIC_MOCK === 'true' || !process.env.EXPO_PUBLIC_BASE_URL) {
-                await new Promise((resolve) => setTimeout(resolve, 500));
-                return {
-                    success: true,
-                    data: [
-                        {
-                            id: 'upcoming-1',
-                            bookingId: '#AQRZO01',
-                            hotelName: 'Sun Suites Hotel',
-                            roomName: 'Room 101',
-                            checkIn: '2026-04-15',
-                            checkOut: '2026-04-17',
-                            status: 'pending_payment',
-                            actionLabel: 'Payment',
-                        },
-                    ],
-                };
-            }
-
-            const response = await Apis.get(`/reception/bookings?guestId=${user.id}&status=upcoming`);
-            if (response.data?.status === 'success') {
-                return { success: true, data: response.data.data || [] };
-            }
-
-            return { success: false, error: 'Failed to fetch upcoming bookings' };
-        } catch (err) {
-            return { success: false, error: getErrorMessage(err, 'Failed to fetch upcoming bookings') };
-        }
-    },
-
-    async cancelBooking(bookingId) {
-        try {
-            if (process.env.EXPO_PUBLIC_MOCK === 'true' || !process.env.EXPO_PUBLIC_BASE_URL) {
-                await new Promise((resolve) => setTimeout(resolve, 600));
-                return { success: true, data: { bookingId, status: 'cancelled' } };
-            }
-
-            const response = await Apis.put(`/reception/bookings/${bookingId}`, {
-                status: 'cancelled',
-            });
-
-            if (response.data?.status === 'success') {
-                return { success: true, data: response.data.data };
-            }
-
-            return { success: false, error: 'Failed to cancel booking' };
-        } catch (err) {
-            return { success: false, error: getErrorMessage(err, 'Failed to cancel booking') };
-        }
-    },
+export const deleteBooking = async (id) => {
+    try {
+        const response = await api.delete(endpoints['booking-detail'](id));
+        return ok(response, null);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to delete booking.');
+    }
 };

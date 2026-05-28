@@ -2,7 +2,13 @@ import {Image, StyleSheet, View} from 'react-native';
 import {STAFF_MEDIA} from '../../constants/staffMedia';
 
 export function StaffUserAvatar({user, size = 40, style}) {
-    const uri = user?.avatar || STAFF_MEDIA.USER_PLACEHOLDER;
+    const raw = String(user?.avatar || '').trim();
+    const uri = (() => {
+        if (!raw) return STAFF_MEDIA.USER_PLACEHOLDER;
+        if (/^https?:\/\//i.test(raw)) return raw;
+        const base = String(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+        return base ? `${base}${raw.startsWith('/') ? raw : `/${raw}`}` : raw;
+    })();
     const radius = size / 2;
 
     return (

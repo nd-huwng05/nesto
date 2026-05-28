@@ -1,168 +1,43 @@
-import { useCallback, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useCallback, useEffect, useMemo, useState} from 'react';
+import api, {endpoints} from '../../configuration/Apis';
 
-const FAVORITES_STORAGE_KEY = 'customer_favorites';
+const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
 
 export const useFavorites = () => {
     const [favorites, setFavorites] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    /**
-     * Load favorites from AsyncStorage
-     */
     const loadFavorites = useCallback(async () => {
         setIsLoading(true);
         try {
-            const stored = await AsyncStorage.getItem(FAVORITES_STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                setFavorites(Array.isArray(parsed) ? parsed : []);
-            } else {
-                setFavorites([]);
-            }
-        } catch (error) {
-            console.error('Failed to load favorites:', error);
+            const res = await api.get(endpoints['favorites']);
+            const rows = pickList(res?.data);
+            setFavorites(rows);
+            return {success: true, data: rows};
+        } catch (err) {
             setFavorites([]);
+            return {success: false, error: String(err?.response?.data?.detail || err?.message || 'Unable to load favorites')};
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    /**
-     * Add item to favorites
-     * @param {Object} item - Item to add
-     * @returns {boolean}
-     */
-    const addFavorite = useCallback(
-        async (item) => {
-            if (!item || !item.id) return false;
-
-            const exists = favorites.some((fav) => fav.id === item.id);
-            if (exists) return false;
-
-            const newFavorite = {
-                ...item,
-                addedAt: new Date().toISOString(),
-            };
-
-            const updated = [...favorites, newFavorite];
-            setFavorites(updated);
-
-            try {
-                await AsyncStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
-                return true;
-            } catch (error) {
-                console.error('Failed to save favorite:', error);
-                setFavorites(favorites); // Rollback
-                return false;
-            }
-        },
-        [favorites]
-    );
-
-    /**
-     * Remove item from favorites
-     * @param {string} itemId - Item ID to remove
-     * @returns {boolean}
-     */
-    const removeFavorite = useCallback(
-        async (itemId) => {
-            if (!itemId) return false;
-
-            const updated = favorites.filter((fav) => fav.id !== itemId);
-            setFavorites(updated);
-
-            try {
-                await AsyncStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
-                return true;
-            } catch (error) {
-                console.error('Failed to remove favorite:', error);
-                setFavorites(favorites); // Rollback
-                return false;
-            }
-        },
-        [favorites]
-    );
-
-    /**
-     * Toggle item favorite status
-     * @param {Object} item - Item to toggle
-     * @returns {boolean|null}
-     */
-    const toggleFavorite = useCallback(
-        async (item) => {
-            if (!item || !item.id) return null;
-
-            const isFav = favorites.some((fav) => fav.id === item.id);
-
-            if (isFav) {
-                await removeFavorite(item.id);
-                return false;
-            } else {
-                const success = await addFavorite(item);
-                return success ? true : null;
-            }
-        },
-        [favorites, addFavorite, removeFavorite]
-    );
-
-    /**
-     * Check if item is favorited
-     * @param {string} itemId - Item ID to check
-     * @returns {boolean}
-     */
-    const isFavorite = useCallback(
-        (itemId) => {
-            return favorites.some((fav) => fav.id === itemId);
-        },
-        [favorites]
-    );
-
-    /**
-     * Get all favorites
-     * @returns {Array}
-     */
-    const getFavorites = useCallback(() => {
-        return [...favorites];
-    }, [favorites]);
-
-    /**
-     * Get favorites by type
-     * @param {string} type - Filter type
-     * @returns {Array}
-     */
-    const getFavoritesByType = useCallback(
-        (type) => {
-            if (!type) return favorites;
-            return favorites.filter((fav) => fav.type === type);
-        },
-        [favorites]
-    );
-
-    /**
-     * Clear all favorites
-     * @returns {boolean}
-     */
-    const clearAllFavorites = useCallback(async () => {
-        setFavorites([]);
+    const toggleFavorite = useCallback(async ({branchId} = {}) => {
+        const id = String(branchId || '').trim();
+        if (!id) return {success: false, error: 'branchId is required'};
         try {
-            await AsyncStorage.removeItem(FAVORITES_STORAGE_KEY);
-            return true;
-        } catch (error) {
-            console.error('Failed to clear favorites:', error);
-            return false;
+            const res = await api.post(`${endpoints['favorites']}toggle/`, {branchId: id});
+            const favorited = !!res?.data?.favorited;
+            await loadFavorites();
+            return {success: true, data: {branchId: id, favorited}};
+        } catch (err) {
+            return {success: false, error: String(err?.response?.data?.detail || err?.message || 'Unable to update favorites')};
         }
-    }, []);
+    }, [loadFavorites]);
 
-    /**
-     * Get favorite count
-     * @returns {number}
-     */
-    const getFavoriteCount = useCallback(() => {
-        return favorites.length;
-    }, [favorites]);
+    const favoriteBranchIds = useMemo(() => new Set((favorites || []).map((f) => String(f?.branchId || ''))), [favorites]);
+    const isFavorite = useCallback((branchId) => favoriteBranchIds.has(String(branchId || '').trim()), [favoriteBranchIds]);
 
-    // Load favorites on mount
     useEffect(() => {
         loadFavorites();
     }, [loadFavorites]);
@@ -170,14 +45,9 @@ export const useFavorites = () => {
     return {
         favorites,
         isLoading,
-        addFavorite,
-        removeFavorite,
+        loadFavorites,
         toggleFavorite,
         isFavorite,
-        getFavorites,
-        getFavoritesByType,
-        clearAllFavorites,
-        getFavoriteCount,
-        loadFavorites,
     };
 };
+

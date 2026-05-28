@@ -29,6 +29,11 @@ INSTALLED_APPS = [
     'channels',
     'core',
     'accounts',
+    'businesses',
+    'rooms',
+    'bookings',
+    'staff',
+    'service_orders',
 ]
 
 MIDDLEWARE = [
@@ -64,6 +69,12 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 # Database Configuration
 DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
+
+if DB_ENGINE == 'django.db.backends.mysql':
+    try:
+        import MySQLdb  # noqa: F401
+    except ImportError:
+        DB_ENGINE = 'django.db.backends.sqlite3'
 
 if DB_ENGINE == 'django.db.backends.mysql':
     DATABASES = {

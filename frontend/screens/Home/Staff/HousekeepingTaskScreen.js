@@ -14,12 +14,14 @@ import {
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {CheckCircle} from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
+import {EmptyState} from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
-import {staffPortalMockStore} from '../../../services/staffPortalMockStore';
-import {connectBookingUpdates} from '../../../services/WebSocketService';
+import {connectRoomUpdates} from '../../../services/WebSocketService';
+import {completeHousekeepingTask, listHousekeepingTasks} from '../../../services/staffApiService';
 
 const normalizeStatus = (status) => String(status || '').toLowerCase();
 
@@ -28,35 +30,41 @@ function statusLabel(status) {
 }
 
 export default function HousekeepingTaskScreen() {
-    useEffect(() => {
-        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-            UIManager.setLayoutAnimationEnabledExperimental(true);
-        }
-    }, []);
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+        UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
 
     const {user, branchId} = useStaffSession();
     const branch = getStaffBranchInfo(branchId);
-    const [rooms, setRooms] = useState([]);
+    const [tasks, setTasks] = useState([]);
+    const taskList = Array.isArray(tasks) ? tasks : [];
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [markingId, setMarkingId] = useState(null);
+    const [errorMessage, setErrorMessage] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
 
-    const loadRooms = useCallback(async () => {
+    const loadTasks = useCallback(async () => {
         if (!branchId) {
-            setRooms([]);
+            setTasks([]);
             setIsLoading(false);
             return;
         }
         setIsLoading(true);
         try {
-            const data = await staffPortalMockStore.listHousekeepingRooms(branchId);
+            const data = await listHousekeepingTasks(branchId);
             const filtered = (data || [])
-                .filter((room) => {
-                    const status = normalizeStatus(room.status);
-                    return status === 'dirty' || status === 'cleaning';
+                .filter((t) => {
+                    const status = String(t.status || '').toUpperCase();
+                    return status === 'PENDING' || status === 'IN_PROGRESS';
                 })
                 .sort((a, b) => Number(a.roomNumber) - Number(b.roomNumber));
-            setRooms(filtered);
+            setTasks(filtered);
+            setErrorMessage('');
+        } catch (error) {
+            console.error("API Error: ", error.response?.data || error.message);
+            setTasks([]);
+            setErrorMessage('Unable to load housekeeping tasks.');
         } finally {
             setIsLoading(false);
         }
@@ -64,46 +72,62 @@ export default function HousekeepingTaskScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            loadRooms();
-        }, [loadRooms])
+            loadTasks();
+        }, [loadTasks])
     );
 
     useEffect(() => {
-        if (!branchId) return;
-        connectBookingUpdates(branchId, {
-            onMessage: (data) => {
-                if (data.type === 'room_status' || data.type === 'room_dirty') {
-                    loadRooms();
-                }
-            },
+        let unsubscribe;
+        (async () => {
+            if (!branchId) return;
+            const token = await AsyncStorage.getItem('access_token');
+            if (!token) return;
+            unsubscribe = await connectRoomUpdates(branchId, {
+                token,
+                onMessage: (data) => {
+                    if (data?.type === 'room_status' || data?.type === 'room_dirty') {
+                        loadTasks();
+                    }
+                },
+            });
+        })().catch((error) => {
+            console.error("API Error: ", error.response?.data || error.message);
         });
-        return () => {};
-    }, [branchId, loadRooms]);
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, [branchId, loadTasks]);
 
     const refresh = async () => {
         setRefreshing(true);
-        await loadRooms();
+        await loadTasks();
         setRefreshing(false);
     };
 
-    const confirmMarkClean = (room) => {
+    const confirmComplete = (task) => {
         Alert.alert(
             'Confirm Clean-up',
-            `Mark Room ${room.roomNumber} as clean?`,
+            `Mark Room ${task.roomNumber} as clean?`,
             [
                 {text: 'Cancel', style: 'cancel'},
-                {text: 'Mark Clean', style: 'default', onPress: () => handleMarkClean(room.id)},
+                {text: 'Complete Task', style: 'default', onPress: () => handleComplete(task.id)},
             ],
             {cancelable: true}
         );
     };
 
-    const handleMarkClean = async (roomId) => {
-        setMarkingId(roomId);
+    const handleComplete = async (taskId) => {
+        setMarkingId(taskId);
         try {
-            await staffPortalMockStore.markRoomClean(roomId);
+            const result = await completeHousekeepingTask(taskId);
+            if (!result.success) {
+                Alert.alert('Unable to complete', result.message || 'Please try again.');
+                return;
+            }
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setRooms((prev) => prev.filter((r) => r.id !== roomId));
+            setTasks((prev) => prev.filter((t) => t.id !== taskId));
+            setSuccessMessage('Task completed.');
+            setTimeout(() => setSuccessMessage(''), 1500);
         } finally {
             setMarkingId(null);
         }
@@ -118,14 +142,20 @@ export default function HousekeepingTaskScreen() {
                     <Text style={styles.subtitle}>Rooms marked Dirty or Cleaning — tap when ready for guests.</Text>
                 </View>
 
+                {!isLoading && !!successMessage ? (
+                    <View style={styles.toast}>
+                        <Text style={styles.toastText}>{successMessage}</Text>
+                    </View>
+                ) : null}
+
                 {isLoading ? (
                     <View style={styles.loadingWrap}>
                         <ActivityIndicator size="large" color="#22C55E" />
                     </View>
                 ) : (
                     <FlatList
-                        data={rooms}
-                        keyExtractor={(item) => item.id}
+                        data={taskList}
+                        keyExtractor={(item) => String(item?.id ?? item?.roomNumber ?? Math.random())}
                         contentContainerStyle={styles.listContent}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#22C55E" />}
                         renderItem={({item}) => (
@@ -133,14 +163,16 @@ export default function HousekeepingTaskScreen() {
                                 <View style={styles.row}>
                                     <View style={styles.leftArea}>
                                         <Text style={styles.roomNumber}>Room {item.roomNumber}</Text>
-                                        <View style={[styles.statusPill, normalizeStatus(item.status) === 'cleaning' ? styles.statusCleaning : styles.statusDirty]}>
-                                            <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
+                                        <View style={[styles.statusPill, String(item.status || '').toUpperCase() === 'IN_PROGRESS' ? styles.statusCleaning : styles.statusDirty]}>
+                                            <Text style={styles.statusText}>
+                                                {String(item.status || '').toUpperCase() === 'IN_PROGRESS' ? 'In Progress' : 'Needs Cleaning'}
+                                            </Text>
                                         </View>
                                     </View>
                                     <TouchableOpacity
                                         activeOpacity={0.9}
                                         disabled={markingId === item.id}
-                                        onPress={() => confirmMarkClean(item)}
+                                        onPress={() => confirmComplete(item)}
                                         style={[styles.cleanBtn, markingId === item.id && styles.cleanBtnDisabled]}
                                     >
                                         {markingId === item.id ? (
@@ -148,7 +180,7 @@ export default function HousekeepingTaskScreen() {
                                         ) : (
                                             <View style={styles.cleanBtnInner}>
                                                 <CheckCircle size={18} color="#fff" strokeWidth={2.5} />
-                                                <Text style={styles.cleanBtnText}>Mark Clean</Text>
+                                                <Text style={styles.cleanBtnText}>Complete Task</Text>
                                             </View>
                                         )}
                                     </TouchableOpacity>
@@ -157,13 +189,16 @@ export default function HousekeepingTaskScreen() {
                         )}
                         ItemSeparatorComponent={() => <View style={{height: 16}} />}
                         ListEmptyComponent={
-                            <View style={styles.empty}>
-                                <Text style={styles.emptyTitle}>All caught up!</Text>
-                                <Text style={styles.emptySubtitle}>No rooms need cleaning right now.</Text>
-                            </View>
+                            <EmptyState
+                                title="All caught up!"
+                                description="No rooms need cleaning right now."
+                            />
                         }
                     />
                 )}
+                {!isLoading && !!errorMessage ? (
+                    <Text style={styles.errorText}>{errorMessage}</Text>
+                ) : null}
             </View>
         </TabScreenLayout>
     );
@@ -175,6 +210,18 @@ const styles = StyleSheet.create({
     title: {fontSize: 22, fontWeight: '700', color: '#1E293B', marginTop: 6},
     subtitle: {fontSize: 13, color: '#64748B', marginTop: 6, marginBottom: 6},
     loadingWrap: {marginTop: 40, alignItems: 'center'},
+    toast: {
+        marginHorizontal: 20,
+        marginTop: 10,
+        marginBottom: 6,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderRadius: 12,
+        backgroundColor: '#dcfce7',
+        borderWidth: 1,
+        borderColor: '#86efac',
+    },
+    toastText: {color: '#166534', fontWeight: '700', textAlign: 'center'},
     listContent: {paddingHorizontal: 20, paddingBottom: 24, flexGrow: 1},
     roomCard: {
         backgroundColor: '#FFFFFF',
@@ -227,4 +274,5 @@ const styles = StyleSheet.create({
     empty: {alignItems: 'center', paddingVertical: 48},
     emptyTitle: {fontSize: 18, fontWeight: '700', color: '#0F172A'},
     emptySubtitle: {fontSize: 13, color: '#64748B', textAlign: 'center', marginTop: 8},
+    errorText: {fontSize: 13, color: '#dc2626', textAlign: 'center', paddingHorizontal: 20, paddingBottom: 12},
 });

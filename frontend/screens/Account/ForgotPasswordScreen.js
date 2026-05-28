@@ -23,7 +23,7 @@ export default function ForgotPasswordScreen({navigation, route}) {
     const onSubmit = async ({email}) => {
         const result = await submitResetRequest(email);
         if (result.success) {
-            setTimeout(() => navigation.navigate('EmailLoginScreen'), 1500);
+            navigation.navigate('EmailLoginScreen');
         }
     };
 
@@ -40,11 +40,7 @@ export default function ForgotPasswordScreen({navigation, route}) {
             isLoading={isLoading && !isSubmitted}
             continueLabel={isSubmitted ? 'Back to sign in' : 'Send reset link'}
             onContinue={isSubmitted ? () => navigation.navigate('EmailLoginScreen') : handleSubmit(onSubmit)}
-            footerText={
-                <Text className="text-[12px] font-sf text-gray-400 mb-4 text-center w-3/4">
-                    This is a placeholder flow. Password reset is not fully implemented yet.
-                </Text>
-            }
+            footerText={null}
         >
             {!isSubmitted && (
                 <AuthTextField

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Alert } from 'react-native';
-import { checkEmailExist, registerEmail, sendOTP, checkOTP, saveRegisterToken } from '../../services/AuthService';
+import { sendOTP, verifyOtp, register, getRegisterToken, clearRegisterToken } from '../../services/AuthService';
 import { saveSession } from '../../utils/authStorage';
 
 export const useRegister = () => {
@@ -8,70 +8,67 @@ export const useRegister = () => {
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
 
-    const checkEmailAvailable = useCallback(async (email) => {
-        setIsCheckingEmail(true);
-        try {
-            await checkEmailExist(email);
-            return { available: true };
-        } catch (err) {
-            const message = err?.message || 'This email is already registered';
-            return { available: false, message };
-        } finally {
-            setIsCheckingEmail(false);
-        }
-    }, []);
-
     const sendVerificationOtp = useCallback(async (email) => {
+        setIsCheckingEmail(true);
         setIsSendingOtp(true);
         try {
             await sendOTP(email);
             return { success: true };
         } catch (err) {
-            const message = err?.message || 'Failed to send verification code. Please try again.';
-            Alert.alert('Error', message);
-            return { success: false, message };
+            console.error("API Error: ", err.response?.data || err.message);
+            const isConflict = err?.response?.status === 400;
+            const message = isConflict
+                ? 'This email is already registered.'
+                : (err?.response?.data?.email?.[0] || err?.response?.data?.detail || 'Failed to send verification code. Please try again.');
+            Alert.alert(isConflict ? 'Email taken' : 'Error', message);
+            return { success: false, message, isConflict };
         } finally {
+            setIsCheckingEmail(false);
             setIsSendingOtp(false);
         }
     }, []);
 
     const verifyOtpCode = useCallback(async (email, otpCode) => {
         try {
-            const response = await checkOTP(email, otpCode);
+            const normalizedEmail = String(email || '').trim().toLowerCase();
+            const normalizedOtpCode = String(otpCode || '').trim();
+            const response = await verifyOtp(normalizedEmail, normalizedOtpCode);
             if (response.register_token) {
+                await clearRegisterToken();
+                const { saveRegisterToken } = await import('../../services/AuthService');
                 await saveRegisterToken(response.register_token);
             }
             return { success: true, data: response };
         } catch (err) {
-            const message = err?.message || 'Incorrect verification code';
+            console.error("API Error: ", err.response?.data || err.message);
+            const message = err?.response?.data?.otp_code?.[0]
+                || err?.response?.data?.detail
+                || 'Incorrect verification code. Please try again.';
             throw new Error(message);
         }
     }, []);
 
-    const handleRegister = useCallback(async ({ email, password, confirmPassword, name, phone, role }) => {
+    const handleRegister = useCallback(async ({ email, password, name, phone, role }) => {
         setIsLoading(true);
         try {
-            const response = await registerEmail({
-                email,
-                password,
-                confirmPassword,
-                name,
-                phone,
-                role,
-            });
-
-            const token = response?.data?.access_token;
-            const user = response?.data?.user;
-
-            if (response?.status === 'success' && token) {
-                await saveSession(token, user);
-                return { status: 'success', data: response.data };
+            const registerToken = await getRegisterToken();
+            if (!registerToken) {
+                throw new Error('Session expired. Please verify your email again.');
             }
 
-            const message = 'Registration failed. Please try again.';
-            Alert.alert('Registration failed', message);
-            return { status: 'error', message };
+            const response = await register({ email, password, name, phone, role, registerToken });
+            const token = response?.access_token;
+            const user = response?.user;
+
+            if (token) {
+                await saveSession(token, user);
+                await clearRegisterToken();
+                return { status: 'success', data: response };
+            }
+
+            throw new Error('Registration failed. Please try again.');
         } catch (err) {
+            console.error("API Error: ", err.response?.data || err.message);
             const message = err?.message || 'Registration failed. Please try again.';
             Alert.alert('Registration failed', message);
             return { status: 'error', message };
@@ -81,7 +78,7 @@ export const useRegister = () => {
     }, []);
 
     return {
-        checkEmailAvailable,
+        checkEmailAvailable: sendVerificationOtp,
         sendVerificationOtp,
         verifyOtpCode,
         handleRegister,

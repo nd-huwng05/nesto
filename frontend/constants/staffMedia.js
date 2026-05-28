@@ -1,4 +1,3 @@
-/** Shared imagery for the staff portal (presentation assets) */
 export const STAFF_MEDIA = {
     ROOM_IMAGE:
         'http://googleusercontent.com/image_collection/image_retrieval/6091562507740590890',

@@ -1,13 +1,16 @@
-import {useState, useEffect} from 'react';
+import {useMemo, useState, useEffect} from 'react';
 import {Alert, Keyboard} from 'react-native';
-import {createBranch, MANAGER_ID} from '../../services/BranchService';
+import {createBranch, fetchAmenityOptions, fetchGuestSegments} from '../../services/BranchService';
 import {useAuthOTP} from '../account/useAuthOTP';
 import {useValidation, REGEX_PHONE} from '../validations/useFormValidation';
+import {resolveApiPayloadLogo} from '../../utils/mediaUrl';
+import {useManagerProfile} from '../../configuration/ManagerProfileContext';
 
 const TOTAL_STEPS = 6;
 
 export function useCreateBranch(navigation, route) {
     const businessId = route.params?.businessId;
+    const {profile} = useManagerProfile();
 
     const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
@@ -25,16 +28,13 @@ export function useCreateBranch(navigation, route) {
         '',
         REGEX_PHONE
     );
-    const {handleSendOTP} = useAuthOTP();
-
-    const amenityOptions = [
-        'Free Wifi',
-        'Swimming Pool',
-        'Gym / Fitness',
-        'Parking Space',
-        '24/7 Front Desk',
-        'Restaurant',
-    ];
+    const {handleSendBusinessOTP} = useAuthOTP();
+    const [amenityOptions, setAmenityOptions] = useState([]);
+    const guestSegments = useMemo(() => ['Family', 'Business', 'Solo', 'Couple', 'Group'], []);
+    const verificationEmail = useMemo(
+        () => String(profile?.email || '').trim().toLowerCase(),
+        [profile?.email]
+    );
 
     useEffect(() => {
         if (!businessId) {
@@ -43,6 +43,13 @@ export function useCreateBranch(navigation, route) {
             ]);
         }
     }, [businessId, navigation]);
+
+    useEffect(() => {
+        (async () => {
+            const res = await fetchAmenityOptions();
+            if (res.status === 'success') setAmenityOptions(Array.isArray(res?.data) ? res.data : []);
+        })();
+    }, []);
 
     const toggleAmenity = (amenity) => {
         setSelectedAmenities((prev) =>
@@ -57,10 +64,14 @@ export function useCreateBranch(navigation, route) {
             setIsLoading(true);
             setPhoneError(null);
             try {
-                await handleSendOTP(branchPhone);
+                if (!verificationEmail) {
+                    setPhoneError('Missing manager email. Please update your profile first.');
+                    return;
+                }
+                await handleSendBusinessOTP(verificationEmail);
                 setShowOtpModal(true);
             } catch (error) {
-                setPhoneError(error.response?.message || 'Failed to send OTP to branch hotline.');
+                setPhoneError(error.message || 'Failed to send verification code.');
             } finally {
                 setIsLoading(false);
             }
@@ -73,27 +84,25 @@ export function useCreateBranch(navigation, route) {
         setIsLoading(true);
 
         try {
+            const remoteImages = (branchImages || []).map(resolveApiPayloadLogo).filter(Boolean);
             const newBranchPayload = {
-                id: 'br_' + Date.now(),
-                managerId: MANAGER_ID,
-                name: branchName,
-                address: branchAddress,
-                images: branchImages,
-                image: branchImages[0],
+                name: String(branchName || '').trim(),
+                address: String(branchAddress || '').trim(),
+                images: remoteImages,
+                image: remoteImages[0] || null,
                 amenities: selectedAmenities,
-                guestSegments: ['Family'],
+                guestSegments,
                 billing: {bankName, accountNumber: bankAccount},
                 phone: branchPhone,
             };
 
-            const res = await createBranch(businessId, newBranchPayload, MANAGER_ID);
+            const res = await createBranch(businessId, newBranchPayload);
 
             if (res.status === 'success') {
                 Alert.alert('Success', 'Branch verified and created successfully!', [
                     {
                         text: 'OK',
                         onPress: () => {
-                            route?.params?.onBranchCreated?.(businessId, res.data);
                             navigation.goBack();
                         },
                     },
@@ -152,6 +161,7 @@ export function useCreateBranch(navigation, route) {
     return {
         step,
         totalSteps: TOTAL_STEPS,
+        verificationEmail,
         branchName,
         setBranchName,
         branchAddress,

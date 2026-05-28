@@ -3,6 +3,7 @@ from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin, Group
 
 from core.models import BaseAuditedModel
+from cloudinary.models import CloudinaryField
 
 
 class CustomUserManager(BaseUserManager):
@@ -33,15 +34,34 @@ class Role(models.TextChoices):
     SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
     CUSTOMER = "CUSTOMER", "Customer"
     BUSINESS_OWNER = "BUSINESS_OWNER", "Business_Owner"
+    RECEPTIONIST = "RECEPTIONIST", "Receptionist"
+    HOUSEKEEPING = "HOUSEKEEPING", "Housekeeping"
+    SERVICE = "SERVICE", "Service"
+    MANAGER = "MANAGER", "Manager"
     STAFF = "STAFF", "Staff"
+
+
+ROLE_GROUPS_MAP = {
+    Role.SUPER_ADMIN: {"Admin_Group"},
+    Role.CUSTOMER: {"Customer_Group"},
+    Role.BUSINESS_OWNER: {"Business_Group"},
+    Role.MANAGER: {"Manager_Group", "Business_Group"},
+    Role.RECEPTIONIST: {"Receptionist_Group", "Staff_Group"},
+    Role.HOUSEKEEPING: {"Housekeeping_Group", "Staff_Group"},
+    Role.SERVICE: {"Service_Group", "Staff_Group"},
+    Role.STAFF: {"Staff_Group"},
+}
 
 
 class User(AbstractBaseUser, PermissionsMixin, BaseAuditedModel):
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=32, blank=True, default="", db_index=True)
     name = models.CharField(max_length=255, blank=True, default="")
-    avatar = models.URLField(max_length=500, blank=True, null=True)
+    avatar = CloudinaryField("avatar", blank=True, null=True)
     role = models.CharField(max_length=32, choices=Role.choices, default=Role.CUSTOMER)
+    preferred_location = models.CharField(max_length=255, blank=True, default="")
+    preferred_latitude = models.FloatField(null=True, blank=True)
+    preferred_longitude = models.FloatField(null=True, blank=True)
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
@@ -60,18 +80,13 @@ class User(AbstractBaseUser, PermissionsMixin, BaseAuditedModel):
         return self.name or self.email
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
         super().save(*args, **kwargs)
-        if is_new:
-            if self.role == Role.SUPER_ADMIN:
-                admin_group, _ = Group.objects.get_or_create(name='Admin')
-                self.groups.add(admin_group)
-            elif self.role == Role.BUSINESS_OWNER:
-                business_group, _ = Group.objects.get_or_create(name='Business')
-                self.groups.add(business_group)
-            elif self.role == Role.STAFF:
-                staff_group, _ = Group.objects.get_or_create(name='Staff')
-                self.groups.add(staff_group)
+        known_groups = set().union(*ROLE_GROUPS_MAP.values())
+        self.groups.remove(*self.groups.filter(name__in=known_groups))
+        target_groups = ROLE_GROUPS_MAP.get(self.role, set())
+        for group_name in target_groups:
+            group, _ = Group.objects.get_or_create(name=group_name)
+            self.groups.add(group)
 
 
 class Provider(models.TextChoices):

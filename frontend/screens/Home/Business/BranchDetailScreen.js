@@ -34,6 +34,12 @@ export default function BranchDetailScreen({navigation, route}) {
         loadList: loadPhysicalRooms,
         remove: removePhysicalRoom,
     } = usePhysicalRooms(branchId);
+    const safeRoomTypes = Array.isArray(roomTypes) ? roomTypes : [];
+    const safeExtraServices = Array.isArray(extraServices) ? extraServices : [];
+    const safePhysicalRooms = Array.isArray(physicalRooms) ? physicalRooms : [];
+    const amenities = Array.isArray(branchDetail?.amenities) ? branchDetail.amenities : [];
+    const guestSegments = Array.isArray(branchDetail?.guestSegments) ? branchDetail.guestSegments : [];
+    const galleryImages = Array.isArray(branchDetail?.images) ? branchDetail.images : [];
 
     useFocusEffect(
         useCallback(() => {
@@ -91,14 +97,14 @@ export default function BranchDetailScreen({navigation, route}) {
                 <DetailRow label="Address" value={branchDetail.address} />
                 <View className="mt-2 h-32 bg-gray-100 rounded-xl items-center justify-center border border-gray-200">
                     <MapPin size={28} color="#94a3b8" />
-                    <Text className="font-sf text-gray-400 text-xs mt-2">Map preview (placeholder)</Text>
+                    <Text className="font-sf text-gray-400 text-xs mt-2">Map preview unavailable for this branch.</Text>
                 </View>
             </DetailSection>
 
             <DetailSection title="Facilities & Guest Segments">
                 <Text className="font-sf text-xs text-gray-400 mb-2">Facilities</Text>
                 <View className="flex-row flex-wrap gap-2 mb-3">
-                    {(branchDetail.amenities || []).map((item) => (
+                    {amenities.map((item) => (
                         <View key={item} className="bg-primary/10 px-3 py-1.5 rounded-full">
                             <Text className="text-primary font-sf text-xs">{item}</Text>
                         </View>
@@ -106,7 +112,7 @@ export default function BranchDetailScreen({navigation, route}) {
                 </View>
                 <Text className="font-sf text-xs text-gray-400 mb-2">Target Guest Segments</Text>
                 <View className="flex-row flex-wrap gap-2">
-                    {(branchDetail.guestSegments || []).map((item) => (
+                    {guestSegments.map((item) => (
                         <View key={item} className="bg-slate-100 px-3 py-1.5 rounded-full">
                             <Text className="text-slate-600 font-sf text-xs">{item}</Text>
                         </View>
@@ -115,7 +121,7 @@ export default function BranchDetailScreen({navigation, route}) {
             </DetailSection>
 
             <DetailSection title="Media Gallery">
-                <BranchMediaGallery coverImage={branchDetail.image} images={branchDetail.images} />
+                <BranchMediaGallery coverImage={branchDetail.image} images={galleryImages} />
                 <TouchableOpacity
                     onPress={() => navigation.navigate('EditBranchMediaScreen', {branchId})}
                     className="flex-row items-center justify-center mt-3 py-2.5 border border-primary/40 rounded-xl bg-primary/5"
@@ -128,10 +134,10 @@ export default function BranchDetailScreen({navigation, route}) {
             <DetailSection title="Room Types">
                 {loadingRooms ? (
                     <ActivityIndicator color="#8294FF" className="py-4" />
-                ) : roomTypes.length === 0 ? (
+                ) : safeRoomTypes.length === 0 ? (
                     <Text className="font-sf text-gray-400 text-sm mb-2">No room types configured yet.</Text>
                 ) : (
-                    roomTypes.map((room) => (
+                    safeRoomTypes.map((room) => (
                         <RoomTypeCard
                             key={room.id}
                             roomType={room}
@@ -166,12 +172,12 @@ export default function BranchDetailScreen({navigation, route}) {
             <DetailSection title="Physical Rooms">
                 {loadingInventory ? (
                     <ActivityIndicator color="#8294FF" className="py-4" />
-                ) : physicalRooms.length === 0 ? (
+                ) : safePhysicalRooms.length === 0 ? (
                     <Text className="font-sf text-gray-400 text-sm mb-2">
                         No physical rooms in inventory yet.
                     </Text>
                 ) : (
-                    physicalRooms.map((room) => (
+                    safePhysicalRooms.map((room) => (
                         <CatalogListItem
                             key={room.id}
                             title={`Room ${room.roomNumber}`}
@@ -201,10 +207,10 @@ export default function BranchDetailScreen({navigation, route}) {
             <DetailSection title="Extra Services">
                 {loadingExtras ? (
                     <ActivityIndicator color="#8294FF" className="py-4" />
-                ) : extraServices.length === 0 ? (
+                ) : safeExtraServices.length === 0 ? (
                     <Text className="font-sf text-gray-400 text-sm mb-2">No extra services configured yet.</Text>
                 ) : (
-                    extraServices.map((service) => (
+                    safeExtraServices.map((service) => (
                         <CatalogListItem
                             key={service.id}
                             title={service.name}

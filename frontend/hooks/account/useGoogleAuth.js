@@ -41,11 +41,12 @@ export const useGoogleAuth = () => {
         setIsLoading(true);
         try {
             const result = await promptAsync({ showInRecents: true });
-            if (result?.type === 'success' && result?.authentication?.accessToken) {
-                const idToken = result.authentication.accessToken;
+            if (result?.type === 'success' && result?.authentication?.idToken) {
+                const idToken = result.authentication.idToken;
                 const apiResponse = await loginWithGoogleApi(idToken);
 
                 if (apiResponse?.status === 'success' && apiResponse?.data?.access_token) {
+                    Alert.alert('Sign in successful', 'Welcome back.');
                     return {
                         success: true,
                         data: apiResponse.data,
@@ -55,6 +56,7 @@ export const useGoogleAuth = () => {
             }
             return { success: false, error: 'Authentication failed' };
         } catch (error) {
+            console.error("API Error: ", error.response?.data || error.message);
             const message = error?.message || 'Google sign in failed. Please try again.';
             Alert.alert('Sign in failed', message);
             return { success: false, error: message };

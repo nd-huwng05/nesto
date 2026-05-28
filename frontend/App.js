@@ -8,6 +8,7 @@ import {useContext} from "react";
 import OnboardingFlow from "./screens/Onboarding/OnboardingNavigator";
 import AccountFlow from "./screens/Account/AccountNavigator";
 import HomeFlow from "./screens/Home/HomeNavigator";
+import {ErrorBoundary} from "./components/common/ErrorBoundary";
 
 const Stack = createNativeStackNavigator()
 
@@ -15,13 +16,15 @@ function AppNavigator() {
     const {initialRoute} = useContext(GlobalContext)
     return (
         <SafeAreaProvider>
-            <NavigationContainer>
-                <Stack.Navigator screenOptions={{headerShown: false}} initialRouteName={initialRoute}>
-                    <Stack.Screen name="OnboardingFlow" component={OnboardingFlow} />
-                    <Stack.Screen name="AccountFlow" component={AccountFlow} />
-                    <Stack.Screen name="HomeFlow" component={HomeFlow} />
-                </Stack.Navigator>
-            </NavigationContainer>
+            <ErrorBoundary>
+                <NavigationContainer>
+                    <Stack.Navigator screenOptions={{headerShown: false}} initialRouteName={initialRoute}>
+                        <Stack.Screen name="OnboardingFlow" component={OnboardingFlow} />
+                        <Stack.Screen name="AccountFlow" component={AccountFlow} />
+                        <Stack.Screen name="HomeFlow" component={HomeFlow} />
+                    </Stack.Navigator>
+                </NavigationContainer>
+            </ErrorBoundary>
         </SafeAreaProvider>
     );
 }

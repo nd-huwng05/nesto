@@ -45,5 +45,5 @@ export function formatVnd(amount) {
     if (amount === 0 || amount === '0') return 'Included';
     const num = Number(amount);
     if (Number.isNaN(num)) return String(amount);
-    return `${num.toLocaleString('vi-VN')} ₫`;
+    return `${num.toLocaleString('en-US')} ₫`;
 }

@@ -1,6 +1,6 @@
 import {useCallback, useState} from 'react';
 import {Alert} from 'react-native';
-import {fetchBusinessList} from '../../services/BranchService';
+import {fetchBusinessList, fetchBranchList} from '../../services/BranchService';
 import {
     MANAGER_ID,
     createStaff,
@@ -23,7 +23,19 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
         try {
             const res = await fetchBusinessList(managerId);
             if (res.status === 'success') {
-                setBusinesses(res.data || []);
+                const baseList = Array.isArray(res.data) ? res.data : [];
+                const enriched = await Promise.all(
+                    baseList.map(async (biz) => {
+                        try {
+                            const brRes = await fetchBranchList(biz?.id);
+                            const branches = Array.isArray(brRes?.data) ? brRes.data : [];
+                            return {...biz, branches};
+                        } catch (e) {
+                            return {...biz, branches: Array.isArray(biz?.branches) ? biz.branches : []};
+                        }
+                    })
+                );
+                setBusinesses(enriched);
             }
         } catch (err) {
             Alert.alert('Error', getErrorMessage(err, 'Unable to load businesses.'));
@@ -32,9 +44,9 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
 
     const loadBranchOptions = useCallback(async () => {
         try {
-            const res = await fetchStaffBranchOptions(managerId);
+            const res = await fetchStaffBranchOptions();
             if (res.status === 'success') {
-                setBranchOptions(res.data || []);
+                setBranchOptions(Array.isArray(res?.data) ? res.data : []);
             }
         } catch (err) {
             Alert.alert('Error', getErrorMessage(err, 'Unable to load branches.'));
@@ -45,9 +57,9 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
         async (filters = {}) => {
             setIsLoading(true);
             try {
-                const res = await fetchStaffList(managerId, filters);
+                const res = await fetchStaffList(filters);
                 if (res.status === 'success') {
-                    setStaffList(res.data || []);
+                    setStaffList(Array.isArray(res?.data) ? res.data : []);
                 } else {
                     setStaffList([]);
                     Alert.alert('Error', res.message || 'Unable to load staff.');
@@ -64,7 +76,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
 
     const loadStaff = useCallback(
         async (staffId) => {
-            const res = await fetchStaffById(staffId, managerId);
+            const res = await fetchStaffById(staffId);
             if (res.status === 'success') return res.data;
             Alert.alert('Error', res.message || 'Staff member not found.');
             return null;
@@ -76,14 +88,16 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
         async (payload) => {
             setIsSaving(true);
             try {
-                const res = await createStaff(payload, managerId);
+                const res = await createStaff(payload);
                 if (res.status === 'success') {
                     await loadList();
                     return res;
                 }
+                console.log('API ERROR:', res?.data);
                 Alert.alert('Error', res.message || 'Unable to create staff.');
                 return res;
             } catch (err) {
+                console.log('API ERROR:', err?.response?.data);
                 Alert.alert('Error', getErrorMessage(err, 'Unable to create staff.'));
                 return {status: 'error'};
             } finally {
@@ -97,14 +111,16 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
         async (staffId, payload) => {
             setIsSaving(true);
             try {
-                const res = await updateStaff(staffId, payload, managerId);
+                const res = await updateStaff(staffId, payload);
                 if (res.status === 'success') {
                     await loadList();
                     return res;
                 }
+                console.log('API ERROR:', res?.data);
                 Alert.alert('Error', res.message || 'Unable to update staff.');
                 return res;
             } catch (err) {
+                console.log('API ERROR:', err?.response?.data);
                 Alert.alert('Error', getErrorMessage(err, 'Unable to update staff.'));
                 return {status: 'error'};
             } finally {
@@ -118,7 +134,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
         async (staffId) => {
             setIsSaving(true);
             try {
-                const res = await deleteStaff(staffId, managerId);
+                const res = await deleteStaff(staffId);
                 if (res.status === 'success') {
                     await loadList();
                     return res;

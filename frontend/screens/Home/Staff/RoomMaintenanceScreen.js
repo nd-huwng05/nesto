@@ -68,10 +68,16 @@ export default function RoomMaintenanceScreen({navigation}) {
                 params: {branch: branchId},
             });
             if (response.status === 200) {
-                setMaintenance(response.data || []);
+                const raw = response.data;
+                const list = raw?.results ?? raw;
+                setMaintenance(Array.isArray(list) ? list : []);
             }
         } catch (err) {
             console.log('Failed to load maintenance:', err);
+            Alert.alert(
+                'Error',
+                err?.response?.data?.detail || err?.message || 'Failed to load maintenance issues.'
+            );
         } finally {
             setIsLoading(false);
         }
@@ -97,6 +103,7 @@ export default function RoomMaintenanceScreen({navigation}) {
         }
         try {
             const response = await Apis.post(endpoints.maintenance_rooms, {
+                branch: branchId,
                 room_number: roomNumber.trim(),
                 issue_type: issueType.trim(),
                 description: description.trim(),
@@ -110,7 +117,10 @@ export default function RoomMaintenanceScreen({navigation}) {
                 loadMaintenance();
             }
         } catch (err) {
-            Alert.alert('Error', 'Failed to submit report.');
+            Alert.alert(
+                'Error',
+                err?.response?.data?.detail || err?.message || 'Failed to submit report.'
+            );
         }
     };
 
@@ -168,7 +178,7 @@ export default function RoomMaintenanceScreen({navigation}) {
                 ) : (
                     <FlatList
                         data={maintenance}
-                        keyExtractor={(item) => item.id}
+                        keyExtractor={(item, index) => String(item?.id ?? `${item?.room_number ?? 'room'}-${index}`)}
                         contentContainerStyle={styles.listContent}
                         refreshControl={
                             <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF"/>

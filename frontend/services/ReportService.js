@@ -1,32 +1,34 @@
-import Apis, {endpoints} from '../configuration/Apis';
-import {reportMockStore} from './reportMockStore';
+import api, { endpoints } from '../configuration/Apis';
 
-const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
+const ok = (response, dataOverride = undefined) => ({
+    status: 'success',
+    data: dataOverride === undefined ? response?.data : dataOverride,
+});
+
+const fail = (err, fallback) => ({
+    status: 'error',
+    message: err?.response?.data?.detail || err?.message || fallback,
+    data: null,
+});
+
+export const fetchReportDashboard = async (businessId = 'all', branchId = 'all') => {
+    try {
+        const response = await api.get(endpoints['business-analytics-dashboard'], {params: {businessId, branchId, months: 6}});
+        return ok(response, response?.data);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch dashboard report.');
+    }
+};
 
 export const fetchReportBusinessFilters = async () => {
-    if (useMock()) {
-        const data = await reportMockStore.listBusinessFilters();
-        return {status: 'success', data};
-    }
-    return Apis.get(endpoints.get_report_businesses);
+    const response = await fetchReportDashboard('all', 'all');
+    if (response.status !== 'success') return response;
+    return {status: 'success', data: response.data?.businessOptions || []};
 };
 
-export const fetchReportBranchFilters = async (businessId) => {
-    if (useMock()) {
-        const data = await reportMockStore.listBranchFilters();
-        return {status: 'success', data};
-    }
-    return Apis.get(`${endpoints.get_report_branches}?business=${businessId}`);
-};
-
-export const fetchReportDashboard = async (businessId, branchId) => {
-    if (useMock()) {
-        const data = await reportMockStore.getDashboard(businessId, branchId);
-        if (!data) return {status: 'error', message: 'Report data not found'};
-        return {status: 'success', data};
-    }
-    const params = new URLSearchParams();
-    if (businessId && businessId !== 'all') params.append('business', businessId);
-    if (branchId && branchId !== 'all') params.append('branch', branchId);
-    return Apis.get(`${endpoints.get_report_dashboard}?${params.toString()}`);
+export const fetchReportBranchFilters = async () => {
+    const response = await fetchReportDashboard('all', 'all');
+    if (response.status !== 'success') return response;
+    return {status: 'success', data: response.data?.branchOptions || []};
 };

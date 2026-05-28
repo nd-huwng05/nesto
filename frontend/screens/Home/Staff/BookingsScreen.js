@@ -20,10 +20,12 @@ import {fetchBookingsForDay} from '../../../services/ReceptionService';
 import {buildDateStripe, toDateKey} from '../../../utils/staffBookingOps';
 import {connectBookingUpdates} from '../../../services/WebSocketService';
 import {UI, cardStyle} from '../../../styles/uiTokens';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function badgeStyle(status) {
-    if (status === 'checked_in') return styles.badgeInHouse;
-    if (status === 'checked_out') return styles.badgeDone;
+    const key = String(status || '').trim().toUpperCase();
+    if (key === 'CHECKED_IN') return styles.badgeInHouse;
+    if (key === 'CHECKED_OUT') return styles.badgeDone;
     return styles.badgePending;
 }
 
@@ -49,6 +51,7 @@ export default function BookingsScreen({navigation}) {
     const [bookings, setBookings] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedDateKey, setSelectedDateKey] = useState(() => toDateKey(new Date()));
 
@@ -61,7 +64,13 @@ export default function BookingsScreen({navigation}) {
             return;
         }
         const result = await fetchBookingsForDay(branchId, selectedDateKey);
-        setBookings(result.status === 'success' ? result.data || [] : []);
+        if (result.status === 'success') {
+            setBookings(result.data || []);
+            setErrorMessage('');
+        } else {
+            setBookings([]);
+            setErrorMessage(result.message || 'Unable to load bookings.');
+        }
         setIsLoading(false);
     }, [branchId, selectedDateKey]);
 
@@ -73,15 +82,20 @@ export default function BookingsScreen({navigation}) {
     );
 
     useEffect(() => {
+        let unsubscribe = () => {};
         if (!branchId) return;
-        connectBookingUpdates(branchId, {
-            onMessage: (data) => {
-                if (data.type === 'booking' || data.type === 'booking_update') {
-                    loadBookings();
-                }
-            },
-        });
-        return () => {};
+        (async () => {
+            const token = await AsyncStorage.getItem('access_token');
+            unsubscribe = await connectBookingUpdates(branchId, {
+                token,
+                onMessage: (data) => {
+                    if (data.type === 'booking' || data.type === 'booking_update') {
+                        loadBookings();
+                    }
+                },
+            });
+        })();
+        return () => unsubscribe();
     }, [branchId, loadBookings]);
 
     const filteredBookings = useMemo(
@@ -242,6 +256,9 @@ export default function BookingsScreen({navigation}) {
                         }
                     />
                 )}
+                {!isLoading && !!errorMessage ? (
+                    <Text className="font-sf text-center text-red-500 px-6 pb-4">{errorMessage}</Text>
+                ) : null}
             </View>
         </TabScreenLayout>
     );

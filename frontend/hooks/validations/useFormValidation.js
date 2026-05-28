@@ -1,15 +1,18 @@
-import {useState} from "react";
+import { useState } from 'react';
+import * as authSchemas from '../../validation/authSchemas';
 
 export const useValidation = (initialValue = '', validator) => {
     const [value, setValue] = useState(initialValue);
-
-   const isValid = (typeof validator === 'function')
-        ? validator(value)
-        : validator.test(value);
-
-    return {value, setValue, isValid};
+    const isValid =
+        typeof validator === 'function'
+            ? validator(value)
+            : String(validator || '').length > 0;
+    return { value, setValue, isValid };
 };
 
-export const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-export const REGEX_PHONE = /^(0[3|5|7|8|9])([0-9]{8})$/;
-export const VALIDATE_PASSWORD = (val) => val.length >= 8;
+export const REGEX_EMAIL = authSchemas.REGEX_EMAIL;
+export const REGEX_PHONE = authSchemas.REGEX_PHONE;
+export const validateEmail = authSchemas.validateEmail;
+export const validatePhone = authSchemas.validatePhone;
+export const validatePassword = authSchemas.validatePassword;
+export const validateName = authSchemas.validateName;

@@ -1,176 +1,300 @@
-import Apis, {endpoints} from '../configuration/Apis';
-import {branchMockStore, MANAGER_ID} from './branchMockStore';
+import api, {endpoints} from '../configuration/Apis';
 
-const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
+const ok = (response, dataOverride = undefined) => ({
+    status: 'success',
+    data: dataOverride === undefined ? response?.data : dataOverride,
+});
 
-export {MANAGER_ID};
+const fail = (err, fallback) => {
+    const data = err?.response?.data;
+    let message = err?.message || fallback;
+    if (typeof data?.detail === 'string') {
+        message = data.detail;
+    } else if (data && typeof data === 'object') {
+        const parts = Object.entries(data).flatMap(([key, value]) => {
+            if (key === 'status_code' || key === 'code') return [];
+            if (Array.isArray(value)) return value.map((item) => `${key}: ${item}`);
+            if (typeof value === 'string') return [`${key}: ${value}`];
+            return [];
+        });
+        if (parts.length) message = parts.join('\n');
+    }
+    return {status: 'error', message, data: data || null};
+};
+
+const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
+
+const fetchBusinessMetadata = async () => {
+    try {
+        const response = await api.get(endpoints['business-metadata']);
+        return ok(response, response?.data || {});
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        return fail(error, 'Unable to load business metadata.');
+    }
+};
+
+export const fetchLodgingTypes = async () => {
+    const res = await fetchBusinessMetadata();
+    if (res.status !== 'success') return res;
+    return {status: 'success', data: res.data?.lodgingTypes || []};
+};
+
+export const fetchAmenityOptions = async () => {
+    const res = await fetchBusinessMetadata();
+    if (res.status !== 'success') return res;
+    return {status: 'success', data: res.data?.amenityOptions || []};
+};
+
+export const fetchGuestSegments = async () => {
+    const res = await fetchBusinessMetadata();
+    if (res.status !== 'success') return res;
+    return {status: 'success', data: res.data?.guestSegments || []};
+};
+
+export const fetchRoomAmenityOptions = async () => {
+    const res = await fetchBusinessMetadata();
+    if (res.status !== 'success') return res;
+    return {status: 'success', data: res.data?.roomAmenities || []};
+};
 
 export const fetchBusinessList = async () => {
-    if (useMock()) {
-        const data = await branchMockStore.listBusinesses(MANAGER_ID);
-        return {status: 'success', data};
+    try {
+        const response = await api.get(endpoints['companies']);
+        return ok(response, pickList(response.data));
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch businesses.');
     }
-    return Apis.get(endpoints.get_business_list);
 };
 
 export const fetchBusinessDetail = async (businessId) => {
-    if (useMock()) {
-        const data = await branchMockStore.getBusiness(businessId, MANAGER_ID);
-        if (!data) return {status: 'error', message: 'Business not found'};
-        return {status: 'success', data};
+    try {
+        const response = await api.get(endpoints['company-detail'](businessId));
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch business detail.');
     }
-    return Apis.get(`${endpoints.get_business_detail}/${businessId}/`);
 };
 
-export const createBusiness = async (businessData) => {
-    if (useMock()) {
-        const data = await branchMockStore.createBusiness(MANAGER_ID, businessData);
-        return {status: 'success', message: 'Business created successfully!', data};
+export const createBusiness = async (payload) => {
+    try {
+        const response = await api.post(endpoints['companies'], payload);
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to create business.');
     }
-    return Apis.post(endpoints.create_business, businessData);
 };
 
-export const updateBusiness = async (businessId, updates) => {
-    if (useMock()) {
-        const data = await branchMockStore.updateBusiness(businessId, MANAGER_ID, updates);
-        return {status: 'success', message: 'Business updated successfully!', data};
+export const updateBusiness = async (businessId, payload) => {
+    try {
+        const response = await api.patch(endpoints['company-detail'](businessId), payload);
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to update business.');
     }
-    return Apis.patch(`${endpoints.update_business}/${businessId}/`, updates);
 };
 
 export const deleteBusiness = async (businessId) => {
-    if (useMock()) {
-        await branchMockStore.deleteBusiness(businessId, MANAGER_ID);
-        return {status: 'success', message: 'Business deleted successfully!'};
+    try {
+        await api.delete(endpoints['company-detail'](businessId));
+        return {status: 'success', data: null};
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to delete business.');
     }
-    return Apis.delete(`${endpoints.delete_business}/${businessId}/`);
+};
+
+export const fetchBranchList = async (businessId) => {
+    try {
+        const response = await api.get(endpoints['branches'], {params: {businessId}});
+        return ok(response, pickList(response.data));
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch branches.');
+    }
 };
 
 export const fetchBranchDetail = async (branchId) => {
-    if (useMock()) {
-        const data = await branchMockStore.getBranch(branchId, MANAGER_ID);
-        if (!data) return {status: 'error', message: 'Branch not found'};
-        return {status: 'success', data};
+    try {
+        const response = await api.get(endpoints['branch-detail'](branchId));
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch branch detail.');
     }
-    return Apis.get(`${endpoints.get_branch_detail}/${branchId}/`);
 };
 
-export const createBranch = async (businessId, branchData) => {
-    if (useMock()) {
-        const data = await branchMockStore.createBranch(businessId, MANAGER_ID, branchData);
-        return {status: 'success', message: 'Branch created successfully!', data};
+export const createBranch = async (businessId, payload) => {
+    try {
+        const response = await api.post(endpoints['branches'], {...payload, businessId});
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to create branch.');
     }
-    return Apis.post(endpoints.create_branch, {...branchData, business: businessId});
 };
 
-export const updateBranch = async (branchId, updates) => {
-    if (useMock()) {
-        const data = await branchMockStore.updateBranch(branchId, MANAGER_ID, updates);
-        return {status: 'success', message: 'Branch updated successfully!', data};
+export const updateBranch = async (branchId, payload) => {
+    try {
+        const response = await api.patch(endpoints['branch-detail'](branchId), payload);
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to update branch.');
     }
-    return Apis.patch(`${endpoints.update_branch}/${branchId}/`, updates);
 };
 
 export const deleteBranch = async (branchId) => {
-    if (useMock()) {
-        await branchMockStore.deleteBranch(branchId, MANAGER_ID);
-        return {status: 'success', message: 'Branch deleted successfully!'};
+    try {
+        await api.delete(endpoints['branch-detail'](branchId));
+        return {status: 'success', data: null};
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to delete branch.');
     }
-    return Apis.delete(`${endpoints.delete_branch}/${branchId}/`);
 };
 
 export const fetchRoomTypes = async (branchId) => {
-    if (useMock()) {
-        const data = await branchMockStore.listRoomTypes(branchId, MANAGER_ID);
-        return {status: 'success', data};
+    try {
+        const response = await api.get(endpoints['room-types'], {params: {branch_id: branchId}});
+        return ok(response, pickList(response.data));
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch room types.');
     }
-    return Apis.get(`${endpoints.get_room_types}?branch=${branchId}`);
 };
 
 export const createRoomType = async (branchId, payload) => {
-    if (useMock()) {
-        const data = await branchMockStore.createRoomType(branchId, MANAGER_ID, payload);
-        return {status: 'success', data};
+    try {
+        const response = await api.post(endpoints['room-types'], {branch: branchId, ...payload});
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to create room type.');
     }
-    return Apis.post(endpoints.create_room_type, {...payload, branch: branchId});
 };
 
-export const updateRoomType = async (branchId, roomTypeId, updates) => {
-    if (useMock()) {
-        const data = await branchMockStore.updateRoomType(branchId, roomTypeId, MANAGER_ID, updates);
-        return {status: 'success', data};
+export const updateRoomType = async (branchId, roomTypeId, payload) => {
+    try {
+        const response = await api.patch(endpoints['room-type-detail'](roomTypeId), payload);
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to update room type.');
     }
-    return Apis.patch(`${endpoints.update_room_type}/${roomTypeId}/`, updates);
 };
 
-export const deleteRoomType = async (roomTypeId) => {
-    if (useMock()) {
-        await branchMockStore.deleteRoomType(null, roomTypeId, MANAGER_ID);
-        return {status: 'success'};
+export const deleteRoomType = async (branchId, roomTypeId) => {
+    try {
+        await api.delete(endpoints['room-type-detail'](roomTypeId));
+        return {status: 'success', data: null};
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to delete room type.');
     }
-    return Apis.delete(`${endpoints.delete_room_type}/${roomTypeId}/`);
-};
-
-export const fetchExtraServices = async (branchId) => {
-    if (useMock()) {
-        const data = await branchMockStore.listExtraServices(branchId, MANAGER_ID);
-        return {status: 'success', data};
-    }
-    return Apis.get(`${endpoints.get_extra_services}?branch=${branchId}`);
-};
-
-export const createExtraService = async (branchId, payload) => {
-    if (useMock()) {
-        const data = await branchMockStore.createExtraService(branchId, MANAGER_ID, payload);
-        return {status: 'success', data};
-    }
-    return Apis.post(endpoints.create_extra_service, {...payload, branch: branchId});
-};
-
-export const updateExtraService = async (serviceId, updates) => {
-    if (useMock()) {
-        const data = await branchMockStore.updateExtraService(null, serviceId, MANAGER_ID, updates);
-        return {status: 'success', data};
-    }
-    return Apis.patch(`${endpoints.update_extra_service}/${serviceId}/`, updates);
-};
-
-export const deleteExtraService = async (serviceId) => {
-    if (useMock()) {
-        await branchMockStore.deleteExtraService(null, serviceId, MANAGER_ID);
-        return {status: 'success'};
-    }
-    return Apis.delete(`${endpoints.delete_extra_service}/${serviceId}/`);
 };
 
 export const fetchPhysicalRooms = async (branchId) => {
-    if (useMock()) {
-        const data = await branchMockStore.listPhysicalRooms(branchId, MANAGER_ID);
-        return {status: 'success', data};
+    try {
+        const response = await api.get(endpoints['rooms'], {params: {branch_id: branchId}});
+        return ok(response, pickList(response.data));
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch physical rooms.');
     }
-    return Apis.get(`${endpoints.get_physical_rooms}?branch=${branchId}`);
 };
 
 export const createPhysicalRoom = async (branchId, payload) => {
-    if (useMock()) {
-        const data = await branchMockStore.createPhysicalRoom(branchId, MANAGER_ID, payload);
-        return {status: 'success', data};
+    try {
+        const response = await api.post(endpoints['rooms'], {
+            branch: branchId,
+            roomNumber: payload.roomNumber,
+            floor: payload.floor,
+            roomTypeId: payload.roomTypeId,
+            status: payload.status || 'AVAILABLE',
+        });
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to create physical room.');
     }
-    return Apis.post(endpoints.create_physical_room, payload);
 };
 
-export const updatePhysicalRoom = async (physicalRoomId, updates) => {
-    if (useMock()) {
-        const data = await branchMockStore.updatePhysicalRoom(null, physicalRoomId, MANAGER_ID, updates);
-        return {status: 'success', data};
+export const updatePhysicalRoom = async (branchId, roomId, payload) => {
+    try {
+        const response = await api.patch(endpoints['room-detail'](roomId), {
+            roomNumber: payload.roomNumber,
+            floor: payload.floor,
+            roomTypeId: payload.roomTypeId,
+            status: payload.status,
+        });
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to update physical room.');
     }
-    return Apis.patch(`${endpoints.update_physical_room}/${physicalRoomId}/`, updates);
 };
 
-export const deletePhysicalRoom = async (physicalRoomId) => {
-    if (useMock()) {
-        await branchMockStore.deletePhysicalRoom(null, physicalRoomId, MANAGER_ID);
-        return {status: 'success'};
+export const deletePhysicalRoom = async (branchId, roomId) => {
+    try {
+        await api.delete(endpoints['room-detail'](roomId));
+        return {status: 'success', data: null};
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to delete physical room.');
     }
-    return Apis.delete(`${endpoints.delete_physical_room}/${physicalRoomId}/`);
+};
+
+export const fetchExtraServices = async (branchId) => {
+    try {
+        const response = await api.get(endpoints['extra-services'], {params: {branch_id: branchId}});
+        return ok(response, pickList(response.data));
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch extra services.');
+    }
+};
+
+export const createExtraService = async (branchId, payload) => {
+    try {
+        const response = await api.post(endpoints['extra-services'], {branch: branchId, ...payload});
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to create extra service.');
+    }
+};
+
+export const updateExtraService = async (branchId, serviceId, payload) => {
+    try {
+        const response = await api.patch(endpoints['extra-service-detail'](serviceId), payload);
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to update extra service.');
+    }
+};
+
+export const deleteExtraService = async (branchId, serviceId) => {
+    try {
+        await api.delete(endpoints['extra-service-detail'](serviceId));
+        return {status: 'success', data: null};
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to delete extra service.');
+    }
+};
+
+export const fetchStaffById = async (staffId) => {
+    try {
+        const response = await api.get(endpoints['staff-profile-detail'](staffId));
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch staff profile.');
+    }
 };

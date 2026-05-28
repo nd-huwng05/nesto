@@ -16,18 +16,10 @@ const TERMS_FOOTER = (
 );
 
 const navigateByRole = (navigation, user) => {
-    const role = user?.role;
-    if (role === 'BUSINESS_OWNER') {
-        navigation.reset({
-            index: 0,
-            routes: [{ name: 'HomeFlow' }],
-        });
-    } else {
-        navigation.reset({
-            index: 0,
-            routes: [{ name: 'HomeFlow' }],
-        });
-    }
+    navigation.reset({
+        index: 0,
+        routes: [{ name: 'HomeFlow' }],
+    });
 };
 
 export default function EmailLoginScreen({ navigation }) {

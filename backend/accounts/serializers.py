@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from accounts.models import Role, User
+import cloudinary.uploader
 
 User = get_user_model()
 
@@ -18,13 +19,65 @@ class PhoneValidationMixin:
 class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     groups = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
+    branchId = serializers.SerializerMethodField()
+    department = serializers.SerializerMethodField()
+    jobRole = serializers.SerializerMethodField()
+    preferredLocation = serializers.CharField(source="preferred_location", required=False, allow_blank=True)
+    preferredLatitude = serializers.FloatField(source="preferred_latitude", required=False, allow_null=True)
+    preferredLongitude = serializers.FloatField(source="preferred_longitude", required=False, allow_null=True)
 
     def get_groups(self, obj):
         return [group.name for group in obj.groups.all()]
 
+    def get_avatar(self, obj):
+        try:
+            return obj.avatar.url if getattr(obj, "avatar", None) else ""
+        except Exception:
+            return ""
+
+    def get_branchId(self, obj):
+        try:
+            sp = getattr(obj, "staff_profile", None)
+            return str(sp.branch_id) if sp and getattr(sp, "branch_id", None) else ""
+        except Exception:
+            return ""
+
+    def get_department(self, obj):
+        try:
+            sp = getattr(obj, "staff_profile", None)
+            return str(getattr(sp, "department", "") or "")
+        except Exception:
+            return ""
+
+    def get_jobRole(self, obj):
+        try:
+            sp = getattr(obj, "staff_profile", None)
+            return str(getattr(sp, "job_role", "") or "")
+        except Exception:
+            return ""
+
     class Meta:
         model = User
-        fields = ['id', 'email', 'phone', 'name', 'avatar', 'role', 'role_display', 'groups', 'is_active']
+        fields = [
+            'id',
+            'email',
+            'phone',
+            'name',
+            'avatar',
+            'role',
+            'role_display',
+            'groups',
+            'is_active',
+            'is_staff',
+            'is_superuser',
+            'branchId',
+            'department',
+            'jobRole',
+            'preferredLocation',
+            'preferredLatitude',
+            'preferredLongitude',
+        ]
         read_only_fields = ['id', 'email']
 
 class SendOTPSerializer(serializers.Serializer):
@@ -36,10 +89,22 @@ class SendOTPSerializer(serializers.Serializer):
             raise serializers.ValidationError("This email is already registered.")
         return email
 
+
+class SendBusinessContactOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        return value.lower().strip()
+
+
 class VerifyOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     otp_code = serializers.CharField(max_length=6, required=True)
     session_id = serializers.CharField(required=False, allow_blank=True)
+
+
+class GoogleAuthSerializer(serializers.Serializer):
+    id_token = serializers.CharField(required=True)
 
 class UserRegistrationSerializer(PhoneValidationMixin, serializers.ModelSerializer):
     confirm_password = serializers.CharField(required=True, write_only=True)
@@ -104,4 +169,20 @@ class ResetPasswordSerializer(serializers.Serializer):
             validate_password(data['new_password'])
         except Exception as e:
             raise serializers.ValidationError({"new_password": list(e.messages)})
+        return data
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True)
+    confirm_password = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, data):
+        if data["new_password"] != data["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        user = self.context["request"].user if self.context.get("request") else None
+        try:
+            validate_password(data["new_password"], user=user)
+        except Exception as exc:
+            raise serializers.ValidationError({"new_password": list(getattr(exc, "messages", [str(exc)]))})
         return data

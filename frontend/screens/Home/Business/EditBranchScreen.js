@@ -5,6 +5,7 @@ import {ScreenWrapper} from '../../../components/common/ScreenWrapper';
 import {useBranchCRUD} from '../../../hooks/business/useBranchCRUD';
 import {fetchAmenityOptions, fetchGuestSegments, fetchLodgingTypes} from '../../../services/BranchService';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
+import api, {endpoints} from '../../../configuration/Apis';
 
 function FormField({label, value, onChangeText, ...props}) {
     return (
@@ -29,30 +30,68 @@ export default function EditBranchScreen({navigation, route}) {
     const [lodgingTypes, setLodgingTypes] = useState([]);
     const [amenityOptions, setAmenityOptions] = useState([]);
     const [guestSegments, setGuestSegments] = useState([]);
+    const [themes, setThemes] = useState([]);
+    const [branchThemes, setBranchThemes] = useState([]);
+    const [newThemeName, setNewThemeName] = useState('');
 
     useEffect(() => {
-        Promise.all([fetchLodgingTypes(), fetchAmenityOptions(), fetchGuestSegments()]).then(
-            ([lt, am, gs]) => {
-                if (lt.status === 'success') setLodgingTypes(lt.data);
-                if (am.status === 'success') setAmenityOptions(am.data);
-                if (gs.status === 'success') setGuestSegments(gs.data);
+        let alive = true;
+        (async () => {
+            try {
+                const [lt, am, gs] = await Promise.all([
+                    fetchLodgingTypes(),
+                    fetchAmenityOptions(),
+                    fetchGuestSegments(),
+                ]);
+                if (!alive) return;
+                if (lt?.status === 'success') setLodgingTypes(Array.isArray(lt.data) ? lt.data : []);
+                if (am?.status === 'success') setAmenityOptions(Array.isArray(am.data) ? am.data : []);
+                if (gs?.status === 'success') setGuestSegments(Array.isArray(gs.data) ? gs.data : []);
+                const [themesRes, branchThemesRes] = await Promise.all([
+                    api.get(endpoints['themes']),
+                    api.get(endpoints['branch-themes'], {params: {branch_id: branchId}}),
+                ]);
+                const themeRows = themesRes?.data?.results || themesRes?.data || [];
+                const btRows = branchThemesRes?.data?.results || [];
+                if (alive) {
+                    setThemes(Array.isArray(themeRows) ? themeRows : []);
+                    setBranchThemes(Array.isArray(btRows) ? btRows : []);
+                }
+            } catch (err) {
+                if (!alive) return;
+                Alert.alert(
+                    'Error',
+                    err?.response?.data?.detail || err?.message || 'Could not load branch options.'
+                );
             }
-        );
+        })();
+        return () => {
+            alive = false;
+        };
     }, []);
 
     useEffect(() => {
         (async () => {
-            const data = await loadDetail(branchId);
-            if (data) {
-                setForm({
-                    name: data.name || '',
-                    lodgingType: data.lodgingType || '',
-                    address: data.address || '',
-                    phone: data.contact?.phone || '',
-                    email: data.contact?.email || '',
-                    amenities: data.amenities || [],
-                    guestSegments: data.guestSegments || [],
-                });
+            try {
+                const data = await loadDetail(branchId);
+                if (data) {
+                    setForm({
+                        name: data?.name || '',
+                        lodgingType: data?.lodgingType || '',
+                        address: data?.address || '',
+                        phone: data?.contact?.phone || '',
+                        email: data?.contact?.email || '',
+                        amenities: Array.isArray(data?.amenities) ? data.amenities : [],
+                        guestSegments: Array.isArray(data?.guestSegments) ? data.guestSegments : [],
+                    });
+                } else {
+                    Alert.alert('Error', 'Could not load branch details.');
+                }
+            } catch (err) {
+                Alert.alert(
+                    'Error',
+                    err?.response?.data?.detail || err?.message || 'Could not load branch details.'
+                );
             }
         })();
     }, [branchId, loadDetail]);
@@ -82,8 +121,44 @@ export default function EditBranchScreen({navigation, route}) {
             Alert.alert('Saved', 'Branch updated successfully.', [
                 {text: 'OK', onPress: () => navigation.goBack()},
             ]);
+            return;
         }
+        Alert.alert('Error', res?.message || 'Could not update branch.');
     }, [branchId, form, navigation, update]);
+
+    const isThemeEnabled = useCallback((theme) => {
+        const id = String(theme?.id || '');
+        return branchThemes.some((t) => String(t?.theme?.id || t?.themeId || '') === id);
+    }, [branchThemes]);
+
+    const reloadBranchThemes = useCallback(async () => {
+        const res = await api.get(endpoints['branch-themes'], {params: {branch_id: branchId}});
+        const btRows = res?.data?.results || [];
+        setBranchThemes(Array.isArray(btRows) ? btRows : []);
+    }, [branchId]);
+
+    const toggleTheme = useCallback(async (theme) => {
+        try {
+            await api.post(endpoints['branch-theme-toggle'], {branchId, themeId: theme?.id});
+            await reloadBranchThemes();
+        } catch (err) {
+            Alert.alert('Error', err?.response?.data?.detail || err?.message || 'Could not update themes.');
+        }
+    }, [branchId, reloadBranchThemes]);
+
+    const createTheme = useCallback(async () => {
+        const name = String(newThemeName || '').trim();
+        if (!name) return;
+        try {
+            await api.post(endpoints['themes'], {name});
+            setNewThemeName('');
+            const themesRes = await api.get(endpoints['themes']);
+            const themeRows = themesRes?.data?.results || themesRes?.data || [];
+            setThemes(Array.isArray(themeRows) ? themeRows : []);
+        } catch (err) {
+            Alert.alert('Error', err?.response?.data?.detail || err?.message || 'Could not create theme.');
+        }
+    }, [newThemeName]);
 
     if (isLoading || !form) {
         return (
@@ -161,6 +236,35 @@ export default function EditBranchScreen({navigation, route}) {
                         </Text>
                     </TouchableOpacity>
                 ))}
+            </View>
+
+            <Text className="font-sf text-xs text-gray-500 mb-2">Themes</Text>
+            <View className="flex-row flex-wrap gap-2 mb-4">
+                {themes.map((t) => {
+                    const active = isThemeEnabled(t);
+                    return (
+                        <TouchableOpacity
+                            key={String(t?.id || t?.name)}
+                            onPress={() => toggleTheme(t)}
+                            className={`px-3 py-2 rounded-full border ${active ? 'bg-primary/10 border-primary' : 'border-gray-200'}`}
+                        >
+                            <Text className={`font-sf text-xs ${active ? 'text-primary' : 'text-gray-600'}`}>{t?.name}</Text>
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
+            <View className="flex-row items-center gap-2 mb-6">
+                <TextInput
+                    value={newThemeName}
+                    onChangeText={setNewThemeName}
+                    className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 font-sf text-slate-800"
+                    style={commonInputStyles.baseInput}
+                    placeholder="Create a new theme"
+                    placeholderTextColor="#9ca3af"
+                />
+                <TouchableOpacity onPress={createTheme} className="px-4 py-3 rounded-xl bg-primary">
+                    <Text className="text-white font-sf-bold">Add</Text>
+                </TouchableOpacity>
             </View>
 
             <TouchableOpacity

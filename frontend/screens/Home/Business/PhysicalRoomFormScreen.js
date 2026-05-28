@@ -33,26 +33,47 @@ export default function PhysicalRoomFormScreen({navigation, route}) {
     const [roomTypeId, setRoomTypeId] = useState('');
     const [roomTypes, setRoomTypes] = useState([]);
     const [loading, setLoading] = useState(true);
+    const roomTypeList = Array.isArray(roomTypes) ? roomTypes : [];
 
     useEffect(() => {
+        let mounted = true;
         (async () => {
-            const typesRes = await fetchRoomTypes(branchId);
-            const types = typesRes.status === 'success' ? typesRes.data || [] : [];
-            setRoomTypes(types);
+            try {
+                const typesRes = await fetchRoomTypes(branchId);
+                const types =
+                    typesRes?.status === 'success' && Array.isArray(typesRes?.data) ? typesRes.data : [];
+                if (!mounted) return;
+                setRoomTypes(types);
 
-            if (isEdit) {
-                const roomsRes = await fetchPhysicalRooms(branchId);
-                const found = roomsRes.data?.find((r) => r.id === physicalRoomId);
-                if (found) {
-                    setRoomNumber(found.roomNumber);
-                    setFloor(found.floor);
-                    setRoomTypeId(found.roomTypeId);
+                if (isEdit) {
+                    const roomsRes = await fetchPhysicalRooms(branchId);
+                    const rooms = Array.isArray(roomsRes?.data) ? roomsRes.data : [];
+                    const found = rooms.find((r) => r?.id === physicalRoomId);
+                    if (found) {
+                        setRoomNumber(found?.roomNumber != null ? String(found.roomNumber) : '');
+                        setFloor(found?.floor != null ? String(found.floor) : '');
+                        setRoomTypeId(found?.roomTypeId ?? '');
+                    }
+                } else if (types.length > 0) {
+                    setRoomTypeId(types[0]?.id ?? '');
                 }
-            } else if (types.length > 0) {
-                setRoomTypeId(types[0].id);
+            } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error('[PhysicalRoomForm] load failed', e);
+                if (mounted) {
+                    setRoomTypes([]);
+                    Alert.alert(
+                        'Error',
+                        e?.response?.data?.detail || e?.message || 'Could not load room information.'
+                    );
+                }
+            } finally {
+                if (mounted) setLoading(false);
             }
-            setLoading(false);
         })();
+        return () => {
+            mounted = false;
+        };
     }, [branchId, isEdit, physicalRoomId]);
 
     const handleSave = async () => {
@@ -82,16 +103,18 @@ export default function PhysicalRoomFormScreen({navigation, route}) {
             Alert.alert('Saved', 'Physical room saved successfully.', [
                 {text: 'OK', onPress: () => navigation.goBack()},
             ]);
+            return;
         }
+        Alert.alert('Error', res?.message || 'Could not save physical room.');
     };
 
     const saveButton = (
         <TouchableOpacity
             onPress={handleSave}
-            disabled={isSaving || roomTypes.length === 0}
+            disabled={isSaving || roomTypeList.length === 0}
             activeOpacity={0.85}
             className={`py-4 rounded-full items-center min-h-[52px] justify-center ${
-                isSaving || roomTypes.length === 0 ? 'bg-gray-300' : 'bg-primary'
+                isSaving || roomTypeList.length === 0 ? 'bg-gray-300' : 'bg-primary'
             }`}
         >
             {isSaving ? (
@@ -141,7 +164,7 @@ export default function PhysicalRoomFormScreen({navigation, route}) {
                 />
 
                 <Text className="font-sf text-xs text-gray-500 mb-2">Room Type *</Text>
-                {roomTypes.length === 0 ? (
+                {roomTypeList.length === 0 ? (
                     <Text className="font-sf text-sm text-amber-600 mb-2">
                         No room types yet. Add a room type before assigning physical rooms.
                     </Text>
@@ -152,7 +175,7 @@ export default function PhysicalRoomFormScreen({navigation, route}) {
                         nestedScrollEnabled
                         contentContainerStyle={typePickerStyle.row}
                     >
-                        {roomTypes.map((type) => (
+                        {roomTypeList.map((type) => (
                             <TouchableOpacity
                                 key={type.id}
                                 onPress={() => setRoomTypeId(type.id)}

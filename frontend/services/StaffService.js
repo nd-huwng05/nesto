@@ -1,74 +1,117 @@
-import Apis, {endpoints} from '../configuration/Apis';
-import {MANAGER_ID} from './branchMockStore';
-import {staffMockStore} from './staffMockStore';
+import api, {endpoints} from '../configuration/Apis';
+import {extractApiErrorMessage} from '../utils/apiError';
 
-const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
+const ok = (response, dataOverride = undefined) => ({
+    status: 'success',
+    data: dataOverride === undefined ? response?.data : dataOverride,
+});
 
-export {MANAGER_ID};
-export {STAFF_ROLES} from './staffMockStore';
+const fail = (err, fallback) => ({
+    status: 'error',
+    message: extractApiErrorMessage(err, fallback),
+    data: err?.response?.data || null,
+});
 
-export const fetchStaffList = async (filters = {}) => {
-    if (useMock()) {
-        const data = await staffMockStore.listStaff(MANAGER_ID, filters);
-        return {status: 'success', data};
+const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
+
+export const STAFF_ROLES = [
+    'ADMIN',
+    'RECEPTIONIST',
+    'HOUSEKEEPING',
+    'SERVICE',
+    'RESTAURANT',
+    'SPA',
+    'DRIVER',
+];
+
+export const DEFAULT_STAFF_PASSWORD = 'Staff@123456';
+
+export const fetchStaffProfiles = async (params = {}) => {
+    try {
+        const response = await api.get(endpoints['staff-profiles'], {params});
+        return ok(response, pickList(response.data));
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load staff list.');
     }
-    const params = new URLSearchParams();
-    if (filters.branchId && filters.branchId !== 'all') params.append('branch', filters.branchId);
-    if (filters.businessId && filters.businessId !== 'all') {
-        return Apis.get(`${endpoints.get_staff_list}?${params.toString()}&branch__business=${filters.businessId}`);
-    }
-    return Apis.get(`${endpoints.get_staff_list}?${params.toString()}`);
 };
 
-export const fetchStaffById = async (staffId) => {
-    if (useMock()) {
-        const data = await staffMockStore.getStaff(staffId, MANAGER_ID);
-        if (!data) return {status: 'error', message: 'Staff member not found'};
-        return {status: 'success', data};
+export const fetchStaffProfile = async (id) => {
+    try {
+        const response = await api.get(endpoints['staff-profile-detail'](id));
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load staff profile.');
     }
-    return Apis.get(`${endpoints.get_staff_list}${staffId}/`);
 };
 
-export const createStaff = async (payload) => {
-    if (useMock()) {
-        try {
-            const data = await staffMockStore.createStaff(MANAGER_ID, payload);
-            return {status: 'success', data};
-        } catch (err) {
-            return {status: 'error', message: err.message || 'Unable to create staff'};
-        }
+export const createStaffProfile = async (data) => {
+    try {
+        const response = await api.post(endpoints['staff-profiles'], data);
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to create staff.');
     }
-    return Apis.post(endpoints.create_staff, payload);
 };
 
-export const updateStaff = async (staffId, payload) => {
-    if (useMock()) {
-        try {
-            const data = await staffMockStore.updateStaff(staffId, MANAGER_ID, payload);
-            return {status: 'success', data};
-        } catch (err) {
-            return {status: 'error', message: err.message || 'Unable to update staff'};
-        }
+export const updateStaffProfile = async (id, data) => {
+    try {
+        const response = await api.patch(endpoints['staff-profile-detail'](id), data);
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to update staff.');
     }
-    return Apis.patch(`${endpoints.update_staff}/${staffId}/`, payload);
 };
 
-export const deleteStaff = async (staffId) => {
-    if (useMock()) {
-        try {
-            const data = await staffMockStore.deleteStaff(staffId, MANAGER_ID);
-            return {status: 'success', data};
-        } catch (err) {
-            return {status: 'error', message: err.message || 'Unable to delete staff'};
-        }
+export const deleteStaffProfile = async (id) => {
+    try {
+        const response = await api.delete(endpoints['staff-profile-detail'](id));
+        return ok(response, null);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to delete staff.');
     }
-    return Apis.delete(`${endpoints.delete_staff}/${staffId}/`);
+};
+
+export const fetchStaffById = async (id) => {
+    return await fetchStaffProfile(id);
+};
+
+export const fetchStaffList = async (params = {}) => {
+    return await fetchStaffProfiles(params);
+};
+
+export const createStaff = async (data) => {
+    return await createStaffProfile(data);
+};
+
+export const updateStaff = async (id, data) => {
+    return await updateStaffProfile(id, data);
+};
+
+export const deleteStaff = async (id) => {
+    return await deleteStaffProfile(id);
 };
 
 export const fetchStaffBranchOptions = async () => {
-    if (useMock()) {
-        const data = await staffMockStore.listBranchOptions(MANAGER_ID);
-        return {status: 'success', data};
+    try {
+        const response = await api.get(endpoints['branches']);
+        return ok(response, pickList(response.data));
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load branches.');
     }
-    return Apis.get(`${endpoints.get_business_list}`);
+};
+
+export const fetchBusinessList = async () => {
+    try {
+        const response = await api.get(endpoints['companies']);
+        return ok(response, pickList(response.data));
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load businesses.');
+    }
 };

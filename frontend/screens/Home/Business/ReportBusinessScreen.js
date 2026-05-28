@@ -20,8 +20,15 @@ import {useReportDashboard} from '../../../hooks/business/useReportDashboard';
 import {REPORT_SCREEN_PADDING, REPORT_SECTION_GAP, REPORT_STAT_GAP} from '../../../components/report/reportLayout';
 import {UI} from '../../../styles/uiTokens';
 import {formatReportNumber, formatReportVnd} from '../../../utils/formatReport';
+import {useManagerProfile} from '../../../configuration/ManagerProfileContext';
+import {AUTH_ROLES} from '../../../constants/authRoles';
 
 export default function ReportBusinessScreen() {
+    const {profile} = useManagerProfile();
+    const groups = Array.isArray(profile?.groups) ? profile.groups : [];
+    const canViewReports =
+        [AUTH_ROLES.SUPER_ADMIN, AUTH_ROLES.BUSINESS_OWNER, AUTH_ROLES.MANAGER].includes(profile?.rawRole) ||
+        groups.some((g) => ['Admin_Group', 'Business_Group', 'Manager_Group'].includes(g));
     const {
         businessFilter,
         branchFilter,
@@ -37,6 +44,32 @@ export default function ReportBusinessScreen() {
 
     const {width: windowWidth} = useWindowDimensions();
     const twoColumnInsights = windowWidth >= 400;
+
+    const safeDashboard = dashboard || {};
+    const totalRevenue = Number.isFinite(Number(safeDashboard?.totalRevenue)) ? Number(safeDashboard.totalRevenue) : 0;
+    const totalBookings = Number.isFinite(Number(safeDashboard?.totalBookings)) ? Number(safeDashboard.totalBookings) : 0;
+    const csatScore = Number.isFinite(Number(safeDashboard?.csatScore)) ? Number(safeDashboard.csatScore) : 0;
+    const occupancyRate = Number.isFinite(Number(safeDashboard?.occupancyRate)) ? Number(safeDashboard.occupancyRate) : 0;
+    const monthlyRevenue = Array.isArray(safeDashboard?.monthlyRevenue) ? safeDashboard.monthlyRevenue : [];
+    const monthlyRevenueSafe = monthlyRevenue
+        .filter((row) => row && typeof row === 'object')
+        .map((row) => ({
+            label: String(row.label ?? ''),
+            revenue: Number.isFinite(Number(row.revenue)) ? Number(row.revenue) : 0,
+        }));
+
+    if (!canViewReports) {
+        return (
+            <TabScreenLayout backgroundColor={UI.screenBg}>
+                <View style={styles.emptyCard}>
+                    <Text className="font-sf-bold text-slate-700 text-base mb-2">Access restricted</Text>
+                    <Text className="font-sf text-gray-500 text-center">
+                        Your role does not have permission to view financial analytics.
+                    </Text>
+                </View>
+            </TabScreenLayout>
+        );
+    }
     return (
         <TabScreenLayout backgroundColor={UI.screenBg}>
             <ScrollView
@@ -78,7 +111,7 @@ export default function ReportBusinessScreen() {
                 ) : dashboard ? (
                     <>
                         <Text className="font-sf text-xs text-primary mb-4">
-                            {dashboard.filterLabel} · {dashboard.periodLabel}
+                            {safeDashboard.filterLabel} · {safeDashboard.periodLabel}
                         </Text>
 
                         {/* Stat cards: 2-column grid + full-width CSAT */}
@@ -86,7 +119,7 @@ export default function ReportBusinessScreen() {
                             <View style={styles.statHalf}>
                                 <ReportStatCard
                                     label="Total Revenue"
-                                    value={formatReportVnd(dashboard.totalRevenue)}
+                                    value={formatReportVnd(totalRevenue)}
                                     hint="Last 6 months"
                                     icon={Wallet}
                                 />
@@ -94,7 +127,7 @@ export default function ReportBusinessScreen() {
                             <View style={styles.statHalf}>
                                 <ReportStatCard
                                     label="Total Bookings"
-                                    value={formatReportNumber(dashboard.totalBookings)}
+                                    value={formatReportNumber(totalBookings)}
                                     hint="Confirmed stays"
                                     icon={CalendarCheck}
                                     accentClassName="bg-violet-100"
@@ -102,12 +135,12 @@ export default function ReportBusinessScreen() {
                                 />
                             </View>
                             <View style={styles.statFull}>
-                                <ReportCsatCard score={dashboard.csatScore} />
+                                <ReportCsatCard score={csatScore} />
                             </View>
                         </View>
 
                         <ReportSection title="Revenue Trend">
-                            <RevenueChart monthlyRevenue={dashboard.monthlyRevenue} />
+                            <RevenueChart monthlyRevenue={monthlyRevenueSafe} />
                         </ReportSection>
 
                         <View style={styles.insightsRow}>
@@ -118,7 +151,7 @@ export default function ReportBusinessScreen() {
                                 ]}
                             >
                                 <ReportSection>
-                                    <OccupancyGauge rate={dashboard.occupancyRate} />
+                                    <OccupancyGauge rate={occupancyRate} />
                                 </ReportSection>
                             </View>
                             <View
@@ -129,11 +162,11 @@ export default function ReportBusinessScreen() {
                             >
                                 <ReportSection>
                                     <Text className="font-sf-bold text-slate-700 text-sm text-center mb-3">
-                                        Customer Satisfaction
+                                        Housekeeping Completion
                                     </Text>
-                                    <CsatStars score={dashboard.csatScore} centered />
+                                    <CsatStars score={csatScore} centered />
                                     <Text className="font-sf text-xs text-gray-500 text-center mt-4 leading-5">
-                                        Based on post-stay reviews from guests across the selected scope.
+                                        Based on completed housekeeping tasks across the selected scope.
                                     </Text>
                                 </ReportSection>
                             </View>

@@ -1,98 +1,186 @@
-import { apiClient } from '../configuration/Apis';
+const WS_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
 
-const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_BASE_URL || 'ws://localhost:8000/ws';
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 30000;
+const MAX_RETRIES = 10;
 
-class WebSocketManager {
+class EventEmitter {
     constructor() {
-        this.sockets = {};
         this.listeners = {};
     }
 
-    connect(channel, callbacks = {}) {
-        if (this.sockets[channel]) {
-            return this.sockets[channel];
-        }
-        const token = this._getToken();
-        const wsUrl = `${WS_BASE_URL}/${channel}/?token=${token || ''}`;
-        const socket = new WebSocket(wsUrl);
+    on(event, callback) {
+        if (!this.listeners[event]) this.listeners[event] = [];
+        this.listeners[event].push(callback);
+        return () => this.off(event, callback);
+    }
 
-        socket.onopen = () => {
-            console.log(`WebSocket connected: ${channel}`);
-            if (callbacks.onOpen) callbacks.onOpen();
-        };
+    off(event, callback) {
+        if (!this.listeners[event]) return;
+        this.listeners[event] = this.listeners[event].filter((cb) => cb !== callback);
+    }
 
-        socket.onmessage = (event) => {
+    emit(event, data) {
+        if (!this.listeners[event]) return;
+        this.listeners[event].forEach((cb) => {
             try {
-                const data = JSON.parse(event.data);
-                if (this.listeners[channel]) {
-                    this.listeners[channel].forEach(callback => callback(data));
-                }
-                if (callbacks.onMessage) callbacks.onMessage(data);
+                cb(data);
             } catch (e) {
-                console.error('WebSocket message parse error:', e);
+                console.error("API Error: ", e?.response?.data || e?.message);
             }
-        };
-
-        socket.onerror = (error) => {
-            console.error(`WebSocket error (${channel}):`, error);
-            if (callbacks.onError) callbacks.onError(error);
-        };
-
-        socket.onclose = () => {
-            console.log(`WebSocket disconnected: ${channel}`);
-            delete this.sockets[channel];
-            if (callbacks.onClose) callbacks.onClose();
-        };
-
-        this.sockets[channel] = socket;
-        return socket;
-    }
-
-    disconnect(channel) {
-        if (this.sockets[channel]) {
-            this.sockets[channel].close();
-            delete this.sockets[channel];
-        }
-    }
-
-    disconnectAll() {
-        Object.keys(this.sockets).forEach(channel => this.disconnect(channel));
-    }
-
-    subscribe(channel, callback) {
-        if (!this.listeners[channel]) {
-            this.listeners[channel] = [];
-        }
-        this.listeners[channel].push(callback);
-        return () => {
-            this.listeners[channel] = this.listeners[channel].filter(cb => cb !== callback);
-        };
-    }
-
-    _getToken() {
-        try {
-            const { default: AsyncStorage } = require('@react-native-async-storage/async-storage');
-            return AsyncStorage.getItem('access_token');
-        } catch {
-            return null;
-        }
+        });
     }
 }
 
-export const wsManager = new WebSocketManager();
+class WebSocketService {
+    constructor() {
+        this._socket = null;
+        this._accessToken = null;
+        this._channel = null;
+        this._branchId = null;
+        this._emitter = new EventEmitter();
+        this._retryCount = 0;
+        this._retryTimer = null;
+        this._intentionalClose = false;
+    }
 
-export const connectBookingUpdates = (branchId, callbacks) => {
-    return wsManager.connect(`bookings/${branchId}/`, callbacks);
+    async connect(accessToken, channel, branchId) {
+        if (this._socket && this._socket.readyState === 1) {
+            this._socket.close();
+        }
+        this._intentionalClose = false;
+        this._accessToken = accessToken;
+        this._channel = channel;
+        this._branchId = branchId;
+        this._retryCount = 0;
+        this._clearRetryTimer();
+        return this._openSocket();
+    }
+
+    async _openSocket() {
+        if (!this._accessToken || !this._channel) return;
+        if (!this._branchId) {
+            const err = new Error('Missing branchId for WebSocket connection.');
+            this._emitter.emit('error', err);
+            return;
+        }
+        const query = `token=${encodeURIComponent(this._accessToken)}&branch_id=${encodeURIComponent(this._branchId)}`;
+        const url = `${WS_URL}/${this._channel}/?${query}`;
+        this._socket = new WebSocket(url);
+
+        this._socket.onopen = () => {
+            this._retryCount = 0;
+            this._emitter.emit('connected', { channel: this._channel });
+        };
+
+        this._socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                this._emitter.emit('message', data);
+                this._emitter.emit(data?.type, data);
+            } catch (e) {
+                console.error("API Error: ", e?.response?.data || e?.message);
+            }
+        };
+
+        this._socket.onerror = (event) => {
+            this._emitter.emit('error', event);
+        };
+
+        this._socket.onclose = (event) => {
+            this._emitter.emit('disconnected', { code: event.code });
+            if (!this._intentionalClose) {
+                this._scheduleReconnect();
+            }
+        };
+    }
+
+    _scheduleReconnect() {
+        if (this._retryCount >= MAX_RETRIES) {
+            this._emitter.emit('max_retries_reached', {});
+            return;
+        }
+        const delay = Math.min(
+            INITIAL_RETRY_DELAY_MS * Math.pow(2, this._retryCount),
+            MAX_RETRY_DELAY_MS
+        );
+        this._retryCount++;
+        this._retryTimer = setTimeout(() => {
+            this._openSocket();
+        }, delay);
+    }
+
+    _clearRetryTimer() {
+        if (this._retryTimer) {
+            clearTimeout(this._retryTimer);
+            this._retryTimer = null;
+        }
+    }
+
+    subscribe(event, callback) {
+        return this._emitter.on(event, callback);
+    }
+
+    send(message) {
+        if (this._socket && this._socket.readyState === 1) {
+            this._socket.send(JSON.stringify(message));
+        }
+    }
+
+    disconnect() {
+        this._intentionalClose = true;
+        this._clearRetryTimer();
+        if (this._socket) {
+            this._socket.close();
+            this._socket = null;
+        }
+        this._accessToken = null;
+        this._channel = null;
+        this._branchId = null;
+    }
+}
+
+export const wsService = new WebSocketService();
+export const wsEmitter = new EventEmitter();
+
+const connectByChannel = async (branchId, channel, handlers = {}) => {
+    const {onMessage, onError, onConnected, onDisconnected} = handlers;
+    const token = handlers.token;
+    if (!token || !branchId) {
+        return () => {};
+    }
+    await wsService.connect(token, channel, branchId);
+    const unsubscribers = [];
+    if (onMessage) unsubscribers.push(wsService.subscribe('message', onMessage));
+    if (onError) unsubscribers.push(wsService.subscribe('error', onError));
+    if (onConnected) unsubscribers.push(wsService.subscribe('connected', onConnected));
+    if (onDisconnected) unsubscribers.push(wsService.subscribe('disconnected', onDisconnected));
+    return () => {
+        unsubscribers.forEach((unsub) => unsub?.());
+        wsService.disconnect();
+    };
 };
 
-export const connectServiceOrderUpdates = (branchId, callbacks) => {
-    return wsManager.connect(`services/${branchId}/`, callbacks);
-};
+export const connectBookingUpdates = async (branchId, handlers = {}) =>
+    connectByChannel(branchId, 'bookings', handlers);
 
-export const disconnectBookingUpdates = (branchId) => {
-    wsManager.disconnect(`bookings/${branchId}/`);
-};
+export const connectRoomUpdates = async (branchId, handlers = {}) =>
+    connectByChannel(branchId, 'rooms', handlers);
 
-export const disconnectServiceOrderUpdates = (branchId) => {
-    wsManager.disconnect(`services/${branchId}/`);
+export const connectServiceUpdates = async (branchId, handlers = {}) =>
+    connectByChannel(branchId, 'services', handlers);
+
+export const connectCustomerUpdates = async (handlers = {}) => {
+    const token = handlers.token;
+    if (!token) return () => {};
+    await wsService.connect(token, 'customer', 'global');
+    const unsubscribers = [];
+    if (handlers.onMessage) unsubscribers.push(wsService.subscribe('message', handlers.onMessage));
+    if (handlers.onError) unsubscribers.push(wsService.subscribe('error', handlers.onError));
+    if (handlers.onConnected) unsubscribers.push(wsService.subscribe('connected', handlers.onConnected));
+    if (handlers.onDisconnected) unsubscribers.push(wsService.subscribe('disconnected', handlers.onDisconnected));
+    return () => {
+        unsubscribers.forEach((unsub) => unsub?.());
+        wsService.disconnect();
+    };
 };

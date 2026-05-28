@@ -16,12 +16,10 @@ export const phoneSchema = yup.object({
         .required('Phone number is required'),
 });
 
-/** Login: only ensure the field is not empty. Format checks happen via API after submit. */
 export const loginPasswordSchema = yup.object({
     password: yup.string().required('Password is required'),
 });
 
-/** Register: strict password strength rules. */
 export const passwordSchema = yup.object({
     password: yup
         .string()
@@ -31,14 +29,6 @@ export const passwordSchema = yup.object({
         .matches(/[@$!%*?&#]/, 'Must include a special character (@$!%*?&#)')
         .required('Password is required'),
 });
-
-export const confirmPasswordSchema = (passwordRef = 'password') =>
-    yup.object({
-        confirmPassword: yup
-            .string()
-            .oneOf([yup.ref(passwordRef)], 'Passwords do not match')
-            .required('Please confirm your password'),
-    });
 
 export const buildConfirmPasswordSchema = (originalPassword) =>
     yup.object({
@@ -71,3 +61,30 @@ export const nameSchema = yup.object({
         .min(2, 'Name must be at least 2 characters')
         .required('Name is required'),
 });
+
+export const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const REGEX_PHONE = /^(0[3|5|7|8|9])([0-9]{8})$/;
+
+export const validateEmail = (val) => {
+    if (!val || typeof val !== 'string') return false;
+    return REGEX_EMAIL.test(val.trim());
+};
+
+export const validatePhone = (val) => {
+    if (!val || typeof val !== 'string') return false;
+    return REGEX_PHONE.test(val.trim().replace(/[\s\-()]+/g, ''));
+};
+
+export const validatePassword = (val) => {
+    if (!val || typeof val !== 'string') return false;
+    if (val.length < 8) return false;
+    if (!/[A-Z]/.test(val)) return false;
+    if (!/[0-9]/.test(val)) return false;
+    if (!/[@$!%*?&#]/.test(val)) return false;
+    return true;
+};
+
+export const validateName = (val) => {
+    if (!val || typeof val !== 'string') return false;
+    return val.trim().length >= 2;
+};

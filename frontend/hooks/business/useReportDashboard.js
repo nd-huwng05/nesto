@@ -1,14 +1,13 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {Alert} from 'react-native';
 import {
-    MANAGER_ID,
     fetchReportBranchFilters,
     fetchReportBusinessFilters,
     fetchReportDashboard,
 } from '../../services/ReportService';
 import {getErrorMessage} from '../../utils/authErrors';
 
-export function useReportDashboard(managerId = MANAGER_ID) {
+export function useReportDashboard() {
     const [businessFilter, setBusinessFilter] = useState('all');
     const [branchFilter, setBranchFilter] = useState('all');
     const [businessOptions, setBusinessOptions] = useState([{id: 'all', name: 'All Businesses'}]);
@@ -33,8 +32,8 @@ export function useReportDashboard(managerId = MANAGER_ID) {
     const loadFilters = useCallback(async () => {
         try {
             const [bizRes, brRes] = await Promise.all([
-                fetchReportBusinessFilters(managerId),
-                fetchReportBranchFilters(managerId),
+                fetchReportBusinessFilters(),
+                fetchReportBranchFilters(),
             ]);
             if (bizRes.status === 'success' && bizRes.data?.length) {
                 setBusinessOptions(bizRes.data);
@@ -45,14 +44,14 @@ export function useReportDashboard(managerId = MANAGER_ID) {
         } catch (err) {
             Alert.alert('Error', getErrorMessage(err, 'Unable to load report filters.'));
         }
-    }, [managerId]);
+    }, []);
 
     const loadDashboard = useCallback(
         async (businessId = businessFilter, branchId = branchFilter, {silent = false} = {}) => {
             if (!silent) setIsLoading(true);
             else setIsRefreshing(true);
             try {
-                const res = await fetchReportDashboard(businessId, branchId, managerId);
+                const res = await fetchReportDashboard(businessId, branchId);
                 if (res.status === 'success') {
                     setDashboard(res.data);
                 } else {
@@ -67,7 +66,7 @@ export function useReportDashboard(managerId = MANAGER_ID) {
                 setIsRefreshing(false);
             }
         },
-        [branchFilter, businessFilter, managerId]
+        [branchFilter, businessFilter]
     );
 
     const selectBusiness = useCallback((businessId) => {

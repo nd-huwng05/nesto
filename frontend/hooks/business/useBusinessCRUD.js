@@ -6,6 +6,7 @@ import {
     deleteBusiness,
     fetchBusinessDetail,
     fetchBusinessList,
+    fetchBranchList,
     updateBusiness,
 } from '../../services/BranchService';
 import {getErrorMessage} from '../../utils/authErrors';
@@ -21,8 +22,24 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
         try {
             const res = await fetchBusinessList(managerId);
             if (res.status === 'success') {
-                setBusinesses(res.data);
-                return res.data;
+                const baseList = Array.isArray(res.data) ? res.data : [];
+
+                // Attach branches per business because business list may not include nested branches.
+                const enriched = await Promise.all(
+                    baseList.map(async (biz) => {
+                        try {
+                            const brRes = await fetchBranchList(biz?.id);
+                            const branchData = brRes?.data?.results || brRes?.data;
+                            const branches = Array.isArray(branchData) ? branchData : [];
+                            return {...biz, branches};
+                        } catch (e) {
+                            return {...biz, branches: Array.isArray(biz?.branches) ? biz.branches : []};
+                        }
+                    })
+                );
+
+                setBusinesses(enriched);
+                return enriched;
             }
             Alert.alert('Error', 'Unable to load businesses.');
             return [];

@@ -1,5 +1,5 @@
 import {useCallback, useState} from 'react';
-import {ActivityIndicator, Image, ScrollView, Text, View} from 'react-native';
+import {ActivityIndicator, Alert, Image, ScrollView, Text, View} from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {ScreenWrapper} from '../../../components/common/ScreenWrapper';
 import {DetailScreenHeader} from '../../../components/business/DetailScreenHeader';
@@ -13,17 +13,31 @@ export default function RoomTypeDetailScreen({navigation, route}) {
     const {remove, isSaving} = useRoomTypes(branchId);
     const [roomType, setRoomType] = useState(null);
     const [loading, setLoading] = useState(true);
+    const images = Array.isArray(roomType?.images) ? roomType.images : [];
+    const amenityList = Array.isArray(roomType?.roomAmenities) ? roomType.roomAmenities : [];
 
     useFocusEffect(
         useCallback(() => {
             let active = true;
             (async () => {
-                setLoading(true);
-                const res = await fetchRoomTypes(branchId);
-                const found = res.data?.find((r) => r.id === roomTypeId);
-                if (active) {
-                    setRoomType(found || null);
-                    setLoading(false);
+                try {
+                    setLoading(true);
+                    const res = await fetchRoomTypes(branchId);
+                    const list = Array.isArray(res?.data) ? res.data : [];
+                    const found = list.find((r) => r?.id === roomTypeId);
+                    if (active) setRoomType(found || null);
+                } catch (e) {
+                    // eslint-disable-next-line no-console
+                    console.error('[RoomTypeDetail] fetch failed', e);
+                    if (active) {
+                        setRoomType(null);
+                        Alert.alert(
+                            'Error',
+                            e?.response?.data?.detail || e?.message || 'Could not load room type.'
+                        );
+                    }
+                } finally {
+                    if (active) setLoading(false);
                 }
             })();
             return () => {
@@ -56,8 +70,6 @@ export default function RoomTypeDetailScreen({navigation, route}) {
             </ScreenWrapper>
         );
     }
-
-    const images = roomType.images?.length ? roomType.images : [];
 
     return (
         <ScreenWrapper className="flex-1 bg-gray-100" contentClassName="px-5 pt-2">
@@ -97,11 +109,11 @@ export default function RoomTypeDetailScreen({navigation, route}) {
             </DetailSection>
 
             <DetailSection title="Room Amenities">
-                {(roomType.roomAmenities || []).length === 0 ? (
+                {amenityList.length === 0 ? (
                     <Text className="font-sf text-sm text-gray-400">No amenities listed.</Text>
                 ) : (
                     <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 8}}>
-                        {roomType.roomAmenities.map((item) => (
+                        {amenityList.map((item) => (
                             <View key={item} className="bg-primary/10 px-3 py-1.5 rounded-full">
                                 <Text className="text-primary font-sf text-xs">{item}</Text>
                             </View>

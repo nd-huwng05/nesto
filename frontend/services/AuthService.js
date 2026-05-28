@@ -1,194 +1,84 @@
-import { authClient, apiClient, endpoints, CLIENT_ID } from '../configuration/Apis';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import api, { endpoints } from '../configuration/Apis';
+import { saveTokens } from '../utils/authStorage';
+import {extractApiErrorMessage} from '../utils/apiError';
 
-const ACCESS_TOKEN_KEY = 'access_token';
-const REFRESH_TOKEN_KEY = 'refresh_token';
 const REGISTER_TOKEN_KEY = 'register_token';
-const USER_KEY = 'user';
+const OAUTH_URL = process.env.EXPO_PUBLIC_OAUTH_URL || 'http://localhost:8000/o';
+const CLIENT_ID = process.env.EXPO_PUBLIC_CLIENT_ID || '';
+const CLIENT_SECRET = process.env.EXPO_PRIVATE_CLIENT_SECRET || '';
+const USE_CLIENT_SECRET = process.env.EXPO_PUBLIC_OAUTH_USE_CLIENT_SECRET === 'true';
 
-const saveTokens = async (accessToken, refreshToken) => {
-    await AsyncStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-    if (refreshToken) {
-        await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-    }
-};
-
-const saveUser = async (user) => {
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
-};
-
-const extractErrorMessage = (error) => {
-    if (error.response?.data) {
-        const data = error.response.data;
-        return data.error_description || data.detail || data.message || JSON.stringify(data);
-    }
-    return error.message || 'Network Error or Unknown Error';
-};
-
-const logBackendError = (context, error) => {
-    if (error.response?.data) {
-        console.error(`[Backend Error - ${context}]:\n`, JSON.stringify(error.response.data, null, 2));
-    } else {
-        console.error(`[Axios Error - ${context}]:`, error.message);
-    }
-};
-
-export const login = async (email, password) => {
+export const login = async (identifier, password) => {
     const params = new URLSearchParams();
     params.append('grant_type', 'password');
-    params.append('username', email.trim().toLowerCase());
-    params.append('password', password);
+    params.append('username', String(identifier || '').trim().toLowerCase());
+    params.append('password', String(password || ''));
     params.append('client_id', CLIENT_ID);
-
-    try {
-        const response = await authClient.post(endpoints.token, params.toString());
-        await saveTokens(response.data.access_token, response.data.refresh_token);
-
-        const userResponse = await apiClient.get(endpoints.me);
-        await saveUser(userResponse.data);
-
-        return {
-            data: {
-                access_token: response.data.access_token,
-                user: userResponse.data,
-            },
-            status: 'success',
-        };
-    } catch (error) {
-        logBackendError('Login', error);
-        throw new Error(extractErrorMessage(error));
+    if (USE_CLIENT_SECRET && CLIENT_SECRET) {
+        params.append('client_secret', CLIENT_SECRET);
     }
-};
 
-export const loginWithGoogle = async (idToken) => {
-    const params = new URLSearchParams();
-    params.append('grant_type', 'google');
-    params.append('access_token', idToken);
-    params.append('client_id', CLIENT_ID);
-
+    let tokenData;
     try {
-        const response = await authClient.post(endpoints.login, params.toString());
-        await saveTokens(response.data.access_token, response.data.refresh_token);
-
-        const userResponse = await apiClient.get(endpoints.user_me);
-        await saveUser(userResponse.data);
-
-        return {
-            data: {
-                access_token: response.data.access_token,
-                user: userResponse.data,
-            },
-            status: 'success',
-        };
+        const tokenRes = await axios.post(
+            `${OAUTH_URL}${endpoints['login']}`,
+            params.toString(),
+            { headers: {'Content-Type': 'application/x-www-form-urlencoded'} }
+        );
+        tokenData = tokenRes.data || {};
     } catch (error) {
-        logBackendError('GoogleLogin', error);
-        throw new Error(extractErrorMessage(error));
+        console.error("API Error: ", error.response?.data || error.message);
+        const errorData = error.response?.data;
+        let errorMessage = 'Login failed. Please try again.';
+        if (errorData?.error === 'invalid_grant') errorMessage = 'Email or password is incorrect.';
+        if (errorData?.error === 'invalid_client') errorMessage = 'Application is not configured. Please contact support.';
+        throw new Error(errorMessage || extractApiErrorMessage(error, errorMessage));
     }
+
+    // Prefer injected payload from /o/token (CustomTokenView).
+    let profile = tokenData?.user || null;
+    try {
+        const profileResponse = await api.get(endpoints['current-user']);
+        profile = profileResponse.data || profile;
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        if (!profile) {
+            profile = {
+                email: String(identifier || '').trim().toLowerCase(),
+                role: tokenData?.role || tokenData?.user?.role || 'CUSTOMER',
+                name: '',
+                groups: Array.isArray(tokenData?.user?.groups) ? tokenData.user.groups : [],
+            };
+        }
+    }
+
+    if (!profile?.role && tokenData?.role) {
+        profile.role = tokenData.role;
+    }
+
+    await saveTokens({
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        user: profile,
+        role: profile?.role || tokenData?.role,
+    });
+
+    return { success: true, user: profile, token: tokenData.access_token };
 };
 
 export const logout = async () => {
-    try {
-        const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
-        if (refreshToken) {
-            const params = new URLSearchParams();
-            params.append('token', refreshToken);
-            params.append('client_id', CLIENT_ID);
-            await authClient.post(endpoints.revoke_token, params.toString());
-        }
-    } catch (error) {
-        logBackendError('Logout', error);
-    } finally {
-        await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY, REGISTER_TOKEN_KEY]);
-    }
+    await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user', 'role']);
 };
 
-export const checkEmailExist = async (email) => {
+export const getCurrentUser = async () => {
     try {
-        await apiClient.post(endpoints.send_otp, { email });
-    } catch (error) {
-        logBackendError('CheckEmail', error);
-        if (error.response?.status === 400) {
-            const detail = error.response?.data?.detail || '';
-            if (detail.toLowerCase().includes('already') || detail.toLowerCase().includes('registered')) {
-                throw new Error('This email is already registered');
-            }
-            throw new Error(extractErrorMessage(error));
-        }
-        throw new Error(extractErrorMessage(error));
-    }
-};
-
-export const sendOTP = async (email) => {
-    try {
-        const response = await apiClient.post(endpoints.send_otp, { email });
+        const response = await api.get(endpoints['current-user']);
         return response.data;
     } catch (error) {
-        logBackendError('SendOTP', error);
-        throw new Error(extractErrorMessage(error));
-    }
-};
-
-export const checkOTP = async (email, otpCode) => {
-    try {
-        const response = await apiClient.post(endpoints.verify_otp, {
-            email,
-            otp_code: otpCode,
-        });
-
-        if (response.data.register_token) {
-            await AsyncStorage.setItem(REGISTER_TOKEN_KEY, response.data.register_token);
-        }
-
-        return response.data;
-    } catch (error) {
-        logBackendError('CheckOTP', error);
-        throw new Error(extractErrorMessage(error));
-    }
-};
-
-export const registerEmail = async ({ email, password, confirmPassword, role, name, phone }) => {
-    const registerToken = await AsyncStorage.getItem(REGISTER_TOKEN_KEY);
-
-    const payload = {
-        email,
-        password,
-        confirm_password: confirmPassword || password,
-        register_token: registerToken,
-    };
-
-    if (role) payload.role = role;
-    if (name) payload.name = name;
-    if (phone) payload.phone = phone;
-
-    try {
-        const response = await apiClient.post(endpoints.register, payload);
-
-        const { user, access_token, refresh_token } = response.data;
-
-        await saveTokens(access_token, refresh_token);
-        await saveUser(user);
-        await AsyncStorage.removeItem(REGISTER_TOKEN_KEY);
-
-        return {
-            status: 'success',
-            data: {
-                access_token,
-                user,
-            },
-        };
-    } catch (error) {
-        logBackendError('Register', error);
-        throw new Error(extractErrorMessage(error));
-    }
-};
-
-export const requestPasswordReset = async (email) => {
-    try {
-        const response = await apiClient.post(endpoints.forgot_password, { email });
-        return response.data;
-    } catch (error) {
-        logBackendError('RequestPasswordReset', error);
-        throw new Error(extractErrorMessage(error));
+        console.error("API Error: ", error.response?.data || error.message);
+        return null;
     }
 };
 
@@ -196,17 +86,147 @@ export const saveRegisterToken = async (token) => {
     await AsyncStorage.setItem(REGISTER_TOKEN_KEY, token);
 };
 
-export const getCurrentUser = async () => {
+export const getRegisterToken = async () => {
+    return await AsyncStorage.getItem(REGISTER_TOKEN_KEY);
+};
+
+export const clearRegisterToken = async () => {
+    await AsyncStorage.removeItem(REGISTER_TOKEN_KEY);
+};
+
+export const sendOTP = async (email) => {
+    const payload = { email: String(email || '').trim().toLowerCase() };
     try {
-        const userStr = await AsyncStorage.getItem(USER_KEY);
-        if (userStr) {
-            return JSON.parse(userStr);
-        }
-        const response = await apiClient.get(endpoints.user_me);
-        await saveUser(response.data);
+        const response = await api.post(endpoints['send-otp'], payload);
         return response.data;
     } catch (error) {
-        logBackendError('GetCurrentUser', error);
-        return null;
+        console.error('API Error: ', error.response?.data || error.message);
+        throw new Error(extractApiErrorMessage(error, 'Unable to send OTP.'));
     }
+};
+
+export const sendBusinessOTP = async (email) => {
+    const payload = { email: String(email || '').trim().toLowerCase() };
+    try {
+        const response = await api.post(endpoints['send-business-otp'], payload);
+        return response.data;
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        throw new Error(extractApiErrorMessage(error, 'Unable to send business OTP.'));
+    }
+};
+
+export const verifyOtp = async (email, otpCode) => {
+    const payload = {
+        email: String(email || '').trim().toLowerCase(),
+        otp_code: String(otpCode || '').trim(),
+    };
+    try {
+        const response = await api.post(endpoints['verify-otp'], payload);
+        return response.data;
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        throw new Error(extractApiErrorMessage(error, 'Unable to verify OTP.'));
+    }
+};
+
+export const verifyBusinessOtp = async (email, otpCode) => {
+    const payload = {
+        email: String(email || '').trim().toLowerCase(),
+        otp_code: String(otpCode || '').trim(),
+    };
+    try {
+        const response = await api.post(endpoints['verify-business-otp'], payload);
+        return response.data;
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        throw new Error(extractApiErrorMessage(error, 'Unable to verify business OTP.'));
+    }
+};
+
+export const checkOTP = verifyOtp;
+
+export const register = async ({ email, password, name, phone, role, registerToken }) => {
+    try {
+        const response = await api.post(endpoints['register'], {
+            email,
+            password,
+            confirm_password: password,
+            name,
+            phone: phone || '',
+            role: role || 'CUSTOMER',
+            register_token: registerToken,
+        });
+        return response.data;
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        throw new Error(extractApiErrorMessage(error, 'Unable to register.'));
+    }
+};
+
+export const loginWithGoogle = async (idToken) => {
+    const payload = { id_token: String(idToken || '').trim() };
+    try {
+        const response = await api.post(endpoints['google-auth'], payload);
+        const data = response.data || {};
+        const profile = data.user || null;
+        if (data.access_token) {
+            await saveTokens({
+                accessToken: data.access_token,
+                refreshToken: data.refresh_token,
+                user: profile,
+                role: profile?.role,
+            });
+        }
+        return { status: 'success', data };
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        return {status: 'error', message: extractApiErrorMessage(error, 'Google login failed.'), data: null};
+    }
+};
+
+export const forgotPassword = async (email) => {
+    const payload = { email: String(email || '').trim().toLowerCase() };
+    try {
+        const response = await api.post(endpoints['forgot-password'], payload);
+        return {status: 'success', data: response.data};
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        return {status: 'error', message: extractApiErrorMessage(error, 'Unable to process request.'), data: null};
+    }
+};
+
+export const resetPassword = async (data) => {
+    try {
+        const response = await api.post(endpoints['reset-password'], data);
+        return {status: 'success', data: response.data};
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        return {status: 'error', message: extractApiErrorMessage(error, 'Unable to reset password.'), data: null};
+    }
+};
+
+export const changePassword = async ({currentPassword, newPassword, confirmPassword}) => {
+    const payload = {
+        current_password: String(currentPassword || ''),
+        new_password: String(newPassword || ''),
+        confirm_password: String(confirmPassword || ''),
+    };
+    try {
+        const response = await api.post(endpoints['change-password'], payload);
+        return {status: 'success', data: response.data};
+    } catch (error) {
+        console.error('API Error: ', error.response?.data || error.message);
+        const data = error.response?.data;
+        const message =
+            data?.detail ||
+            (typeof data === 'object' ? Object.values(data).flat().join('\n') : '') ||
+            error.message ||
+            'Unable to update password.';
+        return {status: 'error', message, data: data || null};
+    }
+};
+
+export const authApi = async (identifier, password) => {
+    return login(identifier, password);
 };

@@ -1,4 +1,3 @@
-/** App-level roles used for navigation and RBAC */
 export const AUTH_ROLES = {
     SUPER_ADMIN: 'SUPER_ADMIN',
     BUSINESS_OWNER: 'BUSINESS_OWNER',
@@ -27,13 +26,23 @@ export const staffJobToAuthRole = (jobRole) => {
         case 'Service':
             return AUTH_ROLES.SERVICE;
         default:
-            return AUTH_ROLES.RECEPTIONIST;
+            return '';
     }
 };
 
-export const isReceptionistRole = (role) =>
-    role === AUTH_ROLES.RECEPTIONIST || role === AUTH_ROLES.MANAGER;
+export const isReceptionistRole = (role) => role === AUTH_ROLES.RECEPTIONIST;
 
 export const isHousekeepingRole = (role) => role === AUTH_ROLES.HOUSEKEEPING;
 
 export const isServiceRole = (role) => role === AUTH_ROLES.SERVICE;
+
+export const resolveHomeFlowName = (role) => {
+    if (role === AUTH_ROLES.SUPER_ADMIN) return 'BusinessFlow';
+    if (role === AUTH_ROLES.BUSINESS_OWNER) return 'BusinessFlow';
+    if (role === AUTH_ROLES.MANAGER) return 'BusinessFlow';
+    if (role === AUTH_ROLES.CUSTOMER) return 'CustomerFlow';
+    if (role === AUTH_ROLES.RECEPTIONIST) return 'StaffFlow';
+    if (role === AUTH_ROLES.HOUSEKEEPING) return 'StaffFlow';
+    if (role === AUTH_ROLES.SERVICE) return 'StaffFlow';
+    return '';
+};

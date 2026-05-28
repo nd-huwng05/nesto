@@ -16,16 +16,27 @@ import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {FormDropdown} from '../../../components/common/FormDropdown';
 import {StaffCard} from '../../../components/staff/StaffCard';
 import {useStaffCRUD} from '../../../hooks/business/useStaffCRUD';
-import {DEFAULT_STAFF_PASSWORD} from '../../../services/staffMockStore';
+import {DEFAULT_STAFF_PASSWORD} from '../../../services/StaffService';
 import {UI} from '../../../styles/uiTokens';
+import {useManagerProfile} from '../../../configuration/ManagerProfileContext';
+import {AUTH_ROLES} from '../../../constants/authRoles';
 
 function getFirstBranchForBusiness(business) {
-    return business?.branches?.[0] || null;
+    const raw = business?.branches;
+    const list = raw?.results ?? raw;
+    return (Array.isArray(list) ? list : [])[0] || null;
 }
 
 export default function StaffManagementScreen({navigation}) {
     const insets = useSafeAreaInsets();
+    const {profile} = useManagerProfile();
     const {staffList, businesses, isLoading, loadList, loadBusinesses} = useStaffCRUD();
+    const safeBusinesses = Array.isArray(businesses) ? businesses : [];
+    const safeStaffList = Array.isArray(staffList) ? staffList : [];
+    const groups = Array.isArray(profile?.groups) ? profile.groups : [];
+    const canManageStaff =
+        [AUTH_ROLES.SUPER_ADMIN, AUTH_ROLES.BUSINESS_OWNER, AUTH_ROLES.MANAGER].includes(profile?.rawRole) ||
+        groups.some((g) => ['Admin_Group', 'Business_Group', 'Manager_Group'].includes(g));
 
     const [refreshing, setRefreshing] = useState(false);
     const [businessFilter, setBusinessFilter] = useState('');
@@ -34,18 +45,22 @@ export default function StaffManagementScreen({navigation}) {
     const [filtersInitialized, setFiltersInitialized] = useState(false);
 
     const businessOptions = useMemo(
-        () => businesses.map((b) => ({value: b.id, label: b.name})),
-        [businesses]
+        () => safeBusinesses.map((b) => ({value: b.id, label: b.name})),
+        [safeBusinesses]
     );
 
     const selectedBusiness = useMemo(
-        () => businesses.find((b) => b.id === businessFilter),
-        [businesses, businessFilter]
+        () => safeBusinesses.find((b) => b.id === businessFilter),
+        [safeBusinesses, businessFilter]
     );
 
     const branchOptions = useMemo(() => {
-        const branches = selectedBusiness?.branches || [];
-        return branches.map((br) => ({value: br.id, label: br.name}));
+        const raw = selectedBusiness?.branches;
+        const branchesList = raw?.results ?? raw;
+        const safeBranches = Array.isArray(branchesList) ? branchesList : [];
+        return safeBranches
+            .filter((br) => br?.id)
+            .map((br) => ({value: br.id, label: br.name ?? '—'}));
     }, [selectedBusiness]);
 
     const listFilters = useMemo(
@@ -57,8 +72,8 @@ export default function StaffManagementScreen({navigation}) {
     );
 
     const sortedStaff = useMemo(
-        () => [...staffList].sort((a, b) => a.name.localeCompare(b.name, 'vi')),
-        [staffList]
+        () => [...safeStaffList].sort((a, b) => a.name.localeCompare(b.name, 'vi')),
+        [safeStaffList]
     );
 
     const canAddStaff = Boolean(businessFilter && branchFilter);
@@ -83,19 +98,23 @@ export default function StaffManagementScreen({navigation}) {
     useFocusEffect(
         useCallback(() => {
             loadBusinesses();
-        }, [loadBusinesses])
+            // Refresh staff list when returning to this tab/screen.
+            if (filtersInitialized && businessFilter && branchFilter) {
+                refreshList({businessId: businessFilter, branchId: branchFilter});
+            }
+        }, [loadBusinesses, filtersInitialized, businessFilter, branchFilter, refreshList])
     );
 
     useEffect(() => {
-        if (!businesses.length) {
+        if (!safeBusinesses.length) {
             setFiltersInitialized(false);
             return;
         }
 
-        const firstBusiness = businesses[0];
+        const firstBusiness = safeBusinesses[0];
         const firstBranch = getFirstBranchForBusiness(firstBusiness);
 
-        const businessStillValid = businesses.some((b) => b.id === businessFilter);
+        const businessStillValid = safeBusinesses.some((b) => b.id === businessFilter);
         if (!businessStillValid) {
             setBusinessFilter(firstBusiness.id);
             const branch = getFirstBranchForBusiness(firstBusiness);
@@ -104,8 +123,10 @@ export default function StaffManagementScreen({navigation}) {
             return;
         }
 
-        const branches = selectedBusiness?.branches || [];
-        const branchStillValid = branches.some((br) => br.id === branchFilter);
+        const raw = selectedBusiness?.branches;
+        const branchesList = raw?.results ?? raw;
+        const branches = Array.isArray(branchesList) ? branchesList : [];
+        const branchStillValid = branches.some((br) => br?.id === branchFilter);
         if (!branchStillValid) {
             setBranchFilter(branches[0]?.id || '');
         }
@@ -115,7 +136,7 @@ export default function StaffManagementScreen({navigation}) {
             if (!branchFilter) setBranchFilter(firstBranch?.id || '');
             setFiltersInitialized(true);
         }
-    }, [branchFilter, businessFilter, businesses, filtersInitialized, selectedBusiness]);
+    }, [branchFilter, businessFilter, safeBusinesses, filtersInitialized, selectedBusiness]);
 
     useEffect(() => {
         if (!filtersInitialized || !businessFilter || !branchFilter) return;
@@ -124,7 +145,7 @@ export default function StaffManagementScreen({navigation}) {
 
     const handleBusinessChange = (value) => {
         setBusinessFilter(value);
-        const business = businesses.find((b) => b.id === value);
+        const business = safeBusinesses.find((b) => b.id === value);
         const firstBranch = getFirstBranchForBusiness(business);
         setBranchFilter(firstBranch?.id || '');
         setOpenDropdown(null);
@@ -147,6 +168,20 @@ export default function StaffManagementScreen({navigation}) {
     const closeDropdowns = () => setOpenDropdown(null);
 
     const footerBottomPad = Math.max(insets.bottom, 10);
+
+    if (!canManageStaff) {
+        return (
+            <TabScreenLayout backgroundColor={UI.screenBg}>
+                <View style={styles.empty}>
+                    <Users size={48} color="#cbd5e1" />
+                    <Text className="font-sf-bold text-lg text-slate-700 mt-4">Access restricted</Text>
+                    <Text className="font-sf text-sm text-gray-500 text-center mt-2 px-6">
+                        Your role does not have permission to manage staff.
+                    </Text>
+                </View>
+            </TabScreenLayout>
+        );
+    }
 
     return (
         <TabScreenLayout backgroundColor={UI.screenBg}>

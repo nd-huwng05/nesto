@@ -1,6 +1,7 @@
 import {Alert, Image, Text, TouchableOpacity, View} from 'react-native';
 import {ImagePlus, X} from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import {getImagePickerMediaTypes} from '../../utils/mediaUrl';
 
 const MAX_IMAGES = 8;
 
@@ -17,7 +18,7 @@ export function MultiImagePicker({images = [], onChange, label = 'Add photos of 
                 return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: getImagePickerMediaTypes(ImagePicker),
                 allowsEditing: true,
                 aspect: [16, 9],
                 quality: 0.8,

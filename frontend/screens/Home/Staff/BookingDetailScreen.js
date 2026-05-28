@@ -22,14 +22,13 @@ import {
     processPaymentAndCheckOut,
     switchBookingRoom,
 } from '../../../services/ReceptionService';
-import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import {StaffUserAvatar} from '../../../components/staff/StaffUserAvatar';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {UI} from '../../../styles/uiTokens';
 import {calculateOvertimeCharge, computeCheckoutTotals} from '../../../utils/staffOvertimeBilling';
 
 function formatVnd(amount) {
-    return `${Number(amount).toLocaleString('vi-VN')} VND`;
+    return `${Number(amount).toLocaleString('en-US')} VND`;
 }
 
 function SummaryRow({label, value, isFinal}) {
@@ -80,17 +79,33 @@ function PaymentOption({icon, label, selected, onPress}) {
     );
 }
 
+function buildNetworkUri(rawUri) {
+    const value = String(rawUri || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    const base = String(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+    return base ? `${base}${value.startsWith('/') ? value : `/${value}`}` : value;
+}
+
 function ScreenHeader({navigation, booking, user}) {
     return (
         <View style={styles.headerRow}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={12}>
                 <ChevronLeft size={22} color="#334155" />
             </TouchableOpacity>
-            <Image
-                source={{uri: STAFF_MEDIA.BRANCH_LOGO}}
-                style={styles.hotelLogo}
-                resizeMode="cover"
-            />
+            {booking?.hotelLogo ? (
+                <Image
+                    source={{uri: buildNetworkUri(booking.hotelLogo)}}
+                    style={styles.hotelLogo}
+                    resizeMode="cover"
+                />
+            ) : (
+                <View style={[styles.hotelLogo, styles.hotelLogoFallback]}>
+                    <Text style={styles.hotelLogoFallbackText}>
+                        {String(booking?.hotelName || 'H').trim().charAt(0).toUpperCase()}
+                    </Text>
+                </View>
+            )}
             <View style={styles.hotelInfo}>
                 <Text style={styles.hotelName}>{booking.hotelName}</Text>
                 <Text style={styles.hotelAddress} numberOfLines={2}>
@@ -257,7 +272,13 @@ function CheckOutSummaryView({
             </View>
 
             <View style={styles.heroBlock}>
-                <Image source={{uri: STAFF_MEDIA.ROOM_IMAGE}} style={styles.heroImage} resizeMode="cover" />
+                {booking?.roomImage ? (
+                    <Image source={{uri: buildNetworkUri(booking.roomImage)}} style={styles.heroImage} resizeMode="cover" />
+                ) : (
+                    <View style={[styles.heroImage, styles.heroImageFallback]}>
+                        <Text style={styles.heroImageFallbackText}>Room {room}</Text>
+                    </View>
+                )}
                 <View style={styles.summaryCard}>
                     <Text style={styles.summaryTitle}>Order summary</Text>
                     <Text style={styles.summarySubtitle}>
@@ -350,11 +371,9 @@ function CheckOutSummaryView({
                         selected={paymentMethod === 'momo'}
                         onPress={() => onSelectPayment('momo')}
                         icon={
-                            <Image
-                                source={{uri: STAFF_MEDIA.MOMO_LOGO}}
-                                style={styles.payLogoImage}
-                                resizeMode="contain"
-                            />
+                            <View style={styles.walletIconMomo}>
+                                <Text style={styles.walletIconText}>M</Text>
+                            </View>
                         }
                         label="Payment by momo"
                     />
@@ -362,11 +381,9 @@ function CheckOutSummaryView({
                         selected={paymentMethod === 'zalopay'}
                         onPress={() => onSelectPayment('zalopay')}
                         icon={
-                            <Image
-                                source={{uri: STAFF_MEDIA.ZALOPAY_LOGO}}
-                                style={styles.payLogoImage}
-                                resizeMode="contain"
-                            />
+                            <View style={styles.walletIconZalo}>
+                                <Text style={styles.walletIconText}>Z</Text>
+                            </View>
                         }
                         label="Payment by ZaloPay"
                     />
@@ -788,6 +805,16 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         marginRight: 10,
     },
+    hotelLogoFallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#e2e8f0',
+    },
+    hotelLogoFallbackText: {
+        color: '#334155',
+        fontSize: 18,
+        fontWeight: '700',
+    },
     hotelInfo: {
         flex: 1,
         minWidth: 0,
@@ -870,6 +897,15 @@ const styles = StyleSheet.create({
         height: 150,
         borderRadius: 16,
         backgroundColor: '#cbd5e1',
+    },
+    heroImageFallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    heroImageFallbackText: {
+        color: '#334155',
+        fontSize: 20,
+        fontWeight: '700',
     },
     summaryCard: {
         marginTop: -36,
@@ -979,6 +1015,27 @@ const styles = StyleSheet.create({
         width: 24,
         height: 24,
         borderRadius: 4,
+    },
+    walletIconMomo: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: '#db2777',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    walletIconZalo: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: '#2563eb',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    walletIconText: {
+        color: '#ffffff',
+        fontSize: 12,
+        fontWeight: '700',
     },
     payLabel: {
         fontSize: 15,

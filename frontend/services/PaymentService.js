@@ -1,75 +1,75 @@
-import Apis, {endpoints} from '../configuration/Apis';
+import api, {endpoints} from '../configuration/Apis';
+import {extractApiErrorMessage} from '../utils/apiError';
 
-const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
+const ok = (response, dataOverride = undefined) => ({
+    status: 'success',
+    data: dataOverride === undefined ? response?.data : dataOverride,
+});
 
-const networkDelay = (ms = 1200) => {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-};
+const fail = (err, fallback) => ({
+    status: 'error',
+    message: extractApiErrorMessage(err, fallback),
+    data: err?.response?.data || null,
+});
 
-export const processPayment = async (payload) => {
-    if (useMock()) {
-        await networkDelay();
-        const isSuccess = Math.random() > 0.2;
-        if (isSuccess) {
-            return {
-                success: true,
-                data: {
-                    id: `payment-${Date.now()}`,
-                    bookingId: payload.bookingId,
-                    amount: payload.amount,
-                    paymentMethod: payload.paymentMethod,
-                    status: 'SUCCESS',
-                    transactionId: `TXN${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-                    processedAt: new Date().toISOString(),
-                },
-            };
-        }
-        return {success: false, error: 'Payment processing failed. Please try again.'};
-    }
+const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
+
+export const fetchInvoices = async (params = {}) => {
     try {
-        const response = await Apis.post(endpoints.process_payment, payload);
-        if (response.data?.success) {
-            return {success: true, data: response.data};
-        }
-        return {success: false, error: response.data?.message || 'Payment processing failed'};
+        const response = await api.get(endpoints['invoices'], {params});
+        return ok(response, pickList(response.data));
     } catch (err) {
-        return {success: false, error: err.response?.data?.message || err.message};
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load invoices.');
     }
 };
 
-export const verifyPayment = async (transactionId) => {
-    if (useMock()) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return {success: true, data: {transactionId, status: 'SUCCESS', verifiedAt: new Date().toISOString()}};
-    }
+export const fetchInvoice = async (id) => {
     try {
-        const response = await Apis.post(`${endpoints.verify_payment}/${transactionId}/verify/`);
-        if (response.data?.status === 'SUCCESS') {
-            return {success: true, data: response.data};
-        }
-        return {success: false, error: 'Failed to verify payment'};
+        const response = await api.get(endpoints['invoice-detail'](id));
+        return ok(response, response.data);
     } catch (err) {
-        return {success: false, error: err.response?.data?.message || err.message};
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load invoice.');
     }
 };
 
-export const refundPayment = async (transactionId, reason = '') => {
-    if (useMock()) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        return {success: true, data: {refundId: `REFUND-${Date.now()}`, transactionId, status: 'PROCESSED', reason}};
-    }
+export const createInvoice = async (data) => {
     try {
-        const response = await Apis.post(`${endpoints.refund_payment}/${transactionId}/refund/`, {reason});
-        if (response.data?.status === 'REFUNDED') {
-            return {success: true, data: response.data};
-        }
-        return {success: false, error: 'Failed to process refund'};
+        const response = await api.post(endpoints['invoices'], data);
+        return ok(response, response.data);
     } catch (err) {
-        return {success: false, error: err.response?.data?.message || err.message};
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to create invoice.');
     }
 };
 
-export const formatAmount = (amount) => {
-    const formatter = new Intl.NumberFormat('vi-VN', {style: 'currency', currency: 'VND', minimumFractionDigits: 0});
-    return formatter.format(amount);
+export const updateInvoice = async (id, data) => {
+    try {
+        const response = await api.patch(endpoints['invoice-detail'](id), data);
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to update invoice.');
+    }
+};
+
+export const fetchTransactions = async (params = {}) => {
+    try {
+        const response = await api.get(endpoints['transactions'], {params});
+        return ok(response, pickList(response.data));
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to load transactions.');
+    }
+};
+
+export const createTransaction = async (data) => {
+    try {
+        const response = await api.post(endpoints['transactions'], data);
+        return ok(response, response.data);
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to create transaction.');
+    }
 };

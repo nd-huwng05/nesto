@@ -7,6 +7,7 @@ import {StaffTabBar} from '../../../components/staff/StaffTabBar';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {AUTH_ROLES} from '../../../constants/authRoles';
 import {UI} from '../../../styles/uiTokens';
+import CustomerNavigator from '../Customer/CustomerNavigator';
 
 import RoomGridScreen from './RoomGridScreen';
 import BookingsScreen from './BookingsScreen';
@@ -24,7 +25,7 @@ function ReceptionistTabs({bottomInset}) {
     return (
         <StaffTab.Navigator
             tabBar={(props) => <StaffTabBar {...props} bottomInset={bottomInset} />}
-            screenOptions={{headerShown: false}}
+            screenOptions={{headerShown: false, unmountOnBlur: false}}
         >
             <StaffTab.Screen name="RoomGrid" component={RoomGridScreen} />
             <StaffTab.Screen name="Bookings" component={BookingsScreen} />
@@ -37,7 +38,7 @@ function HousekeepingTabs({bottomInset}) {
     return (
         <StaffTab.Navigator
             tabBar={(props) => <StaffTabBar {...props} bottomInset={bottomInset} />}
-            screenOptions={{headerShown: false}}
+            screenOptions={{headerShown: false, unmountOnBlur: false}}
         >
             <StaffTab.Screen name="Tasks" component={HousekeepingTaskScreen} />
             <StaffTab.Screen name="Profile" component={StaffProfileScreen} />
@@ -49,7 +50,7 @@ function ServiceTabs({bottomInset}) {
     return (
         <StaffTab.Navigator
             tabBar={(props) => <StaffTabBar {...props} bottomInset={bottomInset} />}
-            screenOptions={{headerShown: false}}
+            screenOptions={{headerShown: false, unmountOnBlur: false}}
         >
             <StaffTab.Screen name="Orders" component={ServiceOrderScreen} />
             <StaffTab.Screen name="Profile" component={StaffProfileScreen} />
@@ -92,7 +93,7 @@ function ServiceFlow({bottomInset}) {
 
 export default function StaffNavigator() {
     const insets = useSafeAreaInsets();
-    const {role, isLoading, isHousekeeping, isService, isReceptionist} = useStaffSession();
+    const {role, isLoading, isHousekeeping, isService, isCustomer} = useStaffSession();
     const bottomInset = Math.max(insets.bottom, 10);
 
     const Flow = useMemo(() => {
@@ -111,6 +112,10 @@ export default function StaffNavigator() {
                 <ActivityIndicator size="large" color="#8294FF" />
             </View>
         );
+    }
+
+    if (isCustomer || role === AUTH_ROLES.CUSTOMER) {
+        return <CustomerNavigator />;
     }
 
     return (

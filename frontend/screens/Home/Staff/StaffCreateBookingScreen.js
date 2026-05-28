@@ -14,12 +14,12 @@ import {ChevronLeft} from 'lucide-react-native';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {createStaffBooking} from '../../../services/ReceptionService';
-import {canBookWalkInRoom, staffPortalMockStore} from '../../../services/staffPortalMockStore';
+import {getRoom, canBookWalkInRoom} from '../../../services/staffApiService';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
 import {UI} from '../../../styles/uiTokens';
 
 function formatVnd(amount) {
-    return `${Number(amount).toLocaleString('vi-VN')} VND`;
+    return `${Number(amount).toLocaleString('en-US')} VND`;
 }
 
 function parseNonNegativeInt(value) {
@@ -47,15 +47,24 @@ export default function StaffCreateBookingScreen({navigation, route}) {
                 setRoomAvailable(false);
                 return;
             }
-            const room = await staffPortalMockStore.getReceptionRoom(roomId);
-            if (cancelled) return;
-            if (!room || !canBookWalkInRoom(room.status)) {
-                setRoomAvailable(false);
-                Alert.alert(
-                    'Room unavailable',
-                    'This room is occupied or under maintenance and cannot accept a walk-in.',
-                    [{text: 'OK', onPress: () => navigation.goBack()}]
-                );
+            try {
+                const room = await getRoom(roomId);
+                if (cancelled) return;
+                if (!room || !canBookWalkInRoom(room.status)) {
+                    setRoomAvailable(false);
+                    Alert.alert(
+                        'Room unavailable',
+                        'This room is occupied or under maintenance and cannot accept a walk-in.',
+                        [{text: 'OK', onPress: () => navigation.goBack()}]
+                    );
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setRoomAvailable(false);
+                    Alert.alert('Error', 'Could not load room information.', [
+                        {text: 'OK', onPress: () => navigation.goBack()},
+                    ]);
+                }
             }
         })();
         return () => {
@@ -105,13 +114,7 @@ export default function StaffCreateBookingScreen({navigation, route}) {
             Alert.alert(
                 'Walk-in checked in',
                 `Guest checked in to Room ${roomNumber} now. Collect payment at check-out.`,
-                [
-                    {
-                        text: 'OK',
-                        onPress: () =>
-                            navigation.navigate('ReceptionistMain', {screen: 'Bookings'}),
-                    },
-                ]
+                [{text: 'OK', onPress: () => navigation.navigate('ReceptionistMain', {screen: 'Bookings'})}]
             );
             return;
         }
@@ -137,7 +140,7 @@ export default function StaffCreateBookingScreen({navigation, route}) {
                     <Text style={styles.roomBannerLabel}>Walk-in · checking in now</Text>
                     <Text style={styles.roomBannerTitle}>Room {roomNumber}</Text>
                     <Text style={styles.roomBannerMeta}>
-                        {roomType} · {rate.toLocaleString('vi-VN')} VND/h
+                        {roomType} · {rate.toLocaleString('en-US')} VND/h
                     </Text>
                 </View>
 
@@ -201,10 +204,7 @@ export default function StaffCreateBookingScreen({navigation, route}) {
                     activeOpacity={0.9}
                     disabled={submitting || totalHours < 1 || !roomAvailable}
                     onPress={handleSubmit}
-                    style={[
-                        styles.cta,
-                        (submitting || totalHours < 1 || !roomAvailable) && styles.ctaDisabled,
-                    ]}
+                    style={[styles.cta, (submitting || totalHours < 1 || !roomAvailable) && styles.ctaDisabled]}
                 >
                     {submitting ? (
                         <ActivityIndicator color="#ffffff" />
@@ -219,94 +219,24 @@ export default function StaffCreateBookingScreen({navigation, route}) {
 
 const styles = StyleSheet.create({
     safe: {flex: 1, backgroundColor: UI.screenBg},
-    topBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 8,
-    },
+    topBar: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 8},
     topTitle: {fontSize: 17, fontWeight: '700', color: '#0f172a'},
     scroll: {paddingHorizontal: 20, paddingBottom: 32},
-    roomBanner: {
-        backgroundColor: '#ffffff',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-    },
+    roomBanner: {backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0'},
     roomBannerLabel: {fontSize: 12, color: '#94a3b8', fontWeight: '600'},
     roomBannerTitle: {fontSize: 22, fontWeight: '800', color: '#0f172a', marginTop: 4},
     roomBannerMeta: {fontSize: 13, color: '#64748b', marginTop: 4},
-    label: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#475569',
-        marginBottom: 8,
-        marginTop: 4,
-    },
-    input: {
-        backgroundColor: '#ffffff',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        marginBottom: 8,
-        fontSize: 15,
-        color: '#0f172a',
-    },
-    durationRow: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 8,
-    },
-    durationField: {
-        flex: 1,
-    },
-    durationFieldLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#64748b',
-        marginBottom: 6,
-    },
-    durationInput: {
-        marginBottom: 0,
-    },
-    estimateCard: {
-        backgroundColor: '#f8fafc',
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        padding: 14,
-        marginTop: 12,
-        marginBottom: 4,
-    },
-    estimateLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#64748b',
-    },
-    estimateValue: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#334155',
-        marginTop: 4,
-    },
-    estimatePrice: {
-        fontSize: 18,
-        fontWeight: '800',
-        color: '#059669',
-        marginTop: 4,
-    },
-    cta: {
-        backgroundColor: '#8294FF',
-        borderRadius: 16,
-        paddingVertical: 16,
-        alignItems: 'center',
-        marginTop: 24,
-        minHeight: 52,
-    },
+    label: {fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 8, marginTop: 4},
+    input: {backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingHorizontal: 14, marginBottom: 8, fontSize: 15, color: '#0f172a'},
+    durationRow: {flexDirection: 'row', gap: 12, marginBottom: 8},
+    durationField: {flex: 1},
+    durationFieldLabel: {fontSize: 12, fontWeight: '600', color: '#64748b', marginBottom: 6},
+    durationInput: {marginBottom: 0},
+    estimateCard: {backgroundColor: '#f8fafc', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0', padding: 14, marginTop: 12, marginBottom: 4},
+    estimateLabel: {fontSize: 12, fontWeight: '600', color: '#64748b'},
+    estimateValue: {fontSize: 14, fontWeight: '600', color: '#334155', marginTop: 4},
+    estimatePrice: {fontSize: 18, fontWeight: '800', color: '#059669', marginTop: 4},
+    cta: {backgroundColor: '#8294FF', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 24, minHeight: 52},
     ctaDisabled: {opacity: 0.65},
     ctaText: {color: '#ffffff', fontSize: 16, fontWeight: '700'},
 });

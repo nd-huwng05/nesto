@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Alert, Text } from 'react-native';
+import { ActivityIndicator, Alert, Text, View } from 'react-native';
 import { QuestionLayout } from '../../layout/QuestionLayout';
 import { OtpCodeInput } from '../../components/auth/OtpCodeInput';
 import { useRegister } from '../../hooks/account/useRegister';
 
 export default function OtpRegisterScreen({ navigation, route }) {
-    const { email, role } = route.params || {};
+    const role = route?.params?.role || 'CUSTOMER';
+    const emailFromParams = route?.params?.email || route?.params?.payload?.email || '';
+    const email = String(emailFromParams || '').trim().toLowerCase();
     const { verifyOtpCode, sendVerificationOtp } = useRegister();
 
     const [verifying, setVerifying] = useState(false);
@@ -19,16 +21,26 @@ export default function OtpRegisterScreen({ navigation, route }) {
         : '';
 
     const handleComplete = async (otp) => {
+        const normalizedOtp = String(otp || '').trim();
+        if (!email) {
+            setError('Email is missing. Please go back and try again.');
+            return;
+        }
+        if (normalizedOtp.length !== 6) {
+            setError('Invalid OTP. Please enter all 6 digits.');
+            return;
+        }
         setVerifying(true);
         setError(null);
 
         try {
-            const result = await verifyOtpCode(email, otp);
+            const result = await verifyOtpCode(email, normalizedOtp);
             if (result.success) {
                 navigation.navigate('PasswordRegisterScreen', { email, role });
             }
         } catch (err) {
             const errorMessage = err?.message || 'Incorrect verification code. Please try again.';
+            Alert.alert('Verification failed', errorMessage);
             setError(errorMessage);
         } finally {
             setVerifying(false);
@@ -37,6 +49,10 @@ export default function OtpRegisterScreen({ navigation, route }) {
 
     const handleResend = async () => {
         if (isSendingOtp) return;
+        if (!email) {
+            Alert.alert('Error', 'Email is missing. Please restart registration.');
+            return;
+        }
         setIsSendingOtp(true);
         setError(null);
 
@@ -61,14 +77,21 @@ export default function OtpRegisterScreen({ navigation, route }) {
             subtitle={`Enter the 6-digit code sent to ${maskedEmail || 'your email'}`}
             hideContinue
         >
-            <OtpCodeInput
-                onComplete={handleComplete}
-                onResend={handleResend}
-                verifying={verifying}
-                isSending={isSendingOtp}
-                error={error}
-                onClearError={() => setError(null)}
-            />
+            <View>
+                <OtpCodeInput
+                    onComplete={handleComplete}
+                    onResend={handleResend}
+                    verifying={verifying}
+                    isSending={isSendingOtp}
+                    error={error}
+                    onClearError={() => setError(null)}
+                />
+                {(verifying || isSendingOtp) ? (
+                    <View className="absolute inset-0 items-center justify-center bg-white/70">
+                        <ActivityIndicator size="large" color="#8294FF" />
+                    </View>
+                ) : null}
+            </View>
         </QuestionLayout>
     );
 }

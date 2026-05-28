@@ -1,5 +1,5 @@
-import {useState} from 'react';
-import {Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {useMemo, useState} from 'react';
+import {ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {
     Bell,
@@ -29,9 +29,14 @@ function resetToAccountFlow(navigation) {
 }
 
 export default function ProfileBusinessScreen({navigation}) {
-    const {profile} = useManagerProfile();
+    const {profile, isLoading} = useManagerProfile();
     const [language, setLanguage] = useState('English');
     const [pushEnabled, setPushEnabled] = useState(true);
+    const initials = useMemo(() => {
+        const parts = String(profile?.name || '').trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) return 'U';
+        return parts.slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join('');
+    }, [profile?.name]);
 
     const stackNav = () => navigation.getParent();
 
@@ -68,17 +73,35 @@ export default function ProfileBusinessScreen({navigation}) {
                 <Text className="font-sf-bold text-2xl text-slate-800 mb-1">Profile</Text>
                 <Text className="font-sf text-sm text-gray-500 mb-4">Manager account & app settings</Text>
 
-                <View style={styles.profileHeader}>
-                    <View style={styles.avatarRing}>
-                        <Image source={{uri: profile.avatar}} style={styles.avatar} />
+                {isLoading ? (
+                    <View style={styles.loadingWrap}>
+                        <ActivityIndicator size="large" color="#8294FF" />
                     </View>
-                    <Text className="font-sf-bold text-xl text-slate-800 mt-4">{profile.name}</Text>
-                    <Text className="font-sf text-sm text-gray-500 mt-1">{profile.email}</Text>
-                    <View style={styles.roleBadge}>
-                        <Shield size={14} color="#8294FF" />
-                        <Text className="font-sf-semi text-primary text-xs ml-1.5">{profile.role}</Text>
+                ) : (
+                    <View style={styles.profileHeader}>
+                        <View style={styles.avatarRing}>
+                            {profile.avatar ? (
+                                <Image source={{uri: profile.avatar}} style={styles.avatar} />
+                            ) : (
+                                <View style={[styles.avatar, styles.avatarFallback]}>
+                                    <Text style={styles.avatarFallbackText}>{initials}</Text>
+                                </View>
+                            )}
+                        </View>
+                        <Text className="font-sf-bold text-xl text-slate-800 mt-4">
+                            {profile.name || 'Unknown user'}
+                        </Text>
+                        <Text className="font-sf text-sm text-gray-500 mt-1">
+                            {profile.email || 'No email'}
+                        </Text>
+                        <View style={styles.roleBadge}>
+                            <Shield size={14} color="#8294FF" />
+                            <Text className="font-sf-semi text-primary text-xs ml-1.5">
+                                {profile.role || 'Manager'}
+                            </Text>
+                        </View>
                     </View>
-                </View>
+                )}
 
                 <ProfileSettingsSection title="Account Settings">
                     <ProfileSettingsRow
@@ -149,6 +172,11 @@ const styles = StyleSheet.create({
         marginBottom: UI.sectionGap + 4,
         paddingVertical: 8,
     },
+    loadingWrap: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 32,
+    },
     avatarRing: {
         padding: 4,
         borderRadius: 999,
@@ -161,6 +189,16 @@ const styles = StyleSheet.create({
         height: 88,
         borderRadius: 44,
         backgroundColor: '#e5e7eb',
+    },
+    avatarFallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#cbd5e1',
+    },
+    avatarFallbackText: {
+        color: '#0f172a',
+        fontSize: 28,
+        fontWeight: '700',
     },
     roleBadge: {
         flexDirection: 'row',

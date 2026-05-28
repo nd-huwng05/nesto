@@ -24,6 +24,8 @@ export const QuestionLayout = ({
     continueLabel = 'Continue',
     footerText,
     hideContinue = false,
+    contentJustify = 'center',
+    contentPaddingTop = 0,
 }) => {
     const insets = useSafeAreaInsets();
     const canSubmit = isValid && !isLoading;
@@ -57,12 +59,14 @@ export const QuestionLayout = ({
                         </TouchableOpacity>
                     </View>
 
-                    <View className="flex-1 justify-center py-4">
+                    <View className="flex-1 py-4" style={{justifyContent: contentJustify, alignItems: 'center', paddingTop: contentPaddingTop}}>
                         <Text className="text-3xl font-sf-bold text-center mb-3">{title}</Text>
                         {subtitle ? (
                             <Text className="text-gray-500 font-sf text-center mb-4 px-2">{subtitle}</Text>
                         ) : null}
-                        {children}
+                        <View style={{width: '100%'}}>
+                            {children}
+                        </View>
                     </View>
 
                     <View className="items-center pb-3">
@@ -87,6 +91,22 @@ export const QuestionLayout = ({
                         )}
                     </View>
                 </ScrollView>
+                {isLoading ? (
+                    <View
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            right: 0,
+                            bottom: 0,
+                            left: 0,
+                            backgroundColor: 'rgba(255,255,255,0.6)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        <ActivityIndicator size="large" color="#8294FF" />
+                    </View>
+                ) : null}
             </KeyboardAvoidingView>
         </SafeAreaView>
     );

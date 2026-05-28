@@ -1,11 +1,13 @@
-import {Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {useCallback, useMemo, useState} from 'react';
+import {ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {LogOut, MapPin} from 'lucide-react-native';
+import {useFocusEffect} from '@react-navigation/native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
-import {StaffUserAvatarLarge} from '../../../components/staff/StaffUserAvatar';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {clearSession} from '../../../utils/authStorage';
 import {UI} from '../../../styles/uiTokens';
+import api, {endpoints} from '../../../configuration/Apis';
 
 const roleConfig = {
     RECEPTIONIST: {label: 'Receptionist', bg: '#dcfce7', color: '#166534'},
@@ -25,11 +27,64 @@ function resetToAccountFlow(navigation) {
 export default function StaffProfileScreen({navigation}) {
     const {user, role, branchId} = useStaffSession();
     const branch = getStaffBranchInfo(branchId);
+    const [profile, setProfile] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasLoadError, setHasLoadError] = useState(false);
     const roleStyle = roleConfig[role] || {
         label: user?.jobRole || 'Staff',
         bg: '#f1f5f9',
         color: '#475569',
     };
+    const initials = useMemo(() => {
+        const fullName = String(profile?.name || user?.name || '').trim();
+        if (!fullName) return 'U';
+        return fullName
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase() || '')
+            .join('');
+    }, [profile?.name, user?.name]);
+    const normalizedAvatar = useMemo(() => {
+        const raw = String(profile?.avatar || '').trim();
+        if (!raw) return '';
+        if (/^https?:\/\//i.test(raw)) return raw;
+        const base = String(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+        return base ? `${base}${raw.startsWith('/') ? raw : `/${raw}`}` : raw;
+    }, [profile?.avatar]);
+
+    useFocusEffect(
+        useCallback(() => {
+            let active = true;
+            const loadProfile = async () => {
+                setIsLoading(true);
+                setHasLoadError(false);
+                try {
+                    const response = await api.get(endpoints['current-user']);
+                    if (active) {
+                        setProfile(response.data || {});
+                    }
+                } catch (error) {
+                    console.error('API Error: ', error.response?.data || error.message);
+                    if (active) {
+                        setProfile(null);
+                        setHasLoadError(true);
+                        Alert.alert(
+                            'Could not load profile',
+                            error?.response?.data?.detail || error?.message || 'Please try again.'
+                        );
+                    }
+                } finally {
+                    if (active) {
+                        setIsLoading(false);
+                    }
+                }
+            };
+            loadProfile();
+            return () => {
+                active = false;
+            };
+        }, [])
+    );
 
     const handleLogout = () => {
         Alert.alert('Log out', 'Sign out of your staff account?', [
@@ -52,9 +107,19 @@ export default function StaffProfileScreen({navigation}) {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.profileHero}>
-                    <StaffUserAvatarLarge user={user} size={96} />
-                    <Text style={styles.userName}>{user?.name || 'Team Member'}</Text>
-                    <Text style={styles.userEmail}>{user?.email}</Text>
+                    {isLoading ? (
+                        <View style={styles.avatarLoadingWrap}>
+                            <ActivityIndicator size="large" color="#8294FF" />
+                        </View>
+                    ) : normalizedAvatar ? (
+                        <Image source={{uri: normalizedAvatar}} style={styles.avatar} />
+                    ) : (
+                        <View style={[styles.avatar, styles.avatarFallback]}>
+                            <Text style={styles.avatarFallbackText}>{initials}</Text>
+                        </View>
+                    )}
+                    <Text style={styles.userName}>{profile?.name || user?.name || 'Team Member'}</Text>
+                    <Text style={styles.userEmail}>{profile?.email || user?.email || 'No email'}</Text>
                     <View style={[styles.roleBadge, {backgroundColor: roleStyle.bg}]}>
                         <Text style={[styles.roleBadgeText, {color: roleStyle.color}]}>
                             {roleStyle.label}
@@ -69,8 +134,8 @@ export default function StaffProfileScreen({navigation}) {
                     </View>
                     <Text style={styles.branchName}>{branch.name}</Text>
                     <Text style={styles.branchAddress}>{branch.address}</Text>
-                    {user?.phone ? (
-                        <Text style={styles.branchMeta}>Contact: {user.phone}</Text>
+                    {(profile?.phone || user?.phone) ? (
+                        <Text style={styles.branchMeta}>Contact: {profile?.phone || user?.phone}</Text>
                     ) : null}
                 </View>
 
@@ -99,6 +164,28 @@ const styles = StyleSheet.create({
     profileHero: {
         alignItems: 'center',
         marginBottom: 28,
+    },
+    avatarLoadingWrap: {
+        width: 96,
+        height: 96,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    avatar: {
+        width: 96,
+        height: 96,
+        borderRadius: 48,
+        backgroundColor: '#e2e8f0',
+    },
+    avatarFallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#cbd5e1',
+    },
+    avatarFallbackText: {
+        color: '#0f172a',
+        fontSize: 28,
+        fontWeight: '700',
     },
     userName: {
         fontSize: 24,

@@ -1,68 +1,70 @@
-import {useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {
+    ActivityIndicator,
     Alert,
-    Image,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import {Camera} from 'lucide-react-native';
 import {FormScreenLayout} from '../../../components/common/FormScreenLayout';
 import {DetailScreenHeader} from '../../../components/business/DetailScreenHeader';
 import {useManagerProfile} from '../../../configuration/ManagerProfileContext';
+import api, {endpoints} from '../../../configuration/Apis';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
 import {UI, cardStyle} from '../../../styles/uiTokens';
 
 export default function EditProfileScreen({navigation}) {
-    const {profile, updateProfile} = useManagerProfile();
+    const {profile, updateProfile, reloadProfile, isLoading} = useManagerProfile();
 
-    const [name, setName] = useState(profile.name);
-    const [email, setEmail] = useState(profile.email);
-    const [phone, setPhone] = useState(profile.phone);
-    const [avatar, setAvatar] = useState(profile.avatar);
+    const [name, setName] = useState('');
+    const [phone, setPhone] = useState('');
+    const [avatar, setAvatar] = useState('');
     const [saving, setSaving] = useState(false);
+    const email = useMemo(() => String(profile?.email || '').trim(), [profile?.email]);
 
-    const pickAvatar = async () => {
-        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permission.granted) {
-            Alert.alert('Permission Denied', 'Allow photo library access to change your avatar.');
-            return;
-        }
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.8,
-        });
-        if (!result.canceled && result.assets?.[0]?.uri) {
-            setAvatar(result.assets[0].uri);
-        }
-    };
+    useEffect(() => {
+        setName(String(profile?.name || ''));
+        setPhone(String(profile?.phone || ''));
+        setAvatar(String(profile?.avatar || ''));
+    }, [profile?.name, profile?.phone, profile?.avatar]);
 
     const handleSave = async () => {
         if (!name.trim()) {
             Alert.alert('Validation', 'Name is required.');
             return;
         }
-        if (!email.trim()) {
-            Alert.alert('Validation', 'Email is required.');
+        if (avatar.trim() && !/^https?:\/\//i.test(avatar.trim())) {
+            Alert.alert('Validation', 'Avatar must be a valid http(s) URL.');
             return;
         }
         setSaving(true);
-        await new Promise((r) => setTimeout(r, 400));
-        updateProfile({
-            name: name.trim(),
-            email: email.trim(),
-            phone: phone.trim(),
-            avatar,
-        });
-        setSaving(false);
-        Alert.alert('Saved', 'Your profile has been updated.', [
-            {text: 'OK', onPress: () => navigation.goBack()},
-        ]);
+        try {
+            const payload = {
+                name: name.trim(),
+                phone: phone.trim(),
+                avatar: avatar.trim() || null,
+            };
+            const response = await api.patch(endpoints['current-user'], payload);
+            const updated = response.data || {};
+            updateProfile({
+                name: String(updated.name || ''),
+                email: String(updated.email || email),
+                phone: String(updated.phone || ''),
+                avatar: String(updated.avatar || ''),
+                role: String(updated.role_display || updated.role || profile?.role || ''),
+            });
+            await reloadProfile();
+            Alert.alert('Saved', 'Your profile has been updated.', [
+                {text: 'OK', onPress: () => navigation.goBack()},
+            ]);
+        } catch (error) {
+            console.error('API Error: ', error.response?.data || error.message);
+            Alert.alert('Error', 'Could not update profile.');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const saveButton = (
@@ -74,7 +76,7 @@ export default function EditProfileScreen({navigation}) {
                 saving ? 'bg-gray-300' : 'bg-primary'
             }`}
         >
-            <Text className="text-white font-sf-bold text-base">{saving ? 'Saving…' : 'Save Profile'}</Text>
+            <Text className="text-white font-sf-bold text-base">{saving ? 'Saving...' : 'Save Profile'}</Text>
         </TouchableOpacity>
     );
 
@@ -86,15 +88,11 @@ export default function EditProfileScreen({navigation}) {
         >
             <DetailScreenHeader onBack={() => navigation.goBack()} title="Edit Profile" showDelete={false} />
 
-            <View className="items-center mb-6">
-                <TouchableOpacity onPress={pickAvatar} activeOpacity={0.85}>
-                    <Image source={{uri: avatar}} className="w-24 h-24 rounded-full bg-gray-200" />
-                    <View className="absolute bottom-0 right-0 w-8 h-8 bg-primary rounded-full items-center justify-center border-2 border-white">
-                        <Camera size={16} color="#fff" />
-                    </View>
-                </TouchableOpacity>
-                <Text className="font-sf text-xs text-gray-400 mt-2">Tap to change photo</Text>
-            </View>
+            {isLoading ? (
+                <View style={styles.loadingWrap}>
+                    <ActivityIndicator size="large" color="#8294FF" />
+                </View>
+            ) : null}
 
             <View style={[styles.fieldCard, styles.fieldGap]}>
                 <Text className="font-sf text-xs text-gray-500 mb-1.5">Full Name *</Text>
@@ -112,10 +110,7 @@ export default function EditProfileScreen({navigation}) {
                 <Text className="font-sf text-xs text-gray-500 mb-1.5">Email *</Text>
                 <TextInput
                     value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    placeholder="email@company.com"
+                    editable={false}
                     placeholderTextColor="#94a3b8"
                     className="font-sf text-base text-slate-800"
                     style={commonInputStyles.baseInput}
@@ -134,6 +129,20 @@ export default function EditProfileScreen({navigation}) {
                     style={commonInputStyles.baseInput}
                 />
             </View>
+
+            <View style={[styles.fieldCard, styles.fieldGap]}>
+                <Text className="font-sf text-xs text-gray-500 mb-1.5">Avatar URL</Text>
+                <TextInput
+                    value={avatar}
+                    onChangeText={setAvatar}
+                    autoCapitalize="none"
+                    keyboardType="url"
+                    placeholder="https://cdn.example.com/avatar.jpg"
+                    placeholderTextColor="#94a3b8"
+                    className="font-sf text-base text-slate-800"
+                    style={commonInputStyles.baseInput}
+                />
+            </View>
         </FormScreenLayout>
     );
 }
@@ -143,6 +152,11 @@ const styles = StyleSheet.create({
         ...cardStyle,
     },
     fieldGap: {
+        marginBottom: 16,
+    },
+    loadingWrap: {
+        alignItems: 'center',
+        justifyContent: 'center',
         marginBottom: 16,
     },
 });

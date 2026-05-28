@@ -39,11 +39,32 @@ export default function RoomTypeFormScreen({navigation, route}) {
     const [images, setImages] = useState([]);
     const [amenityOptions, setAmenityOptions] = useState([]);
     const [loading, setLoading] = useState(isEdit);
+    const amenityList = Array.isArray(amenityOptions) ? amenityOptions : [];
 
     useEffect(() => {
-        fetchRoomAmenityOptions().then((res) => {
-            if (res.status === 'success') setAmenityOptions(res.data);
-        });
+        let mounted = true;
+        (async () => {
+            try {
+                const res = await fetchRoomAmenityOptions();
+                if (!mounted) return;
+                if (res?.status === 'success') {
+                    setAmenityOptions(Array.isArray(res?.data) ? res.data : []);
+                }
+            } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error('[RoomTypeForm] fetch amenities failed', e);
+                if (mounted) {
+                    setAmenityOptions([]);
+                    Alert.alert(
+                        'Error',
+                        e?.response?.data?.detail || e?.message || 'Could not load amenity options.'
+                    );
+                }
+            }
+        })();
+        return () => {
+            mounted = false;
+        };
     }, []);
 
     useEffect(() => {
@@ -51,19 +72,37 @@ export default function RoomTypeFormScreen({navigation, route}) {
             setLoading(false);
             return;
         }
+        let mounted = true;
         (async () => {
-            const res = await fetchRoomTypes(branchId);
-            const found = res.data?.find((r) => r.id === roomTypeId);
-            if (found) {
-                setName(found.name);
-                setBasePrice(String(found.basePrice));
-                setCapacity(String(found.capacity));
-                setDescription(found.description || '');
-                setRoomAmenities(found.roomAmenities || []);
-                setImages(found.images || []);
+            try {
+                const res = await fetchRoomTypes(branchId);
+                const list = Array.isArray(res?.data) ? res.data : [];
+                const found = list.find((r) => r?.id === roomTypeId);
+                if (!mounted) return;
+                if (found) {
+                    setName(typeof found?.name === 'string' ? found.name : '');
+                    setBasePrice(found?.basePrice != null ? String(found.basePrice) : '');
+                    setCapacity(found?.capacity != null ? String(found.capacity) : '');
+                    setDescription(typeof found?.description === 'string' ? found.description : '');
+                    setRoomAmenities(Array.isArray(found?.roomAmenities) ? found.roomAmenities : []);
+                    setImages(Array.isArray(found?.images) ? found.images : []);
+                }
+            } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error('[RoomTypeForm] fetch room types failed', e);
+                if (mounted) {
+                    Alert.alert(
+                        'Error',
+                        e?.response?.data?.detail || e?.message || 'Could not load room type.'
+                    );
+                }
+            } finally {
+                if (mounted) setLoading(false);
             }
-            setLoading(false);
         })();
+        return () => {
+            mounted = false;
+        };
     }, [branchId, isEdit, roomTypeId]);
 
     const toggleAmenity = (item) => {
@@ -106,7 +145,9 @@ export default function RoomTypeFormScreen({navigation, route}) {
             Alert.alert('Saved', 'Room type saved successfully.', [
                 {text: 'OK', onPress: () => navigation.goBack()},
             ]);
+            return;
         }
+        Alert.alert('Error', res?.message || 'Could not save room type.');
     };
 
     const saveButton = (
@@ -196,7 +237,7 @@ export default function RoomTypeFormScreen({navigation, route}) {
 
                 <Text className="font-sf text-xs text-gray-500 mb-2">Room Amenities</Text>
                 <View style={amenityWrapStyle.wrap}>
-                    {amenityOptions.map((item) => (
+                    {amenityList.map((item) => (
                         <TouchableOpacity
                             key={item}
                             onPress={() => toggleAmenity(item)}

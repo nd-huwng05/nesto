@@ -1,4 +1,3 @@
-import { ScrollView } from 'react-native';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { QuestionLayout } from '../../layout/QuestionLayout';
@@ -50,16 +49,14 @@ export default function ProfileRegisterScreen({ navigation, route }) {
             continueLabel="Create account"
             onContinue={handleSubmit(onSubmit)}
         >
-            <ScrollView showsVerticalScrollIndicator={false}>
-                <AuthTextField
-                    control={control}
-                    name="name"
-                    placeholder="Full Name"
-                    textContentType="name"
-                    autoFocus
-                    error={errors.name?.message}
-                />
-            </ScrollView>
+            <AuthTextField
+                control={control}
+                name="name"
+                placeholder="Full Name"
+                textContentType="name"
+                autoFocus
+                error={errors.name?.message}
+            />
         </QuestionLayout>
     );
 }

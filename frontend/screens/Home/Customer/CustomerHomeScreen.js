@@ -1,12 +1,19 @@
-import {Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions} from 'react-native';
+import {ActivityIndicator, Image, LayoutAnimation, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View, useWindowDimensions} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useMemo, useState} from 'react';
-import {AntDesign, Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
-import {familyHotels, businessHotels} from '../../../configuration/hotelsData';
+import {useCallback, useMemo, useRef, useState} from 'react';
+import {AntDesign, Ionicons} from '@expo/vector-icons';
+import {useFocusEffect} from '@react-navigation/native';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
+import {getUnreadCustomerNotificationCount} from '../../../services/NotificationService';
+import api, {endpoints} from '../../../configuration/Apis';
+import {getSession} from '../../../utils/authStorage';
+import Avatar from '../../../components/common/Avatar';
+import * as Location from 'expo-location';
+import {connectCustomerUpdates} from '../../../services/WebSocketService';
 
-const tabs = ['ALL', 'Featured', 'Suite', 'View', 'Family', 'Business'];
+const STATIC_TABS = ['AI ✨', 'ALL'];
 const DEFAULT_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
+const DEFAULT_RATING_VALUE = 0;
 
 const toImageUri = (image) => {
     if (typeof image === 'number') {
@@ -20,7 +27,9 @@ const toImageUri = (image) => {
 
 function HotelCard({item, onPress, cardWidth}) {
     const imageUri = toImageUri(item?.image);
-    const displayRating = Number.parseFloat(item?.rating || '0').toFixed(1);
+    const safeRating = Number.isFinite(item?.syncedRating) ? item.syncedRating : DEFAULT_RATING_VALUE;
+    const reviewCount = Number.isFinite(item?.reviewCount) ? item.reviewCount : 0;
+    const displayRating = safeRating.toFixed(1);
 
     return (
         <TouchableOpacity style={[styles.hotelCard, {width: cardWidth}]} activeOpacity={0.92} onPress={onPress}>
@@ -34,7 +43,7 @@ function HotelCard({item, onPress, cardWidth}) {
                     <Text style={styles.hotelCity} numberOfLines={1}>{item.city}</Text>
                     <View style={styles.ratingRow}>
                         <AntDesign name="star" size={12} color="#f5c51a"/>
-                        <Text style={styles.hotelRating}>{displayRating}</Text>
+                        <Text style={styles.hotelRating}>{displayRating} ({reviewCount})</Text>
                     </View>
                 </View>
             </View>
@@ -42,7 +51,7 @@ function HotelCard({item, onPress, cardWidth}) {
     );
 }
 
-function CategoryTabs({activeTab, onTabPress}) {
+function CategoryTabs({tabs, activeTab, onTabPress}) {
     return (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
             {tabs.map((tab) => {
@@ -81,12 +90,13 @@ function Section({title, data, cardWidth, navigation}) {
                                     navigation.navigate('CustomerHomeDetailSceen', {
                                         room: {name: item.title, image: imageUri},
                                         hotelName: item.title,
+                                        branchId: item.branchId || item.branchID || item.id,
                                         hotelAddress: item.address || item.city,
                                         location: item.address || item.city,
                                         hotelDescription: item.description || '',
                                         heroImage: imageUri,
-                                        rating: Number.parseFloat(item?.rating || '0'),
-                                        reviews: Number.parseInt(item?.reviews || '4231', 10),
+                                        rating: Number.isFinite(item?.syncedRating) ? item.syncedRating : DEFAULT_RATING_VALUE,
+                                        reviews: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
                                     })
                                 }
                             />
@@ -125,110 +135,373 @@ function filterHotelsByTab(tab, catalog) {
     });
 }
 
+function filterHotelsByKeyword(items, keyword) {
+    if (!keyword) return items;
+
+    return items.filter((item) => {
+        const haystack = `${item?.title || ''} ${item?.city || ''} ${item?.category || ''}`.toLowerCase();
+        return haystack.includes(keyword);
+    });
+}
+
 export function HomeScreen({navigation}) {
     const {width} = useWindowDimensions();
     const horizontalPadding = 16;
     const gap = 12;
     const contentWidth = Math.max(width - horizontalPadding * 2, 240);
     const cardWidth = (contentWidth - gap) / 2;
-    const bottomNavIconSize = 22;
     const [activeTab, setActiveTab] = useState('ALL');
     const [searchText, setSearchText] = useState('');
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSearching, setIsSearching] = useState(false);
+    const [aiSuggestions, setAiSuggestions] = useState([]);
+    const [isAiLoading, setIsAiLoading] = useState(false);
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const [catalog, setCatalog] = useState([]);
+    const [locationLabel, setLocationLabel] = useState('All locations');
+    const [avatarUrl, setAvatarUrl] = useState('');
+    const [avatarName, setAvatarName] = useState('');
+    const hasLoadedRef = useRef(false);
+    const [tabs, setTabs] = useState(STATIC_TABS);
+    const [themes, setThemes] = useState([]);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [accessToken, setAccessToken] = useState('');
+    const keyword = searchText.trim().toLowerCase();
 
-    const catalog = useMemo(
-        () => [
-            ...familyHotels.map((item) => ({...item, category: 'Family'})),
-            ...businessHotels.map((item) => ({...item, category: 'Business'})),
-        ],
-        []
+    const loadCatalog = useCallback(async ({coords, silent} = {}) => {
+        const shouldBlock = !silent && catalog.length === 0;
+        if (shouldBlock) setIsLoading(true);
+        if (silent) setIsSyncing(true);
+        try {
+            const params = {};
+            if (coords?.latitude != null && coords?.longitude != null) {
+                params.latitude = String(coords.latitude);
+                params.longitude = String(coords.longitude);
+            }
+            const res = await api.get(endpoints['customer-catalog'], {params});
+            const rows = res?.data?.results || res?.data || [];
+            setCatalog(Array.isArray(rows) ? rows : []);
+        } catch {
+        } finally {
+            if (shouldBlock) setIsLoading(false);
+            if (silent) setIsSyncing(false);
+        }
+    }, [catalog.length]);
+
+    const loadThemes = useCallback(async () => {
+        try {
+            const res = await api.get(endpoints['themes']);
+            const rows = res?.data?.results || res?.data || [];
+            const list = Array.isArray(rows) ? rows : [];
+            setThemes(list);
+            const names = list
+                .map((t) => String(t?.name || '').trim())
+                .filter((name) => Boolean(name) && !STATIC_TABS.includes(name));
+            setTabs([...STATIC_TABS, ...names]);
+        } catch {
+            setThemes([]);
+            setTabs(STATIC_TABS);
+        }
+    }, []);
+
+    const attemptLocationRefresh = useCallback(async () => {
+        try {
+            const perm = await Location.requestForegroundPermissionsAsync();
+            if (perm.status !== 'granted') return;
+            const current = await Location.getCurrentPositionAsync({accuracy: Location.Accuracy.Balanced});
+            const latitude = Number(current?.coords?.latitude);
+            const longitude = Number(current?.coords?.longitude);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+            await loadCatalog({coords: {latitude, longitude}, silent: true});
+        } catch {
+        }
+    }, [loadCatalog]);
+
+    const runAiSearch = useCallback(async () => {
+        const q = String(searchText || '').trim();
+        if (!q) {
+            await loadCatalog();
+            return;
+        }
+        setIsSearching(true);
+        try {
+            const params = {q};
+            const res = await api.get(endpoints['ai-search'], {params});
+            const branches = res?.data?.results?.branches || [];
+            setCatalog(Array.isArray(branches) ? branches : []);
+            setActiveTab('ALL');
+        } catch {
+        } finally {
+            setIsSearching(false);
+        }
+    }, [loadCatalog, searchText]);
+
+    const loadAiSuggestions = useCallback(async () => {
+        const q = String(searchText || '').trim();
+        if (!q) {
+            setAiSuggestions([]);
+            return;
+        }
+        setIsAiLoading(true);
+        try {
+            const params = {q};
+            const res = await api.get(endpoints['search-suggestions'], {params});
+            const rows = res?.data?.results || [];
+            setAiSuggestions(Array.isArray(rows) ? rows : []);
+        } catch {
+            setAiSuggestions([]);
+        } finally {
+            setIsAiLoading(false);
+        }
+    }, [searchText]);
+
+    useFocusEffect(
+        useCallback(() => {
+            if (hasLoadedRef.current) return;
+            hasLoadedRef.current = true;
+            const runLoad = async () => {
+                try {
+                    const session = await getSession();
+                    setAccessToken(String(session?.token?.access_token || session?.token?.accessToken || session?.token || '').trim());
+                    const avatar = String(session?.user?.avatar || '').trim();
+                    const name = String(session?.user?.name || session?.user?.full_name || session?.user?.email || '').trim();
+                    const pref = String(session?.user?.preferredLocation || '').trim();
+                    setAvatarUrl(avatar);
+                    setAvatarName(name);
+                    setLocationLabel(pref || 'All locations');
+                } catch {
+                    setAvatarUrl('');
+                    setAvatarName('');
+                    setLocationLabel('All locations');
+                }
+                await Promise.all([loadThemes(), loadCatalog({}),]);
+                attemptLocationRefresh();
+                try {
+                    setUnreadNotificationCount(await getUnreadCustomerNotificationCount());
+                } catch {
+                    setUnreadNotificationCount(0);
+                }
+            };
+
+            runLoad();
+        }, [attemptLocationRefresh, loadCatalog, loadThemes])
     );
 
-    const filteredHotels = useMemo(() => {
-        const byTab = filterHotelsByTab(activeTab, catalog);
+    useFocusEffect(
+        useCallback(() => {
+            if (catalog.length > 0) return;
+            loadCatalog({silent: true}).catch(() => {});
+        }, [catalog.length, loadCatalog])
+    );
 
-        const keyword = searchText.trim().toLowerCase();
-        if (!keyword) return byTab;
+    useFocusEffect(
+        useCallback(() => {
+            if (!accessToken) return () => {};
+            let disposed = false;
+            let disconnect = () => {};
+            (async () => {
+                disconnect = await connectCustomerUpdates({
+                    token: accessToken,
+                    onMessage: (msg) => {
+                        if (disposed) return;
+                        if (msg?.type === 'review_created' || msg?.type === 'theme_update') {
+                            loadCatalog({silent: true}).catch(() => {});
+                            loadThemes().catch(() => {});
+                        }
+                    },
+                });
+            })();
+            return () => {
+                disposed = true;
+                disconnect?.();
+            };
+        }, [accessToken, loadCatalog, loadThemes])
+    );
 
-        return byTab.filter((item) => {
-            const haystack = `${item.title} ${item.city} ${item.category}`.toLowerCase();
-            return haystack.includes(keyword);
-        });
-    }, [activeTab, catalog, searchText]);
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await loadCatalog();
+            setUnreadNotificationCount(await getUnreadCustomerNotificationCount());
+        } catch {
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [loadCatalog]);
 
-    const allTabOrder = ['Featured', 'Suite', 'View', 'Family', 'Business'];
-    const allTabSections = useMemo(() => {
-        return allTabOrder.map((tab) => ({
-            title: tab,
-            data: filterHotelsByTab(tab, catalog),
+    const enrichedCatalog = useMemo(() => {
+        const rows = Array.isArray(catalog) ? catalog : [];
+        return rows.map((item) => ({
+            ...item,
+            syncedRating: Number.isFinite(item?.rating) ? item.rating : DEFAULT_RATING_VALUE,
+            reviewCount: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
+            themes: Array.isArray(item?.themes) ? item.themes : [],
+            price: item?.price || 'From 250,000',
         }));
     }, [catalog]);
 
+    const filteredHotels = useMemo(() => {
+        if (activeTab === 'AI ✨' && !String(searchText || '').trim()) {
+            const themed = enrichedCatalog.filter((row) => Array.isArray(row?.themes) && row.themes.includes('AI ✨'));
+            return filterHotelsByKeyword(themed, keyword);
+        }
+        if (activeTab !== 'ALL') {
+            const themeKey = String(activeTab || '').trim();
+            const themed = enrichedCatalog.filter((row) => Array.isArray(row?.themes) && row.themes.includes(themeKey));
+            return filterHotelsByKeyword(themed, keyword);
+        }
+        const byTab = filterHotelsByTab(activeTab, enrichedCatalog);
+        return filterHotelsByKeyword(byTab, keyword);
+    }, [activeTab, enrichedCatalog, keyword]);
+
+    const allTabOrder = tabs.filter((t) => t !== 'AI ✨' && t !== 'ALL');
+    const allTabSections = useMemo(() => {
+        const sections = allTabOrder.map((tab) => ({
+            title: tab,
+            data: filterHotelsByKeyword(enrichedCatalog.filter((row) => Array.isArray(row?.themes) && row.themes.includes(tab)), keyword),
+        }));
+
+        return keyword ? sections.filter((section) => section.data.length > 0) : sections;
+    }, [enrichedCatalog, keyword]);
+
+    if (isLoading && !enrichedCatalog.length) {
+        return (
+            <SafeAreaView style={styles.page}>
+                <View style={styles.loadingWrap}>
+                    <ActivityIndicator size="large" color="#5b79df" />
+                    <Text style={styles.loadingText}>Loading stays...</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
     return (
         <SafeAreaView style={styles.page}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={['#5b79df']}
+                        tintColor="#5b79df"
+                    />
+                }
+            >
                 <View style={styles.headerRow}>
                     <View style={styles.locationWrap}>
                         <Text style={styles.locationLabel}>Current Location</Text>
-                        <Text style={styles.locationValue} numberOfLines={1}>Labuan Bajo, INA</Text>
+                        <Text style={styles.locationValue} numberOfLines={1}>{locationLabel}</Text>
                     </View>
                     <View style={styles.headerActions}>
-                        <View style={styles.bellWrap}>
+                            <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('CustomerNotificationsScreen')}>
                             <Ionicons name="notifications" size={20} color="#1f1f1f"/>
-                            <View style={styles.alertDot}/>
-                        </View>
-                        <Image
-                            source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}}
-                            style={styles.avatar}
-                        />
+                                {unreadNotificationCount > 0 ? (
+                                    <View style={styles.alertBadge}>
+                                        <Text style={styles.alertBadgeText}>{`+${Math.min(unreadNotificationCount, 99)}`}</Text>
+                                    </View>
+                                ) : null}
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => navigation.navigate('CustomerProfileScreen')}>
+                                <Avatar uri={avatarUrl} name={avatarName} size={44} />
+                            </TouchableOpacity>
                     </View>
                 </View>
 
                 <View style={styles.searchBox}>
-                    <Image source={'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg'} style={styles.aiSearchIcon}/>
+                    <View style={styles.aiIconWrap}>
+                        <Ionicons name="sparkles" size={16} color="#6a74ff"/>
+                    </View>
                     <TextInput
                         value={searchText}
                         onChangeText={setSearchText}
                         placeholder="AI will find room you want"
                         placeholderTextColor="#8e8e8e"
                         style={styles.searchInput}
+                        returnKeyType="search"
+                        onFocus={() => setActiveTab('AI ✨')}
+                        onSubmitEditing={async () => {
+                            await loadAiSuggestions();
+                            await runAiSearch();
+                        }}
                     />
+                    {isSearching ? (
+                        <ActivityIndicator size="small" color="#5b79df" />
+                    ) : null}
                 </View>
 
-                <CategoryTabs activeTab={activeTab} onTabPress={setActiveTab} />
+                <CategoryTabs
+                    tabs={tabs}
+                    activeTab={activeTab}
+                    onTabPress={(tab) => {
+                        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+                            UIManager.setLayoutAnimationEnabledExperimental(true);
+                        }
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setActiveTab(tab);
+                    }}
+                />
 
-                {activeTab === 'ALL' ? (
-                    allTabSections.map((section) => (
-                        <Section
-                            key={section.title}
-                            title={section.title}
-                            data={section.data}
-                            cardWidth={cardWidth}
-                            navigation={navigation}
-                        />
-                    ))
+                {activeTab === 'AI ✨' ? (
+                    String(searchText || '').trim() ? (
+                    <View style={styles.sectionWrap}>
+                        <Text style={styles.sectionTitle}>Suggestions</Text>
+                        {isAiLoading ? (
+                            <View style={styles.loadingInline}>
+                                <ActivityIndicator size="small" color="#5b79df" />
+                            </View>
+                        ) : aiSuggestions.length ? (
+                            <View style={styles.suggestionList}>
+                                {aiSuggestions.map((row) => {
+                                    const key = `${row?.type || 'item'}-${row?.id || Math.random()}`;
+                                    const title = String(row?.title || '').trim();
+                                    const subtitle = String(row?.subtitle || '').trim();
+                                    return (
+                                        <TouchableOpacity
+                                            key={key}
+                                            style={styles.suggestionItem}
+                                            activeOpacity={0.85}
+                                            onPress={() => {
+                                                if (row?.type === 'branch') {
+                                                    navigation.navigate('CustomerHomeDetailSceen', {branchId: row?.id, hotelName: title, hotelAddress: subtitle, heroImage: row?.image});
+                                                }
+                                            }}
+                                        >
+                                            <Text style={styles.suggestionTitle} numberOfLines={1}>{title || 'Result'}</Text>
+                                            <Text style={styles.suggestionSubtitle} numberOfLines={1}>{subtitle}</Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                        ) : (
+                            <Text style={styles.emptyText}>Start typing to see suggestions.</Text>
+                        )}
+                    </View>
+                    ) : (
+                        <Section title="AI ✨" data={filteredHotels} cardWidth={cardWidth} navigation={navigation}/>
+                    )
+                ) : activeTab === 'ALL' ? (
+                    enrichedCatalog.length && allTabOrder.length === 0 ? (
+                        <Section title="All" data={filteredHotels} cardWidth={cardWidth} navigation={navigation}/>
+                    ) : allTabSections.length ? (
+                        allTabSections.map((section) => (
+                            <Section
+                                key={section.title}
+                                title={section.title}
+                                data={section.data}
+                                cardWidth={cardWidth}
+                                navigation={navigation}
+                            />
+                        ))
+                    ) : (
+                        <Text style={styles.emptyText}>{keyword ? 'No results match your search.' : 'No stays available yet.'}</Text>
+                    )
                 ) : (
                     <Section title={activeTab} data={filteredHotels} cardWidth={cardWidth} navigation={navigation}/>
                 )}
             </ScrollView>
-
-            <View style={styles.bottomNav}>
-                <TouchableOpacity style={styles.bottomItem}>
-                    <Ionicons name="home" size={bottomNavIconSize} color="#8294FF"/>
-                    <Text style={[styles.bottomLabel, styles.bottomLabelActive]}>Home</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerBookingUpcomingScreen')}>
-                    <MaterialCommunityIcons name="map-marker-radius-outline" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Booking</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerLocketScreen')}>
-                    <Ionicons name="heart-outline" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Watchlist</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerProfileScreen')}>
-                    <Feather name="user" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Profile</Text>
-                </TouchableOpacity>
-            </View>
         </SafeAreaView>
     );
 }
@@ -237,6 +510,19 @@ const styles = StyleSheet.create({
     page: {
         flex: 1,
         backgroundColor: '#efefef',
+    },
+    loadingWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 40,
+        paddingHorizontal: 16,
+    },
+    loadingText: {
+        marginTop: 10,
+        color: '#4b5563',
+        fontSize: 14,
+        fontFamily: 'SF-Bold',
     },
     scrollContent: {
         paddingHorizontal: 16,
@@ -260,8 +546,8 @@ const styles = StyleSheet.create({
     },
     locationValue: {
         fontFamily: 'SF-Bold',
-        fontSize: 28,
-        lineHeight: 32,
+        fontSize: 20,
+        lineHeight: 24,
         color: '#1b1b1b',
     },
     headerActions: {
@@ -275,16 +561,24 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    alertDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 999,
+    alertBadge: {
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
         backgroundColor: '#ff3b30',
         position: 'absolute',
-        top: 4,
-        right: 4,
+        top: 1,
+        right: -2,
+        paddingHorizontal: 4,
+        alignItems: 'center',
+        justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#efefef',
+    },
+    alertBadgeText: {
+        fontFamily: 'SF-Bold',
+        fontSize: 9,
+        color: '#fff',
     },
     avatar: {
         width: 40,
@@ -304,10 +598,13 @@ const styles = StyleSheet.create({
         paddingVertical: 0,
         backgroundColor: '#efefef',
     },
-    aiSearchIcon: {
-        width: 22,
-        height: 22,
-        resizeMode: 'contain',
+    aiIconWrap: {
+        width: 30,
+        height: 30,
+        borderRadius: 12,
+        backgroundColor: 'rgba(130,148,255,0.18)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     searchInput: {
         flex: 1,
@@ -351,6 +648,33 @@ const styles = StyleSheet.create({
     },
     sectionWrap: {
         marginTop: 28,
+    },
+    loadingInline: {
+        paddingVertical: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    suggestionList: {
+        borderRadius: 16,
+        overflow: 'hidden',
+        backgroundColor: '#fff',
+    },
+    suggestionItem: {
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#efefef',
+    },
+    suggestionTitle: {
+        fontFamily: 'SF-Bold',
+        fontSize: 14,
+        color: '#111827',
+    },
+    suggestionSubtitle: {
+        marginTop: 4,
+        fontFamily: 'SF-Regular',
+        fontSize: 12,
+        color: '#6b7280',
     },
     sectionTitle: {
         fontFamily: 'SF-Black',
@@ -429,33 +753,5 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#7e7e7e',
         paddingVertical: 8,
-    },
-    bottomNav: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: 76,
-        borderTopWidth: 1,
-        borderTopColor: '#d6d6d6',
-        backgroundColor: '#f6f6f6',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-around',
-        paddingBottom: 6,
-    },
-    bottomItem: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        flex: 1,
-    },
-    bottomLabel: {
-        marginTop: 4,
-        fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#8f8f8f',
-    },
-    bottomLabelActive: {
-        color: '#8294FF',
     },
 });

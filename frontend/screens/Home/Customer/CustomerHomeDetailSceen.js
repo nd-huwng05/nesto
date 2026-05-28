@@ -1,8 +1,7 @@
 import {useEffect, useMemo, useState} from 'react';
-import {Image, ScrollView, Text, TouchableOpacity, View, Modal} from 'react-native';
+import {Image, RefreshControl, ScrollView, Text, TouchableOpacity, View, Modal} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
-import {fakeGetHomeDetail, fakeGetReviews} from '../../../configuration/FakeApi';
 import {
     FeaturedTag,
     GalleryStrip,
@@ -14,21 +13,24 @@ import {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+const getToday = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+};
+
+const getTomorrow = () => {
+    const today = getToday();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+};
+
 export function CustomerHomeDetailSceen({navigation, route}) {
     const params = route?.params ?? {};
     const room = params.room ?? {};
     const routeHotelName = params.hotelName ?? '';
     const heroImage = params.heroImage ?? room.image ?? 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
-    const rating = Number.isFinite(params.rating) ? params.rating : 4.5;
-    const reviews = Number.isFinite(params.reviews) ? params.reviews : 4231;
-    const watchlist = params.watchlist ?? {
-        title: 'Watchlish',
-        subtitle: "Review's customer were used room",
-        reviewer: 'Ngoc Lan',
-        review: 'The view is very beautifull',
-        image: heroImage,
-        avatar: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?fit=crop&w=500&q=80&fm=jpg',
-    };
+    const rating = Number.isFinite(params.rating) ? params.rating : 0;
+    const reviews = Number.isFinite(params.reviews) ? params.reviews : 0;
+    const watchlist = params.watchlist ?? null;
 
     const detailGallery = Array.isArray(params.gallery) && params.gallery.length
         ? params.gallery
@@ -39,52 +41,19 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const detailDescription = roomDescription.length >= 60
         ? roomDescription
         : (hotelDescription.length ? hotelDescription : defaultDescription);
-    const [mockHotelDetail, setMockHotelDetail] = useState(null);
-    const [reviewsList, setReviewsList] = useState([]);
+    const [reviewsList, setReviewsList] = useState(Array.isArray(params.reviewsList) ? params.reviewsList : []);
 
-    const hotelName = routeHotelName || mockHotelDetail?.name || 'Swiss Hotel';
-    const hotelId = params.hotelId ?? mockHotelDetail?.id ?? 'hotel-1';
+    const hotelName = routeHotelName || room?.hotelName || 'Hotel';
+    const branchId = params.branchId ?? room?.branchId ?? '';
+    const hotelId = params.hotelId ?? room?.hotelId ?? null;
     const hotelAddress = params.hotelAddress
         ?? params.location
-        ?? mockHotelDetail?.location
-        ?? '211B Baker Street, London, England';
+        ?? room?.hotelAddress
+        ?? '';
 
     useEffect(() => {
-        let mounted = true;
-
-        const loadMockDetail = async () => {
-            try {
-                const data = await fakeGetHomeDetail();
-                if (mounted) {
-                    setMockHotelDetail(data);
-                }
-            } catch {
-                if (mounted) {
-                    setMockHotelDetail(null);
-                }
-            }
-        };
-
-        const loadReviews = async () => {
-            try {
-                const reviewsData = await fakeGetReviews('hotel-1');
-                if (mounted) {
-                    setReviewsList(reviewsData);
-                }
-            } catch {
-                if (mounted) {
-                    setReviewsList([]);
-                }
-            }
-        };
-
-        loadMockDetail();
-        loadReviews();
-
-        return () => {
-            mounted = false;
-        };
-    }, []);
+        setReviewsList(Array.isArray(params.reviewsList) ? params.reviewsList : []);
+    }, [params.reviewsList]);
     const [isDescriptionExpanded, setDescriptionExpanded] = useState(false);
     const DESCRIPTION_PREVIEW_LENGTH = 130;
     const hasLongDescription = detailDescription.length > DESCRIPTION_PREVIEW_LENGTH;
@@ -92,44 +61,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
         ? `${detailDescription.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd()}...`
         : detailDescription;
 
-    const roomCards = params.roomCards ?? mockHotelDetail?.rooms ?? [
-        {
-            id: 'room-1',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
-            type: 'Family',
-            view: 'beach',
-            image: heroImage,
-            price: {amount: 1999000, currency: 'VND'},
-        },
-        {
-            id: 'room-2',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
-            type: 'Family',
-            view: 'beach',
-            image: heroImage,
-            price: {amount: 1999000, currency: 'VND'},
-        },
-        {
-            id: 'room-3',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
-            type: 'Family',
-            view: 'beach',
-            image: heroImage,
-            price: {amount: 1999000, currency: 'VND'},
-        },
-        {
-            id: 'room-4',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
-            type: 'Family',
-            view: 'beach',
-            image: heroImage,
-            price: {amount: 1899000, currency: 'VND'},
-        },
-    ];
+    const roomCards = Array.isArray(params.roomCards) ? params.roomCards : [];
 
     const typeOptions = useMemo(() => {
         const values = Array.from(new Set(roomCards.map((item) => String(item?.type || '').trim()).filter(Boolean)));
@@ -144,13 +76,17 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const [selectedTypeIndex, setSelectedTypeIndex] = useState(0);
     const [selectedFeatureIndex, setSelectedFeatureIndex] = useState(0);
     const [currentFloor, setCurrentFloor] = useState(1);
-    const [startDate, setStartDate] = useState(new Date(2026, 6, 8));
-    const [endDate, setEndDate] = useState(new Date(2026, 6, 15));
+    const [startDate, setStartDate] = useState(() => getToday());
+    const [endDate, setEndDate] = useState(() => getTomorrow());
     const [showDatePicker, setShowDatePicker] = useState(false);
-    const [tempStartDate, setTempStartDate] = useState(new Date(2026, 6, 8));
-    const [tempEndDate, setTempEndDate] = useState(new Date(2026, 6, 15));
+    const [tempStartDate, setTempStartDate] = useState(() => getToday());
+    const [tempEndDate, setTempEndDate] = useState(() => getTomorrow());
     const [activeDateField, setActiveDateField] = useState('start');
-    const [viewDate, setViewDate] = useState(new Date(2026, 6, 1));
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [viewDate, setViewDate] = useState(() => {
+        const today = getToday();
+        return new Date(today.getFullYear(), today.getMonth(), 1);
+    });
 
     const selectedType = typeOptions[selectedTypeIndex] ?? 'All type';
     const selectedFeature = featureOptions[selectedFeatureIndex] ?? 'Feature';
@@ -182,11 +118,6 @@ export function CustomerHomeDetailSceen({navigation, route}) {
         const start = (currentFloor - 1) * ROOMS_PER_FLOOR;
         return filteredRoomCards.slice(start, start + ROOMS_PER_FLOOR);
     }, [filteredRoomCards, currentFloor]);
-
-    const buildRoomDisplayName = (floor, indexInFloor) => {
-        const roomNumber = floor * 100 + (indexInFloor + 1);
-        return `Room ${roomNumber}`;
-    };
 
     const handleCycleType = () => {
         if (!typeOptions.length) return;
@@ -233,6 +164,11 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
     const handleSelectDate = (day) => {
         const pickedDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+        const today = getToday();
+
+        if (pickedDate < today) {
+            return;
+        }
 
         if (activeDateField === 'start') {
             setTempStartDate(pickedDate);
@@ -260,9 +196,26 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const bookingCheckIn = formatBookingDate(startDate);
     const bookingCheckOut = formatBookingDate(endDate);
 
+    const handleRefresh = () => {
+        setIsRefreshing(true);
+        setIsRefreshing(false);
+    };
+
     return (
         <SafeAreaView className="flex-1 bg-[#ececec]">
-            <ScrollView showsVerticalScrollIndicator={false} className="flex-1 bg-[#ececec]" contentContainerStyle={{paddingBottom: 18}}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                className="flex-1 bg-[#ececec]"
+                contentContainerStyle={{paddingBottom: 98}}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={['#5b79df']}
+                        tintColor="#5b79df"
+                    />
+                }
+            >
                 <View className="mx-3 mt-2 rounded-[26px] overflow-hidden bg-[#ececec]">
                     <View className="relative">
                         <Image source={{uri: heroImage}} className="w-full h-[220px]" resizeMode="cover"/>
@@ -281,7 +234,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                     <View className="bg-[#ececec] rounded-t-[34px] -mt-8 px-5 pt-6 pb-5">
                         <View className="flex-row items-start justify-between">
                             <View className="flex-1 pr-4">
-                                <Text className="font-sf-bold text-[37px] leading-[40px] text-black">{hotelName}</Text>
+                                <Text className="font-sf-bold text-[24px] leading-[28px] text-black">{hotelName}</Text>
                                 <View className="flex-row items-center mt-1">
                                     <Feather name="map-pin" size={15} color="#9a9a9a"/>
                                     <Text className="font-sf text-[16px] leading-[22px] text-[#8b8b8b] ml-1.5" numberOfLines={1}>
@@ -296,7 +249,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
                         <RatingRow rating={rating} reviews={reviews}/>
 
-                        <Text className="font-sf-bold text-[38px] leading-[42px] mt-4 text-black">Description</Text>
+                        <Text className="font-sf-semi text-[18px] leading-[22px] mt-4 text-black">Description</Text>
                         <Text className="font-sf text-[16px] leading-[24px] text-extra mt-1">
                             {isDescriptionExpanded ? detailDescription : previewDescription}
                         </Text>
@@ -314,7 +267,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
                 <View className="mt-3 px-3">
                     <View className="rounded-[24px] bg-[#e9e9e9] px-3.5 pt-4 pb-3">
-                        <Text className="font-sf-bold text-[39px] leading-[42px] text-black">Rooms</Text>
+                        <Text className="font-sf-semi text-[18px] leading-[22px] text-black">Rooms</Text>
                         <Text className="font-sf text-[16px] leading-[22px] text-extra mt-1">
                             Room have many type for family or couple. and many rooms have view beach
                         </Text>
@@ -358,8 +311,13 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                             pagedRoomCards.map((roomItem, indexInFloor) => {
                                 const displayRoom = {
                                     ...roomItem,
-                                    name: buildRoomDisplayName(currentFloor, indexInFloor),
+                                    name: roomItem?.name || `Room ${currentFloor * 100 + (indexInFloor + 1)}`,
                                 };
+                                const resolvedRoomName =
+                                    displayRoom?.name
+                                    || displayRoom?.roomName
+                                    || (displayRoom?.roomNumber ? `Room ${displayRoom.roomNumber}` : '')
+                                    || (displayRoom?.number ? `Room ${displayRoom.number}` : 'Room');
 
                                 return (
                                 <RoomCard
@@ -387,8 +345,11 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                                     })}
                                     onBookNow={(room) => navigation.navigate('CustomerBookingScreen', {
                                         syncToken: Date.now(),
+                                        roomId: room?.id,
+                                        branchId,
                                         hotelName,
-                                        roomName: room.name ?? 'Room 121',
+                                        hotelAddress,
+                                        roomName: resolvedRoomName,
                                         heroImage: room.image ?? heroImage,
                                         startDateIso: startDate.toISOString(),
                                         endDateIso: endDate.toISOString(),
@@ -418,6 +379,8 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                     <WatchlistCard watchlist={watchlist} reviews={reviewsList}/>
                 </View>
             </ScrollView>
+
+            
 
             <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={handleCancelDatePicker}>
                 <View className="flex-1 bg-black/50 justify-end">
@@ -501,7 +464,9 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
                                         const day = cell.day;
                                         const candidateDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-                                        const isDisabled = activeDateField === 'end' && candidateDate <= tempStartDate;
+                                        const today = getToday();
+                                        const isPastDate = candidateDate < today;
+                                        const isDisabled = isPastDate || (activeDateField === 'end' && candidateDate <= tempStartDate);
                                         const isSelected = activeDateField === 'start'
                                             ? isSameDate(candidateDate, tempStartDate)
                                             : isSameDate(candidateDate, tempEndDate);

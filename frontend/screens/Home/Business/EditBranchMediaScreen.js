@@ -14,16 +14,35 @@ export default function EditBranchMediaScreen({navigation, route}) {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
+        let alive = true;
         (async () => {
-            const res = await fetchBranchDetail(branchId);
-            if (res.status === 'success') {
-                const gallery = res.data.images?.length
-                    ? res.data.images
-                    : [res.data.image].filter(Boolean);
-                setImages(gallery);
+            try {
+                const res = await fetchBranchDetail(branchId);
+                if (!alive) return;
+                if (res?.status === 'success') {
+                    const rawImages = Array.isArray(res?.data?.images) ? res.data.images : [];
+                    const cover = res?.data?.image ? [res.data.image] : [];
+                    const gallery = (rawImages.length ? rawImages : cover).filter(Boolean);
+                    setImages(gallery);
+                } else {
+                    setImages([]);
+                    Alert.alert('Error', res?.message || 'Could not load branch photos.');
+                }
+            } catch (err) {
+                if (alive) {
+                    setImages([]);
+                    Alert.alert(
+                        'Error',
+                        err?.response?.data?.detail || err?.message || 'Could not load branch photos.'
+                    );
+                }
+            } finally {
+                if (alive) setLoading(false);
             }
-            setLoading(false);
         })();
+        return () => {
+            alive = false;
+        };
     }, [branchId]);
 
     const handleSave = async () => {

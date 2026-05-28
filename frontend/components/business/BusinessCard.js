@@ -10,6 +10,11 @@ export default function BusinessCard({
 }) {
     const {toggleOpen, rotateArrow, contentHeight, contentOpacity, handleLayout} =
         useAccordionAnimation(200);
+    const branchesRaw = business?.branches;
+    const branchesList = branchesRaw?.results ?? branchesRaw;
+    const branches = Array.isArray(branchesList) ? branchesList : [];
+    const branchCount = branches.length;
+    const logoUri = typeof business?.logo === 'string' ? business.logo : '';
 
     return (
         <View className="bg-[#4e5d6c] rounded-2xl shadow-sm mb-4">
@@ -19,12 +24,15 @@ export default function BusinessCard({
                     onPress={() => onBusinessPress?.(business)}
                     className="flex-1 flex-row items-center"
                 >
-                    <Image source={{uri: business.logo}} className="w-12 h-12 rounded-full" />
+                    {logoUri ? (
+                        <Image source={{uri: logoUri}} className="w-12 h-12 rounded-full" />
+                    ) : (
+                        <View className="w-12 h-12 rounded-full bg-gray-200" />
+                    )}
                     <View className="px-3 flex-1">
                         <Text className="text-xl font-bold text-slate-800">{business.name}</Text>
                         <Text className="text-sm text-gray-400 font-medium">
-                            {business.branches.length} Branch
-                            {business.branches.length !== 1 ? 'es' : ''}
+                            {branchCount} Branch{branchCount !== 1 ? 'es' : ''}
                         </Text>
                     </View>
                 </TouchableOpacity>
@@ -48,14 +56,18 @@ export default function BusinessCard({
                 className="bg-[#4e5d6c] px-4 overflow-hidden rounded-b-2xl"
             >
                 <View onLayout={handleLayout} className="pt-3 gap-3 z-0">
-                    {business.branches.map((branch) => (
+                    {branches.map((branch) => (
                         <TouchableOpacity
                             key={branch.id}
                             onPress={() => onBranchPress?.(branch, business.id)}
                             className="flex-row justify-between items-center bg-white/10 p-3 rounded-xl"
                         >
                             <View className="flex-row items-center flex-1 pr-2">
-                                <Image source={{uri: branch.image}} className="w-10 h-10 rounded-full" />
+                                {branch?.image ? (
+                                    <Image source={{uri: branch.image}} className="w-10 h-10 rounded-full" />
+                                ) : (
+                                    <View className="w-10 h-10 rounded-full bg-white/20" />
+                                )}
                                 <View className="px-3 flex-1">
                                     <Text className="text-base font-bold text-white">{branch.name}</Text>
                                     <Text className="text-xs text-gray-300" numberOfLines={1}>

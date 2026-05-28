@@ -31,15 +31,27 @@ export default function ExtraServiceFormScreen({navigation, route}) {
             return;
         }
         (async () => {
-            const res = await fetchExtraServices(branchId);
-            const found = res.data?.find((s) => s.id === serviceId);
-            if (found) {
-                setName(found.name);
-                setDescription(found.description || '');
-                setPrice(String(found.price));
-                setCategory(found.category || 'RESTAURANT');
+            try {
+                const res = await fetchExtraServices(branchId);
+                const list = res?.status === 'success' ? res?.data : [];
+                const safeList = Array.isArray(list) ? list : [];
+                const found = safeList.find((s) => s?.id === serviceId);
+                if (found) {
+                    setName(found?.name || '');
+                    setDescription(found?.description || '');
+                    setPrice(found?.price === undefined || found?.price === null ? '' : String(found.price));
+                    setCategory(found?.category || 'RESTAURANT');
+                } else {
+                    Alert.alert('Not found', 'This extra service is no longer available.');
+                }
+            } catch (err) {
+                Alert.alert(
+                    'Error',
+                    err?.response?.data?.detail || err?.message || 'Could not load extra service.'
+                );
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         })();
     }, [branchId, isEdit, serviceId]);
 
@@ -68,7 +80,9 @@ export default function ExtraServiceFormScreen({navigation, route}) {
             Alert.alert('Saved', 'Extra service saved successfully.', [
                 {text: 'OK', onPress: () => navigation.goBack()},
             ]);
+            return;
         }
+        Alert.alert('Error', res?.message || 'Could not save extra service.');
     };
 
     const saveButton = (
