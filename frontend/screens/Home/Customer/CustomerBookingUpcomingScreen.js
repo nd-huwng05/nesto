@@ -10,10 +10,10 @@ import {normalizeServiceLine} from '../../../utils/serviceLineIdentity';
 import {displayBookingId} from '../../../utils/bookingId';
 import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
 import {getUnreadCustomerNotificationCount, pushCustomerNotification} from '../../../services/NotificationService';
+import {syncBookingSnapshotRecord} from '../../../services/CustomerPersistenceService';
 
 const UPCOMING_BOOKINGS_KEY = 'customer_paid_upcoming_bookings';
 const HISTORY_BOOKINGS_KEY = 'customer_paid_history_bookings';
-const BOOKING_TEST_RESET_FLAG = 'customer_booking_test_reset_done_v4';
 const DEFAULT_BOOKING_IMAGE = require('../../../assets/images/hotels/sun-suites-business.jpg');
 const MOMO_LOGO = require('../../../assets/images/hotels/Logo-MoMo-Square.webp');
 const ZALOPAY_LOGO = require('../../../assets/images/hotels/Logo-ZaloPay-Square-1024x1024.webp');
@@ -322,12 +322,6 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
 
             const loadSyncedBookings = async () => {
                 try {
-                    const resetFlag = await AsyncStorage.getItem(BOOKING_TEST_RESET_FLAG);
-                    if (!resetFlag) {
-                        await AsyncStorage.multiRemove([UPCOMING_BOOKINGS_KEY, HISTORY_BOOKINGS_KEY]);
-                        await AsyncStorage.setItem(BOOKING_TEST_RESET_FLAG, '1');
-                    }
-
                     const [rawUpcoming, rawHistory] = await AsyncStorage.multiGet([
                         UPCOMING_BOOKINGS_KEY,
                         HISTORY_BOOKINGS_KEY,
@@ -582,6 +576,10 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
             const refreshedBooking = updatedBookings.find((record) => String(record?.bookingId || '').trim() === bookingId) || null;
             setSelectedPaymentBooking(refreshedBooking);
 
+            if (refreshedBooking) {
+                await syncBookingSnapshotRecord(refreshedBooking, 'payment');
+            }
+
             closePaymentInvoice();
             setPaymentSuccessMessage(`Remaining balance has been paid with ${getPaymentMethodLabel(refreshedBooking?.paymentMethod || refreshedBooking?.invoiceDetails?.paymentMethod)}.`);
             setPaymentSuccessModalVisible(true);
@@ -665,6 +663,10 @@ export default function CustomerBookingUpcomingScreen({navigation, route}) {
 
             await AsyncStorage.setItem(UPCOMING_BOOKINGS_KEY, JSON.stringify(updatedBookings));
             setSyncedBookings(updatedBookings);
+            const refreshedBooking = updatedBookings.find((record) => String(record?.bookingId || '').trim() === bookingId) || null;
+            if (refreshedBooking) {
+                await syncBookingSnapshotRecord(refreshedBooking, 'upcoming');
+            }
             closeCheckInModal();
             setCheckInSuccessData({
                 guestName,

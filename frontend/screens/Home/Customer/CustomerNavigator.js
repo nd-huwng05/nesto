@@ -4,6 +4,7 @@ import {UI} from '../../../styles/uiTokens';
 import {HomeScreen} from './CustomerHomeScreen';
 import {CustomerHomeDetailSceen} from './CustomerHomeDetailSceen';
 import {HomeDetailScreen} from './CustomerRoomDetailScreen';
+import CustomerRoomCardTestScreen from './CustomerRoomCardTestScreen';
 import {CustomerProfileScreen} from './CustomerProfileScreen';
 import CustomerBookingScreen from './CustomerBookingScreen';
 import CustomerPaymentScreen from './CustomerPaymentScreen';
@@ -14,6 +15,7 @@ import CustomerServiceScreen from './CustomerServiceScreen';
 import CustomerAddPostScreen from './CustomerAddPostScreen';
 import CustomerReviewScreen from './CustomerReviewScreen';
 import CustomerNotificationsScreen from './CustomerNotificationsScreen';
+import CustomerEditProfileScreen from './CustomerEditProfileScreen';
 
 const CustomerStack = createNativeStackNavigator();
 
@@ -24,6 +26,7 @@ export default function CustomerNavigator() {
             <CustomerStack.Navigator screenOptions={{headerShown: false}}>
                 <CustomerStack.Screen name="CustomerHomeScreen" component={HomeScreen} />
                 <CustomerStack.Screen name="CustomerHomeDetailSceen" component={CustomerHomeDetailSceen} />
+                <CustomerStack.Screen name="CustomerRoomCardTestScreen" component={CustomerRoomCardTestScreen} />
                 <CustomerStack.Screen name="CustomerRoomDetailScreen" component={HomeDetailScreen} />
                 <CustomerStack.Screen name="CustomerProfileScreen" component={CustomerProfileScreen} />
                 <CustomerStack.Screen name="CustomerBookingUpcomingScreen" component={CustomerBookingUpcomingScreen} />
@@ -35,6 +38,7 @@ export default function CustomerNavigator() {
                 <CustomerStack.Screen name="CustomerServiceScreen" component={CustomerServiceScreen} />
                 <CustomerStack.Screen name="CustomerReviewScreen" component={CustomerReviewScreen} />
                 <CustomerStack.Screen name="CustomerNotificationsScreen" component={CustomerNotificationsScreen} />
+                <CustomerStack.Screen name="CustomerEditProfileScreen" component={CustomerEditProfileScreen} />
             </CustomerStack.Navigator>
         </View>
     );

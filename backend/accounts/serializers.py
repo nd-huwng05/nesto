@@ -19,7 +19,7 @@ class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     groups = serializers.SerializerMethodField()
 
-    def get_groups(self, obj):
+    def get_groups(self, obj) -> list[str]:
         return [group.name for group in obj.groups.all()]
 
     class Meta:

@@ -1,9 +1,9 @@
-import { useCallback, useState, useMemo } from 'react';
-import { familyHotels, businessHotels } from '../../configuration/hotelsData';
+import { useCallback, useEffect, useState, useMemo } from 'react';
+import CustomerService from '../../services/CustomerService';
 
 export const useHotelSearch = () => {
-    const [allHotels, setAllHotels] = useState([...familyHotels, ...businessHotels]);
-    const [filteredHotels, setFilteredHotels] = useState(allHotels);
+    const [allHotels, setAllHotels] = useState([]);
+    const [filteredHotels, setFilteredHotels] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filters, setFilters] = useState({
@@ -14,27 +14,58 @@ export const useHotelSearch = () => {
         location: null,
     });
 
+    useEffect(() => {
+        let mounted = true;
+
+        const loadHotels = async () => {
+            setIsLoading(true);
+            try {
+                const response = await CustomerService.listHotels();
+                const payload = response?.data;
+                const hotels = Array.isArray(payload?.results)
+                    ? payload.results
+                    : Array.isArray(payload)
+                        ? payload
+                        : [];
+
+                if (!mounted) return;
+                setAllHotels(hotels);
+                setFilteredHotels(applyFilters(hotels, filters));
+            } catch {
+                if (!mounted) return;
+                setAllHotels([]);
+                setFilteredHotels([]);
+            } finally {
+                if (mounted) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        loadHotels();
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
     const applyFilters = (hotels, filterObj) => {
         return hotels.filter((hotel) => {
             const price = parseFloat(hotel.price) || 0;
             const rating = parseFloat(hotel.rating) || 0;
 
-            // Price filter
             if (price < filterObj.minPrice || price > filterObj.maxPrice) {
                 return false;
             }
 
-            // Rating filter
             if (rating < filterObj.minRating) {
                 return false;
             }
 
-            // Room type filter
             if (filterObj.roomType && hotel.roomType !== filterObj.roomType) {
                 return false;
             }
 
-            // Location filter
             if (filterObj.location) {
                 const hotelLocation = (hotel.city || '').toLowerCase();
                 const filterLocation = filterObj.location.toLowerCase();
@@ -47,10 +78,6 @@ export const useHotelSearch = () => {
         });
     };
 
-    /**
-     * Search hotels by query string
-     * @param {string} query - Search query
-     */
     const search = useCallback(
         (query) => {
             setSearchQuery(query);
@@ -77,10 +104,6 @@ export const useHotelSearch = () => {
         [allHotels, filters]
     );
 
-    /**
-     * Update filter criteria
-     * @param {Object} newFilters - New filter values
-     */
     const updateFilters = useCallback(
         (newFilters) => {
             const updatedFilters = { ...filters, ...newFilters };
@@ -90,11 +113,6 @@ export const useHotelSearch = () => {
         [allHotels, filters]
     );
 
-    /**
-     * Sort hotels by field
-     * @param {string} field - Field to sort by (price, rating, name)
-     * @param {string} order - 'asc' or 'desc'
-     */
     const sortHotels = useCallback((field, order = 'asc') => {
         const sortMap = {
             price: (a, b) => {
@@ -120,9 +138,6 @@ export const useHotelSearch = () => {
         }
     }, [filteredHotels]);
 
-    /**
-     * Reset all filters and search
-     */
     const resetSearch = useCallback(() => {
         setSearchQuery('');
         setFilters({
@@ -135,11 +150,6 @@ export const useHotelSearch = () => {
         setFilteredHotels(allHotels);
     }, [allHotels]);
 
-    /**
-     * Get hotel by ID
-     * @param {string} hotelId - Hotel ID
-     * @returns {Object|null}
-     */
     const getHotelById = useCallback(
         (hotelId) => {
             return allHotels.find((h) => h.id === hotelId) || null;
@@ -147,12 +157,6 @@ export const useHotelSearch = () => {
         [allHotels]
     );
 
-    /**
-     * Get similar hotels based on reference hotel
-     * @param {string} hotelId - Reference hotel ID
-     * @param {number} limit - Number of results
-     * @returns {Array}
-     */
     const getSimilarHotels = useCallback(
         (hotelId, limit = 3) => {
             const refHotel = getHotelById(hotelId);
@@ -165,12 +169,6 @@ export const useHotelSearch = () => {
         [allHotels, getHotelById]
     );
 
-    /**
-     * Get hotels in specific price range
-     * @param {number} minPrice - Minimum price
-     * @param {number} maxPrice - Maximum price
-     * @returns {Array}
-     */
     const getHotelsInPriceRange = useCallback(
         (minPrice, maxPrice) => {
             return allHotels.filter((hotel) => {
@@ -181,21 +179,12 @@ export const useHotelSearch = () => {
         [allHotels]
     );
 
-    /**
-     * Get featured/popular hotels
-     * @param {number} limit - Number of hotels to return
-     * @returns {Array}
-     */
     const getFeaturedHotels = useCallback((limit = 5) => {
         return [...allHotels]
             .sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0))
             .slice(0, limit);
     }, [allHotels]);
 
-    /**
-     * Get search statistics
-     * @returns {Object}
-     */
     const getStats = useMemo(() => {
         const priceRange = allHotels.reduce(
             (acc, hotel) => {

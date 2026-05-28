@@ -1,10 +1,12 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 import {Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
+import {useFocusEffect} from '@react-navigation/native';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
-import {getSession, clearSession} from '../../../utils/authStorage';
+import {clearSession} from '../../../utils/authStorage';
 import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
+import {useCustomerProfile} from '../../../hooks/customer/useCustomerProfile';
 
 function SectionRow({icon, label, value, valueColor = '#8294FF', danger = false, showSeparator = false, onPress}) {
     return (
@@ -20,14 +22,15 @@ function SectionRow({icon, label, value, valueColor = '#8294FF', danger = false,
 }
 
 export function CustomerProfileScreen({navigation}) {
-    const [account, setAccount] = useState({
-        name: 'Nguyen Ngoc Lan',
-        username: 'lannguyen',
-        email: 'customer@nesto.vn',
-        role: 'customer',
-        phone: 'N/A',
-    });
+    const {profile, loadProfile} = useCustomerProfile();
     const [isRefreshing, setIsRefreshing] = useState(false);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadProfile();
+            return undefined;
+        }, [loadProfile])
+    );
 
     const handleLogout = () => {
         Alert.alert(
@@ -59,39 +62,21 @@ export function CustomerProfileScreen({navigation}) {
         );
     };
 
-    useEffect(() => {
-        let mounted = true;
+    const account = useMemo(() => {
+        const rawName = String(profile?.name || '').trim();
+        const role = String(profile?.role || 'CUSTOMER').toLowerCase();
+        const usernameSource = String(profile?.email || '').split('@')[0];
+        const shouldUseDefaultName = rawName.toLowerCase() === 'nesto customer' || rawName.length === 0;
 
-        const loadAccount = async () => {
-            try {
-                const session = await getSession();
-                const user = session?.user ?? {};
-                const email = String(user?.email || '').trim();
-                const rawName = String(user?.name || user?.full_name || '').trim();
-                const username = String(user?.username || '').trim();
-                const role = String(user?.role || session?.role || 'CUSTOMER').toLowerCase();
-                const shouldUseDefaultName = rawName.toLowerCase() === 'nesto customer' || rawName.length === 0;
-
-                if (mounted) {
-                    setAccount({
-                        name: shouldUseDefaultName ? 'Nguyen Ngoc Lan' : rawName,
-                        username: username || 'lannguyen',
-                        email: email || 'N/A',
-                        role,
-                        phone: String(user?.phone || '').trim() || 'N/A',
-                    });
-                }
-            } catch {
-                // Keep fallback profile when session read fails.
-            }
+        return {
+            name: shouldUseDefaultName ? 'Nguyen Ngoc Lan' : rawName,
+            username: usernameSource || 'lannguyen',
+            email: String(profile?.email || '').trim() || 'N/A',
+            role,
+            phone: String(profile?.phone || '').trim() || 'N/A',
+            avatar: String(profile?.avatar || '').trim() || STAFF_MEDIA.USER_PLACEHOLDER,
         };
-
-        loadAccount();
-
-        return () => {
-            mounted = false;
-        };
-    }, []);
+    }, [profile]);
 
     const displayName = useMemo(() => {
         const value = String(account.name || '').trim();
@@ -111,9 +96,9 @@ export function CustomerProfileScreen({navigation}) {
 
     const handleRefresh = () => {
         setIsRefreshing(true);
-        setTimeout(() => {
+        Promise.resolve(loadProfile()).finally(() => {
             setIsRefreshing(false);
-        }, 600);
+        });
     };
 
     return (
@@ -134,7 +119,7 @@ export function CustomerProfileScreen({navigation}) {
                     <View style={styles.decorCircleOne} />
                     <View style={styles.decorCircleTwo} />
                     <View style={styles.profileCard}>
-                        <Image source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}} style={styles.profileAvatar} />
+                        <Image source={{uri: account.avatar}} style={styles.profileAvatar} />
                         <View style={styles.profileInfoWrap}>
                             <Text style={styles.profileName}>{displayName}</Text>
                             <Text style={styles.profileMeta}>Username: {account.username}</Text>
@@ -151,6 +136,7 @@ export function CustomerProfileScreen({navigation}) {
                         icon={<Feather name="user" size={17} color="#2f2f2f" />}
                         label="Update profile"
                         showSeparator={false}
+                        onPress={() => navigation.navigate('CustomerEditProfileScreen')}
                     />
                     <SectionRow
                         icon={<Ionicons name="lock-closed-outline" size={17} color="#2f2f2f" />}

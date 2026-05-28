@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import {getSession} from '../../../utils/authStorage';
 import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
+import {CustomerService} from '../../../services/CustomerService';
 
 const HISTORY_BOOKINGS_KEY = 'customer_paid_history_bookings';
 const UPCOMING_BOOKINGS_KEY = 'customer_paid_upcoming_bookings';
@@ -21,41 +22,6 @@ const HOTEL_AVATAR_BY_NAME = {
     'sunset paradise': require('../../../assets/images/hotels/royal-resort-family.jpg'),
 };
 
-const FALLBACK_LOCKET_ITEMS = [
-    {
-        id: 'locket-1',
-        hotelName: 'Swiss Hotel',
-        roomName: 'Room 121',
-        description: 'The view is very beautiful',
-        hotelAvatar: require('../../../assets/images/hotels/royal-resort-business.jpg'),
-        userAvatar: STAFF_MEDIA.USER_PLACEHOLDER,
-        userName: 'Ngọc Lam',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
-        createdAt: '2026-05-28T10:00:00.000Z',
-    },
-    {
-        id: 'locket-2',
-        hotelName: 'Marina Bay Resort',
-        roomName: 'Room 305',
-        description: 'Stunning ocean view with private balcony',
-        hotelAvatar: require('../../../assets/images/hotels/sun-suites-business.jpg'),
-        userAvatar: STAFF_MEDIA.USER_PLACEHOLDER,
-        userName: 'Linh Đặng',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
-        createdAt: '2026-05-28T09:30:00.000Z',
-    },
-    {
-        id: 'locket-3',
-        hotelName: 'Sunset Paradise',
-        roomName: 'Room 502',
-        description: 'Luxurious suite with modern amenities',
-        hotelAvatar: require('../../../assets/images/hotels/royal-resort-family.jpg'),
-        userAvatar: STAFF_MEDIA.USER_PLACEHOLDER,
-        userName: 'Hoa Trần',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
-        createdAt: '2026-05-28T09:00:00.000Z',
-    },
-];
 
 const resolveImageSource = (source) => {
     if (typeof source === 'number') return source;
@@ -138,7 +104,7 @@ function LocketCard({item, nowMs}) {
 }
 
 export default function CustomerLocketScreen({navigation}) {
-    const [lockets, setLockets] = useState(FALLBACK_LOCKET_ITEMS);
+    const [lockets, setLockets] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterQuery, setFilterQuery] = useState('');
     const [bookingRecords, setBookingRecords] = useState([]);
@@ -167,11 +133,12 @@ export default function CustomerLocketScreen({navigation}) {
 
             const loadWatchlistFromHistory = async () => {
                 try {
-                    const [session, rawHistory, rawUpcoming, rawCustomPosts] = await Promise.all([
+                    const [session, rawHistory, rawUpcoming, rawCustomPosts, remoteWatchlist] = await Promise.all([
                         getSession(),
                         AsyncStorage.getItem(HISTORY_BOOKINGS_KEY),
                         AsyncStorage.getItem(UPCOMING_BOOKINGS_KEY),
                         AsyncStorage.getItem(WATCHLIST_CUSTOM_POSTS_KEY),
+                        CustomerService.listWatchlistPosts(),
                     ]);
 
                     const userEmail = String(session?.user?.email || '').trim().toLowerCase();
@@ -192,9 +159,17 @@ export default function CustomerLocketScreen({navigation}) {
                     // Shared watchlist: every account sees the same feed.
                     const scopedItems = allItems;
                     const scopedUpcoming = allUpcoming;
-                    const scopedCustomPosts = Array.isArray(parsedCustomPosts)
-                        ? parsedCustomPosts.filter((item) => item && typeof item === 'object')
+                    const remotePosts = remoteWatchlist?.success
+                        ? (Array.isArray(remoteWatchlist?.data?.results) ? remoteWatchlist.data.results : Array.isArray(remoteWatchlist?.data) ? remoteWatchlist.data : [])
                         : [];
+                    const preferredPosts = remotePosts.length ? remotePosts : parsedCustomPosts;
+                    const scopedCustomPosts = Array.isArray(preferredPosts)
+                        ? preferredPosts.filter((item) => item && typeof item === 'object')
+                        : [];
+
+                    if (remotePosts.length) {
+                        await AsyncStorage.setItem(WATCHLIST_CUSTOM_POSTS_KEY, JSON.stringify(remotePosts));
+                    }
 
                     const dedupeRoomMap = new Map();
                     [...scopedItems, ...scopedUpcoming].forEach((item) => {
@@ -256,12 +231,12 @@ export default function CustomerLocketScreen({navigation}) {
                     const merged = [...mappedCustomPosts, ...mapped];
 
                     if (mounted) {
-                        setLockets(merged.length ? merged : FALLBACK_LOCKET_ITEMS);
+                        setLockets(merged);
                     }
                 } catch {
                     if (mounted) {
                         setBookingRecords([]);
-                        setLockets(FALLBACK_LOCKET_ITEMS);
+                        setLockets([]);
                     }
                 }
             };
@@ -415,6 +390,8 @@ export default function CustomerLocketScreen({navigation}) {
                 customerEmail: currentUser.email || '',
                 createdAt: new Date().toISOString(),
             };
+
+            await CustomerService.createWatchlistPost(persistedPost);
 
             await AsyncStorage.setItem(WATCHLIST_CUSTOM_POSTS_KEY, JSON.stringify([persistedPost, ...safeCustomPosts]));
         } catch {

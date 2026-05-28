@@ -12,12 +12,13 @@ import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTab
 import {displayBookingId} from '../../../utils/bookingId';
 import {createReviewForumPost, fetchReviewForumPosts, toggleReviewForumHeart} from '../../../services/ReviewForumService';
 import {getUnreadCustomerNotificationCount, pushCustomerNotification} from '../../../services/NotificationService';
+import {CustomerService} from '../../../services/CustomerService';
+import {syncBookingSnapshotRecord} from '../../../services/CustomerPersistenceService';
 
 const HISTORY_BOOKINGS_KEY = 'customer_paid_history_bookings';
 const UPCOMING_BOOKINGS_KEY = 'customer_paid_upcoming_bookings';
 const HOTEL_RATINGS_KEY = 'customer_hotel_ratings';
 const REVIEW_FORUM_KEY = 'customer_room_review_forum_posts';
-const BOOKING_TEST_RESET_FLAG = 'customer_booking_test_reset_done_v4';
 const DEFAULT_BOOKING_IMAGE = require('../../../assets/images/hotels/sun-suites-business.jpg');
 const ANDROID_REFRESH_TOP_OFFSET = -170;
 const formatUsd = (amount) => Number(amount || 0).toLocaleString('en-US');
@@ -663,6 +664,11 @@ export default function CustomerBookingHistoryScreen({navigation}) {
             [UPCOMING_BOOKINGS_KEY, JSON.stringify(nextUpcoming)],
             [HISTORY_BOOKINGS_KEY, JSON.stringify(nextHistory)],
         ]);
+
+        const syncedRecord = nextHistory.find(isSameBooking) || null;
+        if (syncedRecord) {
+            await syncBookingSnapshotRecord(syncedRecord, 'history');
+        }
     };
 
     const closeCheckoutModal = () => {
@@ -755,6 +761,30 @@ export default function CustomerBookingHistoryScreen({navigation}) {
             customerEmail: String(session?.user?.email || '').trim().toLowerCase(),
             createdAt: new Date().toISOString(),
         };
+
+        try {
+            const apiResult = await CustomerService.createHotelRating({
+                bookingId: ratingRecord.bookingId,
+                hotelName: ratingRecord.hotelName,
+                roomName: ratingRecord.roomName,
+                rating: ratingRecord.rating,
+                customerName: ratingRecord.customerName,
+                customerEmail: ratingRecord.customerEmail,
+                source: 'checkout',
+            });
+
+            if (apiResult?.success) {
+                const serverRecord = {
+                    ...ratingRecord,
+                    ...(apiResult?.data || {}),
+                    createdAt: apiResult?.data?.createdAt || ratingRecord.createdAt,
+                };
+                await AsyncStorage.setItem(HOTEL_RATINGS_KEY, JSON.stringify([serverRecord, ...deduped]));
+                return;
+            }
+        } catch {
+            // Fall back to local cache when API is unavailable.
+        }
 
         await AsyncStorage.setItem(HOTEL_RATINGS_KEY, JSON.stringify([ratingRecord, ...deduped]));
     };
@@ -862,12 +892,6 @@ export default function CustomerBookingHistoryScreen({navigation}) {
 
             const loadHistoryBookings = async () => {
                 try {
-                    const resetFlag = await AsyncStorage.getItem(BOOKING_TEST_RESET_FLAG);
-                    if (!resetFlag) {
-                        await AsyncStorage.multiRemove([UPCOMING_BOOKINGS_KEY, HISTORY_BOOKINGS_KEY]);
-                        await AsyncStorage.setItem(BOOKING_TEST_RESET_FLAG, '1');
-                    }
-
                     const [{user}, rawHistory, rawUpcoming] = await Promise.all([
                         getSession(),
                         AsyncStorage.getItem(HISTORY_BOOKINGS_KEY),

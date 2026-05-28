@@ -7,5 +7,9 @@
     "expo:start:clear": "npx expo start frontend --clear",
     "expo:start:offline": "npx expo start frontend --offline",
     "expo:doctor": "cd frontend && npx expo-doctor"
+  },
+  "dependencies": {
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
   }
 }

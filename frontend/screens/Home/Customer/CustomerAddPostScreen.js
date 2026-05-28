@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Ionicons} from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import {getSession} from '../../../utils/authStorage';
+import {CustomerService} from '../../../services/CustomerService';
 
 const HISTORY_BOOKINGS_KEY = 'customer_paid_history_bookings';
 const UPCOMING_BOOKINGS_KEY = 'customer_paid_upcoming_bookings';
@@ -215,6 +216,8 @@ export default function CustomerAddPostScreen({navigation}) {
                 customerEmail: currentUser.email || '',
                 createdAt: new Date().toISOString(),
             };
+
+            await CustomerService.createWatchlistPost(persistedPost);
 
             await AsyncStorage.setItem(WATCHLIST_CUSTOM_POSTS_KEY, JSON.stringify([persistedPost, ...safeCustomPosts]));
             Alert.alert('Success', 'Post added to Watchlist.', [

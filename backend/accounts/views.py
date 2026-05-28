@@ -1,6 +1,6 @@
 import asgiref.sync
 from channels.layers import get_channel_layer
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,12 +12,26 @@ from accounts.serializers import (
 from accounts.services.auth_service import AuthService
 from accounts.services.otp_service import OTPService
 
-@extend_schema(tags=['Authentication'])
+UNAUTHORIZED_ERROR_EXAMPLE = {'detail': 'Authentication credentials were not provided.'}
+BAD_REQUEST_ERROR_EXAMPLE = {'detail': 'Invalid request payload.'}
+
+@extend_schema(tags=['Auth'])
 class AuthenticationViewSet(viewsets.GenericViewSet):
     permission_classes = [permissions.AllowAny]
     serializer_class = SendOTPSerializer
 
-    @extend_schema(request=SendOTPSerializer)
+    @extend_schema(
+        tags=['Auth'],
+        summary='Send OTP for registration',
+        request=SendOTPSerializer,
+        responses={
+            200: OpenApiResponse(description='OTP sent successfully.'),
+            400: OpenApiResponse(
+                description='Invalid request payload.',
+                examples=[OpenApiExample('Bad request', value=BAD_REQUEST_ERROR_EXAMPLE)],
+            ),
+        },
+    )
     @action(detail=False, methods=['post'])
     def send_otp(self, request):
         serializer = SendOTPSerializer(data=request.data)
@@ -27,7 +41,18 @@ class AuthenticationViewSet(viewsets.GenericViewSet):
         OTPService.generate_and_send_otp(email, purpose='REGISTER')
         return Response({"detail": "OTP sent successfully. Please check your email."}, status=status.HTTP_200_OK)
 
-    @extend_schema(request=VerifyOTPSerializer)
+    @extend_schema(
+        tags=['Auth'],
+        summary='Verify OTP code',
+        request=VerifyOTPSerializer,
+        responses={
+            200: OpenApiResponse(description='OTP verified successfully.'),
+            400: OpenApiResponse(
+                description='Invalid or expired OTP code.',
+                examples=[OpenApiExample('Bad request', value={'detail': 'Invalid or expired OTP code.'})],
+            ),
+        },
+    )
     @action(detail=False, methods=['post'])
     def verify_otp(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
@@ -50,7 +75,18 @@ class AuthenticationViewSet(viewsets.GenericViewSet):
             )
         return Response({"message": "Email verified successfully.", "register_token": register_token}, status=status.HTTP_200_OK)
 
-    @extend_schema(request=UserRegistrationSerializer)
+    @extend_schema(
+        tags=['Auth'],
+        summary='Register user account',
+        request=UserRegistrationSerializer,
+        responses={
+            201: OpenApiResponse(description='Registration successful.'),
+            400: OpenApiResponse(
+                description='Invalid request payload.',
+                examples=[OpenApiExample('Bad request', value=BAD_REQUEST_ERROR_EXAMPLE)],
+            ),
+        },
+    )
     @action(detail=False, methods=['post'])
     def register(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
@@ -63,7 +99,18 @@ class AuthenticationViewSet(viewsets.GenericViewSet):
         
         return Response({"user": UserSerializer(user).data, **tokens}, status=status.HTTP_201_CREATED)
 
-    @extend_schema(tags=['Authentication'])
+    @extend_schema(
+        tags=['Auth'],
+        summary='Request password reset',
+        request=ForgotPasswordSerializer,
+        responses={
+            200: OpenApiResponse(description='Password reset email sent.'),
+            400: OpenApiResponse(
+                description='Invalid request payload.',
+                examples=[OpenApiExample('Bad request', value=BAD_REQUEST_ERROR_EXAMPLE)],
+            ),
+        },
+    )
     @action(detail=False, methods=['post'])
     def forgot_password(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
@@ -71,7 +118,18 @@ class AuthenticationViewSet(viewsets.GenericViewSet):
             return Response(AuthService.send_reset_password_email(serializer.validated_data['email']))
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @extend_schema(tags=['Authentication'])
+    @extend_schema(
+        tags=['Auth'],
+        summary='Reset password',
+        request=ResetPasswordSerializer,
+        responses={
+            200: OpenApiResponse(description='Password reset successful.'),
+            400: OpenApiResponse(
+                description='Invalid token, uid, or payload.',
+                examples=[OpenApiExample('Bad request', value=BAD_REQUEST_ERROR_EXAMPLE)],
+            ),
+        },
+    )
     @action(detail=False, methods=['post'])
     def reset_password(self, request):
         serializer = ResetPasswordSerializer(data=request.data)
@@ -86,7 +144,7 @@ class AuthenticationViewSet(viewsets.GenericViewSet):
             return Response({"detail": result.get('message')}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result)
 
-@extend_schema(tags=['User'])
+@extend_schema(tags=['Users'])
 class UserViewSet(viewsets.GenericViewSet):
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -95,6 +153,17 @@ class UserViewSet(viewsets.GenericViewSet):
     def get_object(self):
         return self.request.user
 
+    @extend_schema(
+        tags=['Users'],
+        summary='Get or update current user profile',
+        responses={
+            200: UserSerializer,
+            401: OpenApiResponse(
+                description='Authentication credentials were not provided.',
+                examples=[OpenApiExample('Unauthorized', value=UNAUTHORIZED_ERROR_EXAMPLE)],
+            ),
+        },
+    )
     @action(detail=False, methods=['get', 'patch'])
     def me(self, request):
         instance = self.get_object()

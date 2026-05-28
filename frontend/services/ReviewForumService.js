@@ -1,6 +1,6 @@
-import Apis from '../configuration/Apis';
+import Apis, {endpoints} from '../configuration/Apis';
 
-const FORUM_ENDPOINT = '/reviews/forum';
+const FORUM_ENDPOINT = endpoints.review_forum;
 
 const unwrapPayload = (response) => {
     if (!response || typeof response !== 'object') return null;
@@ -55,7 +55,7 @@ export const createReviewForumPost = async ({hotelName, roomName, content, booki
 
 export const toggleReviewForumHeart = async (postId) => {
     try {
-        const response = await Apis.post(`${FORUM_ENDPOINT}/${postId}/toggle-heart`);
+        const response = await Apis.post(`${endpoints.review_forum_toggle_heart}/${postId}/toggle-heart`);
         const payload = unwrapPayload(response);
         return payload || null;
     } catch (error) {

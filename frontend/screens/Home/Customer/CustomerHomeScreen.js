@@ -1,15 +1,16 @@
 import {Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useCallback, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 import {AntDesign, Ionicons} from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useFocusEffect} from '@react-navigation/native';
-import {familyHotels, businessHotels} from '../../../configuration/hotelsData';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
 import {getUnreadCustomerNotificationCount} from '../../../services/NotificationService';
+import {CustomerService} from '../../../services/CustomerService';
 
 const tabs = ['ALL', 'Featured', 'Suite', 'View', 'Family', 'Business'];
+const ALL_TAB_ORDER = ['Featured', 'Suite', 'View', 'Family', 'Business'];
 const DEFAULT_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
 const WATCHLIST_CUSTOM_POSTS_KEY = 'customer_watchlist_custom_posts';
 const HOTEL_RATINGS_KEY = 'customer_hotel_ratings';
@@ -92,6 +93,7 @@ function Section({title, data, cardWidth, navigation}) {
                                     navigation.navigate('CustomerHomeDetailSceen', {
                                         room: {name: item.title, image: imageUri},
                                         hotelName: item.title,
+                                        hotelPrice: item.price,
                                         hotelAddress: item.address || item.city,
                                         location: item.address || item.city,
                                         hotelDescription: item.description || '',
@@ -136,14 +138,28 @@ function filterHotelsByTab(tab, catalog) {
     });
 }
 
-function filterHotelsByKeyword(items, keyword) {
-    if (!keyword) return items;
+const mapHotelCatalogResponse = (rawItems) => {
+    return rawItems
+        .filter((item) => item && typeof item === 'object')
+        .map((item) => ({
+            id: item?.id || item?.hotel_id || `hotel-${Date.now()}-${Math.random()}`,
+            title: item?.title || '',
+            city: item?.city || '',
+            address: item?.address || '',
+            description: item?.description || '',
+            image: item?.image || item?.image_url || DEFAULT_HOTEL_IMAGE,
+            price: item?.price || `$${Number(item?.price_per_night || 0)}`,
+            rating: String(item?.rating || '5'),
+            category: item?.category || 'Family',
+        }));
+};
 
-    return items.filter((item) => {
-        const haystack = `${item?.title || ''} ${item?.city || ''} ${item?.category || ''}`.toLowerCase();
-        return haystack.includes(keyword);
-    });
-}
+const extractHotelItems = (response) => {
+    if (!response?.success) return [];
+    if (Array.isArray(response?.data?.results)) return response.data.results;
+    if (Array.isArray(response?.data)) return response.data;
+    return [];
+};
 
 export function HomeScreen({navigation}) {
     const {width} = useWindowDimensions();
@@ -156,28 +172,71 @@ export function HomeScreen({navigation}) {
     const [ratingStatsByHotel, setRatingStatsByHotel] = useState({});
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const [hotelCatalogByTab, setHotelCatalogByTab] = useState({});
     const keyword = searchText.trim().toLowerCase();
+
+    const loadHotelCatalogForTab = useCallback(async (tabName, keywordValue) => {
+        const params = {};
+        if (tabName && tabName !== 'ALL') {
+            params.tab = String(tabName).toLowerCase();
+        }
+        if (keywordValue) {
+            params.search = keywordValue;
+        }
+
+        try {
+            const response = await CustomerService.listHotels(params);
+            return mapHotelCatalogResponse(extractHotelItems(response));
+        } catch {
+            return [];
+        }
+    }, []);
+
+    const loadHotelCatalog = useCallback(async () => {
+        const nextByTab = {};
+        if (activeTab === 'ALL') {
+            const results = await Promise.all(ALL_TAB_ORDER.map((tabName) => loadHotelCatalogForTab(tabName, keyword)));
+            ALL_TAB_ORDER.forEach((tabName, index) => {
+                nextByTab[tabName] = results[index] || [];
+            });
+        } else {
+            nextByTab[activeTab] = await loadHotelCatalogForTab(activeTab, keyword);
+        }
+        setHotelCatalogByTab(nextByTab);
+    }, [activeTab, keyword, loadHotelCatalogForTab]);
 
     const loadRatingStats = useCallback(async () => {
         try {
-            const [rawCustomPosts, rawHotelRatings] = await AsyncStorage.multiGet([
-                WATCHLIST_CUSTOM_POSTS_KEY,
-                HOTEL_RATINGS_KEY,
-            ]);
-            const parsedCustomPosts = rawCustomPosts?.[1] ? JSON.parse(rawCustomPosts[1]) : [];
-            const parsedHotelRatings = rawHotelRatings?.[1] ? JSON.parse(rawHotelRatings[1]) : [];
-            const safeCustomPosts = Array.isArray(parsedCustomPosts)
-                ? parsedCustomPosts.filter((item) => item && typeof item === 'object')
-                : [];
-            const safeHotelRatings = Array.isArray(parsedHotelRatings)
-                ? parsedHotelRatings.filter((item) => item && typeof item === 'object')
-                : [];
+            const dbRatingsResult = await CustomerService.listHotelRatings();
+            let allRatingSources = [];
 
-            const allRatingSources = [...safeCustomPosts, ...safeHotelRatings];
+            if (dbRatingsResult?.success) {
+                const apiItems = Array.isArray(dbRatingsResult?.data?.results)
+                    ? dbRatingsResult.data.results
+                    : Array.isArray(dbRatingsResult?.data)
+                        ? dbRatingsResult.data
+                        : [];
+                allRatingSources = apiItems;
+                await AsyncStorage.setItem(HOTEL_RATINGS_KEY, JSON.stringify(apiItems));
+            } else {
+                const [rawCustomPosts, rawHotelRatings] = await AsyncStorage.multiGet([
+                    WATCHLIST_CUSTOM_POSTS_KEY,
+                    HOTEL_RATINGS_KEY,
+                ]);
+                const parsedCustomPosts = rawCustomPosts?.[1] ? JSON.parse(rawCustomPosts[1]) : [];
+                const parsedHotelRatings = rawHotelRatings?.[1] ? JSON.parse(rawHotelRatings[1]) : [];
+                const safeCustomPosts = Array.isArray(parsedCustomPosts)
+                    ? parsedCustomPosts.filter((item) => item && typeof item === 'object')
+                    : [];
+                const safeHotelRatings = Array.isArray(parsedHotelRatings)
+                    ? parsedHotelRatings.filter((item) => item && typeof item === 'object')
+                    : [];
+                allRatingSources = [...safeCustomPosts, ...safeHotelRatings];
+            }
 
             const summary = {};
             allRatingSources.forEach((item) => {
-                const hotelKey = normalizeHotelName(item?.hotelName);
+                const hotelKey = normalizeHotelName(item?.hotelName || item?.hotel_name);
                 const ratingValue = Number(item?.rating);
                 if (!hotelKey || !Number.isFinite(ratingValue)) return;
 
@@ -205,19 +264,23 @@ export function HomeScreen({navigation}) {
         }, [loadRatingStats])
     );
 
+    useEffect(() => {
+        loadHotelCatalog();
+    }, [loadHotelCatalog]);
+
     const handleRefresh = useCallback(async () => {
         setIsRefreshing(true);
         await loadRatingStats();
+        await loadHotelCatalog();
         setIsRefreshing(false);
-    }, [loadRatingStats]);
+    }, [loadHotelCatalog, loadRatingStats]);
 
-    const catalog = useMemo(
-        () => [
-            ...familyHotels.map((item) => ({...item, category: 'Family'})),
-            ...businessHotels.map((item) => ({...item, category: 'Business'})),
-        ],
-        []
-    );
+    const catalog = useMemo(() => {
+        if (activeTab === 'ALL') {
+            return ALL_TAB_ORDER.flatMap((tabName) => hotelCatalogByTab[tabName] || []);
+        }
+        return hotelCatalogByTab[activeTab] || [];
+    }, [activeTab, hotelCatalogByTab]);
 
     const enrichedCatalog = useMemo(() => {
         const findStats = (title) => {
@@ -247,19 +310,30 @@ export function HomeScreen({navigation}) {
     }, [catalog, ratingStatsByHotel]);
 
     const filteredHotels = useMemo(() => {
-        const byTab = filterHotelsByTab(activeTab, enrichedCatalog);
-        return filterHotelsByKeyword(byTab, keyword);
-    }, [activeTab, enrichedCatalog, keyword]);
+        if (activeTab === 'ALL') return enrichedCatalog;
+        return filterHotelsByTab(activeTab, enrichedCatalog);
+    }, [activeTab, enrichedCatalog]);
 
-    const allTabOrder = ['Featured', 'Suite', 'View', 'Family', 'Business'];
     const allTabSections = useMemo(() => {
-        const sections = allTabOrder.map((tab) => ({
-            title: tab,
-            data: filterHotelsByKeyword(filterHotelsByTab(tab, enrichedCatalog), keyword),
-        }));
-
-        return keyword ? sections.filter((section) => section.data.length > 0) : sections;
-    }, [enrichedCatalog, keyword]);
+        return ALL_TAB_ORDER
+            .map((tab) => ({
+                title: tab,
+                data: (hotelCatalogByTab[tab] || []).map((item) => {
+                    const normalizedTitle = normalizeHotelName(item?.title);
+                    const stats = ratingStatsByHotel[normalizedTitle] || null;
+                    const reviewCount = stats?.count || 0;
+                    const syncedRating = reviewCount > 0
+                        ? Number((stats.sum / reviewCount).toFixed(1))
+                        : DEFAULT_RATING_VALUE;
+                    return {
+                        ...item,
+                        syncedRating,
+                        reviewCount,
+                    };
+                }),
+            }))
+            .filter((section) => (keyword ? section.data.length > 0 : true));
+    }, [hotelCatalogByTab, keyword, ratingStatsByHotel]);
 
     return (
         <SafeAreaView style={styles.page}>
@@ -308,6 +382,15 @@ export function HomeScreen({navigation}) {
                         style={styles.searchInput}
                     />
                 </View>
+
+                <TouchableOpacity
+                    style={styles.testLinkButton}
+                    onPress={() => navigation.navigate('CustomerRoomCardTestScreen')}
+                    activeOpacity={0.88}
+                >
+                    <Ionicons name="grid-outline" size={16} color="#4d63e6" />
+                    <Text style={styles.testLinkText}>Open room card test page</Text>
+                </TouchableOpacity>
 
                 <CategoryTabs activeTab={activeTab} onTabPress={setActiveTab} />
 
@@ -432,6 +515,22 @@ const styles = StyleSheet.create({
         color: '#8e8e8e',
         includeFontPadding: false,
         textAlignVertical: 'center',
+    },
+    testLinkButton: {
+        marginTop: 10,
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#eef0ff',
+        borderRadius: 999,
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+    },
+    testLinkText: {
+        fontFamily: 'SF-Bold',
+        fontSize: 13,
+        color: '#4d63e6',
     },
     categoryRow: {
         paddingTop: 16,

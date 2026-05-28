@@ -30,6 +30,8 @@ INSTALLED_APPS = [
     'core',
     'accounts',
     'bookings',
+    'customers',
+    'businesses.apps.BusinessesConfig',
 ]
 
 MIDDLEWARE = [
@@ -291,3 +293,4 @@ GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', '')
 SOCIAL_AUTH_GOOGLE_OAUTH2_UTILS_ENDPOINT = (
     'https://oauth2.googleapis.com/tokeninfo'
 )
+

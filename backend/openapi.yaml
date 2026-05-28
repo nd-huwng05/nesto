@@ -1,0 +1,2744 @@
+openapi: 3.0.3
+info:
+  title: Nesto API
+  version: 1.0.0
+  description: Hotel Management System API - Backend for Business, Staff, and Customer
+    Operations
+paths:
+  /api/v1/accounts/auth/forgot_password/:
+    post:
+      operationId: v1_accounts_auth_forgot_password_create
+      summary: Request password reset
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          description: Password reset email sent.
+        '400':
+          description: Invalid request payload.
+  /api/v1/accounts/auth/register/:
+    post:
+      operationId: v1_accounts_auth_register_create
+      summary: Register user account
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          description: Registration successful.
+        '400':
+          description: Invalid request payload.
+  /api/v1/accounts/auth/reset_password/:
+    post:
+      operationId: v1_accounts_auth_reset_password_create
+      summary: Reset password
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          description: Password reset successful.
+        '400':
+          description: Invalid token, uid, or payload.
+  /api/v1/accounts/auth/send_otp/:
+    post:
+      operationId: v1_accounts_auth_send_otp_create
+      summary: Send OTP for registration
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendOTPRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SendOTPRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SendOTPRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          description: OTP sent successfully.
+        '400':
+          description: Invalid request payload.
+  /api/v1/accounts/auth/verify_otp/:
+    post:
+      operationId: v1_accounts_auth_verify_otp_create
+      summary: Verify OTP code
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOTPRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VerifyOTPRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VerifyOTPRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          description: OTP verified successfully.
+        '400':
+          description: Invalid or expired OTP code.
+  /api/v1/accounts/users/me/:
+    get:
+      operationId: v1_accounts_users_me_retrieve
+      summary: Get or update current user profile
+      tags:
+      - Users
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '401':
+          description: Authentication credentials were not provided.
+    patch:
+      operationId: v1_accounts_users_me_partial_update
+      summary: Get or update current user profile
+      tags:
+      - Users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '401':
+          description: Authentication credentials were not provided.
+  /api/v1/bookings/bookings/:
+    get:
+      operationId: v1_bookings_bookings_list
+      description: List bookings with optional filters by customer, status, date,
+        and branch.
+      summary: List bookings
+      parameters:
+      - in: query
+        name: branch
+        schema:
+          type: string
+        description: Branch filter (mapped to hotel_name contains)
+      - in: query
+        name: customer
+        schema:
+          type: string
+        description: Customer user id
+      - in: query
+        name: date
+        schema:
+          type: string
+          format: date
+        description: Filter bookings active on date
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Booking status filter
+      tags:
+      - Bookings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+          description: ''
+    post:
+      operationId: v1_bookings_bookings_create
+      description: Create a booking from customer or reception payload.
+      summary: Create booking
+      tags:
+      - Bookings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+        '400':
+          description: Invalid request payload.
+  /api/v1/bookings/bookings/{booking_ref}/:
+    get:
+      operationId: v1_bookings_bookings_retrieve
+      summary: Get booking detail
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - Bookings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+        '404':
+          description: Booking not found.
+  /api/v1/bookings/bookings/{booking_ref}/add_service/:
+    post:
+      operationId: v1_bookings_bookings_add_service_create
+      description: Compatibility endpoint for FE. Accepts service_id and quantity
+        and returns acceptance payload.
+      summary: Add service to booking (compat)
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - Bookings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                AddServiceResponse:
+                  value:
+                    booking_id: BK-000001
+                    service_id: airport_shuttle
+                    quantity: 1
+                    detail: Service line accepted.
+                  summary: Add service response
+          description: ''
+        '404':
+          description: Booking not found.
+  /api/v1/bookings/bookings/{booking_ref}/cancel/:
+    post:
+      operationId: v1_bookings_bookings_cancel_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/{booking_ref}/check_in/:
+    post:
+      operationId: v1_bookings_bookings_check_in_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/{booking_ref}/check_out/:
+    post:
+      operationId: v1_bookings_bookings_check_out_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/{booking_ref}/confirm/:
+    post:
+      operationId: v1_bookings_bookings_confirm_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/calendar/:
+    get:
+      operationId: v1_bookings_bookings_calendar_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/cancel/{booking_ref}/cancel/:
+    post:
+      operationId: v1_bookings_bookings_cancel_cancel_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/check_in/{booking_ref}/check_in/:
+    post:
+      operationId: v1_bookings_bookings_check_in_check_in_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/check_out/{booking_ref}/check_out/:
+    post:
+      operationId: v1_bookings_bookings_check_out_check_out_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/confirm/{booking_ref}/confirm/:
+    post:
+      operationId: v1_bookings_bookings_confirm_confirm_create
+      parameters:
+      - in: path
+        name: booking_ref
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/today/:
+    get:
+      operationId: v1_bookings_bookings_today_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/bookings/upcoming/:
+    get:
+      operationId: v1_bookings_bookings_upcoming_list
+      summary: List upcoming bookings
+      tags:
+      - Bookings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/business/branches/:
+    get:
+      operationId: catalog_branches_list
+      description: Compatibility endpoint for FE booking flow.
+      summary: List branches (compat)
+      tags:
+      - Catalog
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Branch'
+          description: ''
+  /api/v1/business/branches/{branch_id}/:
+    get:
+      operationId: catalog_branch_detail
+      summary: Get branch detail (compat)
+      parameters:
+      - in: path
+        name: branch_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Catalog
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branch'
+          description: ''
+  /api/v1/customers/hotels/{hotel_slug}/rating-stats:
+    get:
+      operationId: v1_customers_hotels_rating_stats_retrieve
+      description: Return average rating and review count for a hotel. Name can come
+        from hotel_slug path or hotel_name query param.
+      summary: Get hotel rating statistics
+      parameters:
+      - in: query
+        name: hotel_name
+        schema:
+          type: string
+        description: Optional explicit hotel name override
+      - in: path
+        name: hotel_slug
+        schema:
+          type: string
+        required: true
+      tags:
+      - Customers
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerHotelRatingStatsResponse'
+              examples:
+                HotelRatingStatsResponse:
+                  value:
+                    hotel_name: Swiss Hotel
+                    avg_rating: 4.7
+                    review_count: 123
+                  summary: Hotel rating stats response
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+          description: hotel name is required.
+  /api/v1/customers/me/booking-snapshots:
+    get:
+      operationId: v1_customers_me_booking_snapshots_retrieve
+      description: Return booking snapshots of the authenticated customer, optionally
+        filtered by snapshot type and booking code.
+      summary: List my booking snapshots
+      parameters:
+      - in: query
+        name: booking_code
+        schema:
+          type: string
+        description: Filter by booking code
+      - in: query
+        name: snapshot_type
+        schema:
+          type: string
+          enum:
+          - history
+          - payment
+          - upcoming
+        description: Filter by type
+      tags:
+      - Customers
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingSnapshotListResponse'
+              examples:
+                BookingSnapshotsResponse:
+                  value:
+                    results:
+                    - snapshot_id: SNAP_20260528_001
+                      booking_code: BK862345
+                      snapshot_type: upcoming
+                      hotel_name: Swiss Hotel
+                      room_name: Standard Room 01
+                      check_in_date: '2026-06-01'
+                      check_out_date: '2026-06-02'
+                      payment_status: partial
+                      total_amount: '120.00'
+                      paid_amount: '50.00'
+                      remaining_amount: '70.00'
+                      source: mobile-app
+                  summary: Booking snapshots response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+    post:
+      operationId: v1_customers_me_booking_snapshots_create
+      description: Create a new booking snapshot for the authenticated customer.
+      summary: Create a booking snapshot
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerBookingSnapshotInputRequest'
+            examples:
+              CreateBookingSnapshotPayload:
+                value:
+                  snapshot_id: SNAP_20260528_001
+                  booking_code: BK862345
+                  snapshot_type: upcoming
+                  hotel_name: Swiss Hotel
+                  room_name: Standard Room 01
+                  check_in_date: '2026-06-01'
+                  check_out_date: '2026-06-02'
+                  payment_status: partial
+                  total_amount: '120.00'
+                  paid_amount: '50.00'
+                  remaining_amount: '70.00'
+                  source: mobile-app
+                summary: Create booking snapshot payload
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerBookingSnapshotInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerBookingSnapshotInputRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingSnapshot'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerValidationErrorResponse'
+              examples:
+                ValidationError:
+                  value:
+                    errors:
+                      snapshot_id:
+                      - snapshot_id already exists.
+                  summary: Validation error
+          description: Invalid request payload.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+  /api/v1/customers/me/booking-snapshots/{snapshot_id}:
+    put:
+      operationId: v1_customers_me_booking_snapshots_update
+      description: Fully update an existing booking snapshot by snapshot_id for the
+        authenticated customer.
+      summary: Replace a booking snapshot
+      parameters:
+      - in: path
+        name: snapshot_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerBookingSnapshotInputRequest'
+            examples:
+              ReplaceBookingSnapshotPayload:
+                value:
+                  snapshot_id: SNAP_20260528_001
+                  booking_code: BK862345
+                  snapshot_type: upcoming
+                  hotel_name: Swiss Hotel
+                  room_name: Standard Room 01
+                  check_in_date: '2026-06-01'
+                  check_out_date: '2026-06-02'
+                  payment_status: partial
+                  total_amount: '120.00'
+                  paid_amount: '50.00'
+                  remaining_amount: '70.00'
+                  source: mobile-app
+                summary: Replace booking snapshot payload
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerBookingSnapshotInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerBookingSnapshotInputRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingSnapshot'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerValidationErrorResponse'
+              examples:
+                ValidationError:
+                  value:
+                    errors:
+                      snapshot_id:
+                      - snapshot_id already exists.
+                  summary: Validation error
+          description: Invalid request payload.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                NotFound:
+                  value:
+                    detail: Snapshot not found.
+                  summary: Not found
+          description: Snapshot not found.
+    patch:
+      operationId: v1_customers_me_booking_snapshots_partial_update
+      description: Partially update an existing booking snapshot by snapshot_id for
+        the authenticated customer.
+      summary: Partially update a booking snapshot
+      parameters:
+      - in: path
+        name: snapshot_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerBookingSnapshotInputRequest'
+            examples:
+              PartialBookingSnapshotPayload:
+                value:
+                  payment_status: paid
+                  paid_amount: '120.00'
+                  remaining_amount: '0.00'
+                summary: Partial booking snapshot payload
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerBookingSnapshotInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerBookingSnapshotInputRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingSnapshot'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerValidationErrorResponse'
+              examples:
+                ValidationError:
+                  value:
+                    errors:
+                      snapshot_id:
+                      - snapshot_id already exists.
+                  summary: Validation error
+          description: Invalid request payload.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                NotFound:
+                  value:
+                    detail: Snapshot not found.
+                  summary: Not found
+          description: Snapshot not found.
+  /api/v1/customers/me/hotel-ratings:
+    get:
+      operationId: v1_customers_me_hotel_ratings_retrieve
+      description: Return hotel ratings of the authenticated customer.
+      summary: List my hotel ratings
+      tags:
+      - Customers
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerHotelRatingListResponse'
+              examples:
+                HotelRatingsResponse:
+                  value:
+                    results:
+                    - rating_id: RATE_20260528_001
+                      booking_code: BK862345
+                      hotel_name: Swiss Hotel
+                      room_name: Standard Room 01
+                      rating: '4.5'
+                      source: checkout
+                  summary: Hotel ratings response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+    post:
+      operationId: v1_customers_me_hotel_ratings_create
+      description: Create a hotel rating for the authenticated customer.
+      summary: Create a hotel rating
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerHotelRatingInputRequest'
+            examples:
+              CreateHotelRatingPayload:
+                value:
+                  rating_id: RATE_20260528_001
+                  booking_code: BK862345
+                  hotel_name: Swiss Hotel
+                  room_name: Standard Room 01
+                  rating: '4.5'
+                  source: checkout
+                summary: Create hotel rating payload
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerHotelRatingInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerHotelRatingInputRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerHotelRating'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerValidationErrorResponse'
+              examples:
+                ValidationError:
+                  value:
+                    errors:
+                      rating_id:
+                      - rating_id already exists.
+                  summary: Validation error
+          description: Invalid request payload.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+  /api/v1/customers/me/notifications:
+    get:
+      operationId: v1_customers_me_notifications_retrieve
+      description: Return notifications of the authenticated customer, with optional
+        filters for read status and type.
+      summary: List my notifications
+      parameters:
+      - in: query
+        name: is_read
+        schema:
+          type: boolean
+        description: Filter by read status
+      - in: query
+        name: type
+        schema:
+          type: string
+        description: Filter by notification type
+      tags:
+      - Customers
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerNotificationListResponse'
+              examples:
+                NotificationsResponse:
+                  value:
+                    results:
+                    - notification_id: NOTI_20260528_001
+                      title: Booking payment confirmed
+                      message: Your payment for BK862345 has been confirmed.
+                      notification_type: booking-payment
+                      meta:
+                        booking_code: BK862345
+                      is_read: false
+                  summary: Notifications response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+    post:
+      operationId: v1_customers_me_notifications_create
+      description: Create a notification for the authenticated customer.
+      summary: Create a notification
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerNotificationInputRequest'
+            examples:
+              CreateNotificationPayload:
+                value:
+                  notification_id: NOTI_20260528_001
+                  title: Booking payment confirmed
+                  message: Your payment for BK862345 has been confirmed.
+                  notification_type: booking-payment
+                  meta:
+                    booking_code: BK862345
+                  is_read: false
+                summary: Create notification payload
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerNotificationInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerNotificationInputRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerNotification'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerValidationErrorResponse'
+              examples:
+                ValidationError:
+                  value:
+                    errors:
+                      title:
+                      - title is required.
+                  summary: Validation error
+          description: Invalid request payload.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+  /api/v1/customers/me/notifications/{notification_id}/read:
+    post:
+      operationId: v1_customers_me_notifications_read_create
+      description: Mark one notification as read by notification_id for the authenticated
+        customer.
+      summary: Mark one notification as read
+      parameters:
+      - in: path
+        name: notification_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerNotificationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerNotificationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerNotificationRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerNotification'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                NotFound:
+                  value:
+                    detail: Notification not found.
+                  summary: Not found
+          description: Notification not found.
+  /api/v1/customers/me/notifications/mark-all-read:
+    post:
+      operationId: v1_customers_me_notifications_mark_all_read_create
+      description: Mark all unread notifications of the authenticated customer as
+        read.
+      summary: Mark all notifications as read
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerMarkAllReadResponseRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerMarkAllReadResponseRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerMarkAllReadResponseRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerMarkAllReadResponse'
+              examples:
+                MarkAllAsReadResponse:
+                  value:
+                    updated_count: 3
+                  summary: Mark all as read response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+  /api/v1/customers/watchlist/posts:
+    get:
+      operationId: v1_customers_watchlist_posts_retrieve
+      description: Return active watchlist posts. Supports filters by hotel_name,
+        booking_code, and mine=true for the current user.
+      summary: List watchlist posts
+      parameters:
+      - in: query
+        name: booking_code
+        schema:
+          type: string
+        description: Filter by booking code
+      - in: query
+        name: hotel_name
+        schema:
+          type: string
+        description: Filter by hotel name
+      - in: query
+        name: mine
+        schema:
+          type: boolean
+        description: When true, return only current user posts
+      tags:
+      - Customers
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerWatchlistPostPublicListResponse'
+              examples:
+                WatchlistResponse:
+                  value:
+                    results:
+                    - post_id: WATCH_20260528_001
+                      booking_code: BK862345
+                      hotel_name: Swiss Hotel
+                      room_name: Standard Room 01
+                      description: Beautiful city view and clean room.
+                      image_url: https://cdn.example.com/reviews/room-standard-01.jpg
+                      rating: 5
+                  summary: Watchlist response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication required for mine=true.
+          description: Authentication required when mine=true.
+    post:
+      operationId: v1_customers_watchlist_posts_create
+      description: Create a new watchlist post for the authenticated customer.
+      summary: Create a watchlist post
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerWatchlistPostInputRequest'
+            examples:
+              CreateWatchlistPayload:
+                value:
+                  post_id: WATCH_20260528_001
+                  booking_code: BK862345
+                  hotel_name: Swiss Hotel
+                  room_name: Standard Room 01
+                  description: Beautiful city view and clean room.
+                  image_url: https://cdn.example.com/reviews/room-standard-01.jpg
+                  rating: 5
+                summary: Create watchlist payload
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerWatchlistPostInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerWatchlistPostInputRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerWatchlistPost'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerValidationErrorResponse'
+              examples:
+                ValidationError:
+                  value:
+                    errors:
+                      hotel_name:
+                      - hotel_name is required.
+                  summary: Validation error
+          description: Invalid request payload.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+  /api/v1/customers/watchlist/posts/{post_id}:
+    delete:
+      operationId: v1_customers_watchlist_posts_destroy
+      description: Soft delete a watchlist post by post_id for the authenticated customer
+        by setting is_active=false.
+      summary: Soft delete a watchlist post
+      parameters:
+      - in: path
+        name: post_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Customers
+      responses:
+        '204':
+          description: Watchlist post soft-deleted successfully.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                Unauthorized:
+                  value:
+                    detail: Authentication credentials were not provided.
+          description: Authentication credentials were not provided.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerErrorResponse'
+              examples:
+                NotFound:
+                  value:
+                    detail: Watchlist post not found.
+                  summary: Not found
+          description: Watchlist post not found.
+  /api/v1/reviews/forum:
+    get:
+      operationId: v1_reviews_forum_retrieve
+      description: Return review posts by hotel and room scope.
+      summary: List review forum posts
+      parameters:
+      - in: query
+        name: hotel_name
+        schema:
+          type: string
+        description: Hotel name filter
+      - in: query
+        name: room_name
+        schema:
+          type: string
+        description: Room name filter
+      tags:
+      - Reviews
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                ReviewForumResponse:
+                  value:
+                    results:
+                    - id: a53d7d8b-9ca8-49da-a2f9-30f1848e7e7f
+                      booking_id: BK862345
+                      hotel_name: Swiss Hotel
+                      room_name: Room 121
+                      scope_key: swiss-hotel|room-121
+                      content: Great room and service.
+                      created_at: '2026-05-28T10:00:00Z'
+                      author_name: Customer A
+                      author_email: customer@nesto.vn
+                      hearts_count: 3
+                      liked_by_me: false
+                      liked_by_ids: []
+                  summary: Review forum response
+          description: List of review forum posts.
+    post:
+      operationId: v1_reviews_forum_create
+      description: Create a new review forum post. Authentication is optional, but
+        authenticated users are linked as authors.
+      summary: Create review forum post
+      tags:
+      - Reviews
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewForumPostCreateRequest'
+            examples:
+              CreateReviewPayload:
+                value:
+                  booking_id: BK862345
+                  hotel_name: Swiss Hotel
+                  room_name: Room 121
+                  content: Great room and service.
+                summary: Create review payload
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReviewForumPostCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReviewForumPostCreateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewForumPost'
+          description: ''
+        '400':
+          description: Validation error.
+  /api/v1/reviews/forum/{post_id}/toggle-heart:
+    post:
+      operationId: v1_reviews_forum_toggle_heart_create
+      description: Toggle heart reaction for current authenticated user on a review
+        post.
+      summary: Toggle heart reaction
+      parameters:
+      - in: path
+        name: post_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Reviews
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewForumPostRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReviewForumPostRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReviewForumPostRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewForumPost'
+          description: ''
+        '401':
+          description: Authentication credentials were not provided.
+        '404':
+          description: Review post not found.
+  /api/v1/rooms/room-types/:
+    get:
+      operationId: catalog_room_types_list
+      summary: List room types (compat)
+      parameters:
+      - in: query
+        name: branch
+        schema:
+          type: string
+        description: Branch id
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+        description: Active filter
+      tags:
+      - Catalog
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomType'
+          description: ''
+  /api/v1/rooms/rooms/availability/:
+    get:
+      operationId: catalog_room_availability
+      summary: Check room availability (compat)
+      parameters:
+      - in: query
+        name: branch
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: check_in
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: check_out
+        schema:
+          type: string
+          format: date
+      tags:
+      - Catalog
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomAvailability'
+          description: ''
+  /api/v1/services/extra-services/:
+    get:
+      operationId: catalog_extra_services_list
+      summary: List extra services (compat)
+      tags:
+      - Catalog
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExtraService'
+          description: ''
+  /api/v1/services/service-categories/:
+    get:
+      operationId: catalog_service_categories_list
+      summary: List service categories (compat)
+      tags:
+      - Catalog
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceCategory'
+          description: ''
+components:
+  schemas:
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        booking_number:
+          type: integer
+          readOnly: true
+        booking_id:
+          type: string
+          readOnly: true
+        customer_id:
+          type: string
+          format: uuid
+          readOnly: true
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        check_in_date:
+          type: string
+          format: date
+          nullable: true
+        check_out_date:
+          type: string
+          format: date
+          nullable: true
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        status_display:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - booking_id
+      - booking_number
+      - created_at
+      - customer_id
+      - id
+      - status_display
+      - updated_at
+    BookingCreateRequest:
+      type: object
+      properties:
+        branch_id:
+          type: string
+        customer_id:
+          type: string
+        room_id:
+          type: string
+        room_name:
+          type: string
+        roomName:
+          type: string
+        hotel_name:
+          type: string
+        hotelName:
+          type: string
+        check_in:
+          type: string
+          format: date
+        check_out:
+          type: string
+          format: date
+        checkInAt:
+          type: string
+          format: date-time
+        durationDays:
+          type: integer
+          minimum: 1
+        walkIn:
+          type: boolean
+        status:
+          type: string
+    BookingRequest:
+      type: object
+      properties:
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        check_in_date:
+          type: string
+          format: date
+          nullable: true
+        check_out_date:
+          type: string
+          format: date
+          nullable: true
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+    Branch:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        city:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - city
+      - id
+      - is_active
+      - name
+    CustomerBookingSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        snapshot_id:
+          type: string
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        snapshot_type:
+          $ref: '#/components/schemas/SnapshotTypeEnum'
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        check_in_label:
+          type: string
+          maxLength: 64
+        check_out_label:
+          type: string
+          maxLength: 64
+        check_in_date:
+          type: string
+          format: date
+          nullable: true
+        check_out_date:
+          type: string
+          format: date
+          nullable: true
+        action_label:
+          type: string
+          maxLength: 64
+        action_color:
+          type: string
+          maxLength: 16
+        payment_status:
+          type: string
+          maxLength: 32
+        payment_method:
+          type: string
+          maxLength: 32
+        customer_name:
+          type: string
+          maxLength: 255
+        customer_email:
+          type: string
+          format: email
+          maxLength: 254
+        customer_phone:
+          type: string
+          maxLength: 32
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        paid_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        remaining_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        deposit_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        subtotal_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        selected_services:
+          nullable: true
+        invoice_details:
+          nullable: true
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        source:
+          type: string
+          maxLength: 32
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - customer
+      - id
+      - snapshot_id
+      - snapshot_type
+      - updated_at
+    CustomerBookingSnapshotInputRequest:
+      type: object
+      properties:
+        snapshot_id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        snapshot_type:
+          $ref: '#/components/schemas/SnapshotTypeEnum'
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        check_in_label:
+          type: string
+          maxLength: 64
+        check_out_label:
+          type: string
+          maxLength: 64
+        check_in_date:
+          type: string
+          format: date
+          nullable: true
+        check_out_date:
+          type: string
+          format: date
+          nullable: true
+        action_label:
+          type: string
+          maxLength: 64
+        action_color:
+          type: string
+          maxLength: 16
+        payment_status:
+          type: string
+          maxLength: 32
+        payment_method:
+          type: string
+          maxLength: 32
+        customer_name:
+          type: string
+          maxLength: 255
+        customer_email:
+          type: string
+          format: email
+          maxLength: 254
+        customer_phone:
+          type: string
+          maxLength: 32
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        paid_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        remaining_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        deposit_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        subtotal_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        selected_services:
+          nullable: true
+        invoice_details:
+          nullable: true
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        source:
+          type: string
+          maxLength: 32
+      required:
+      - snapshot_id
+      - snapshot_type
+    CustomerBookingSnapshotListResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerBookingSnapshot'
+      required:
+      - results
+    CustomerErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
+    CustomerHotelRating:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        rating_id:
+          type: string
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        rating:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,1})?$
+        customer_name:
+          type: string
+          maxLength: 255
+        customer_email:
+          type: string
+          format: email
+          maxLength: 254
+        source:
+          type: string
+          maxLength: 32
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - customer
+      - hotel_name
+      - id
+      - rating
+      - rating_id
+      - updated_at
+    CustomerHotelRatingInputRequest:
+      type: object
+      properties:
+        rating_id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        rating:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,1})?$
+        source:
+          type: string
+          maxLength: 32
+      required:
+      - hotel_name
+      - rating
+      - rating_id
+    CustomerHotelRatingListResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerHotelRating'
+      required:
+      - results
+    CustomerHotelRatingStatsResponse:
+      type: object
+      properties:
+        hotel_name:
+          type: string
+        avg_rating:
+          type: number
+          format: double
+        review_count:
+          type: integer
+      required:
+      - avg_rating
+      - hotel_name
+      - review_count
+    CustomerMarkAllReadResponse:
+      type: object
+      properties:
+        updated_count:
+          type: integer
+      required:
+      - updated_count
+    CustomerMarkAllReadResponseRequest:
+      type: object
+      properties:
+        updated_count:
+          type: integer
+      required:
+      - updated_count
+    CustomerNotification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        notification_id:
+          type: string
+          maxLength: 80
+        title:
+          type: string
+          maxLength: 255
+        message:
+          type: string
+        notification_type:
+          type: string
+          maxLength: 64
+        meta:
+          nullable: true
+        is_read:
+          type: boolean
+        read_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - customer
+      - id
+      - notification_id
+      - read_at
+      - title
+      - updated_at
+    CustomerNotificationInputRequest:
+      type: object
+      properties:
+        notification_id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        message:
+          type: string
+        notification_type:
+          type: string
+          maxLength: 64
+        meta:
+          nullable: true
+        is_read:
+          type: boolean
+      required:
+      - notification_id
+      - title
+    CustomerNotificationListResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerNotification'
+      required:
+      - results
+    CustomerNotificationRequest:
+      type: object
+      properties:
+        notification_id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        message:
+          type: string
+        notification_type:
+          type: string
+          maxLength: 64
+        meta:
+          nullable: true
+        is_read:
+          type: boolean
+      required:
+      - notification_id
+      - title
+    CustomerValidationErrorResponse:
+      type: object
+      properties:
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+      - errors
+    CustomerWatchlistPost:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        post_id:
+          type: string
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        image_url:
+          type: string
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+        posted_by_name:
+          type: string
+          maxLength: 255
+        posted_by_email:
+          type: string
+          format: email
+          maxLength: 254
+        is_active:
+          type: boolean
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - customer
+      - hotel_name
+      - id
+      - post_id
+      - updated_at
+    CustomerWatchlistPostInputRequest:
+      type: object
+      properties:
+        post_id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        image_url:
+          type: string
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+      required:
+      - hotel_name
+      - post_id
+    CustomerWatchlistPostPublic:
+      type: object
+      properties:
+        post_id:
+          type: string
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        image_url:
+          type: string
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+        posted_by_name:
+          type: string
+          maxLength: 255
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - hotel_name
+      - post_id
+    CustomerWatchlistPostPublicListResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerWatchlistPostPublic'
+      required:
+      - results
+    ExtraService:
+      type: object
+      properties:
+        id:
+          type: string
+        branch:
+          type: string
+        name:
+          type: string
+        price:
+          type: integer
+        is_active:
+          type: boolean
+      required:
+      - branch
+      - id
+      - is_active
+      - name
+      - price
+    ForgotPasswordRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
+    PatchedCustomerBookingSnapshotInputRequest:
+      type: object
+      properties:
+        snapshot_id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        booking_code:
+          type: string
+          maxLength: 64
+        snapshot_type:
+          $ref: '#/components/schemas/SnapshotTypeEnum'
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        check_in_label:
+          type: string
+          maxLength: 64
+        check_out_label:
+          type: string
+          maxLength: 64
+        check_in_date:
+          type: string
+          format: date
+          nullable: true
+        check_out_date:
+          type: string
+          format: date
+          nullable: true
+        action_label:
+          type: string
+          maxLength: 64
+        action_color:
+          type: string
+          maxLength: 16
+        payment_status:
+          type: string
+          maxLength: 32
+        payment_method:
+          type: string
+          maxLength: 32
+        customer_name:
+          type: string
+          maxLength: 255
+        customer_email:
+          type: string
+          format: email
+          maxLength: 254
+        customer_phone:
+          type: string
+          maxLength: 32
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        paid_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        remaining_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        deposit_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        subtotal_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        selected_services:
+          nullable: true
+        invoice_details:
+          nullable: true
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        source:
+          type: string
+          maxLength: 32
+    PatchedUserRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+        name:
+          type: string
+          maxLength: 255
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 500
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        is_active:
+          type: boolean
+    ResetPasswordRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        confirm_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - confirm_password
+      - new_password
+      - token
+    ReviewForumPost:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        booking_id:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          maxLength: 255
+        room_name:
+          type: string
+          maxLength: 255
+        scope_key:
+          type: string
+          maxLength: 600
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        author_name:
+          type: string
+          readOnly: true
+        author_email:
+          type: string
+          readOnly: true
+        hearts_count:
+          type: integer
+          readOnly: true
+        liked_by_me:
+          type: boolean
+          readOnly: true
+        liked_by_ids:
+          type: array
+          items:
+            type: string
+          readOnly: true
+      required:
+      - author_email
+      - author_name
+      - content
+      - created_at
+      - hearts_count
+      - hotel_name
+      - id
+      - liked_by_ids
+      - liked_by_me
+      - room_name
+      - scope_key
+    ReviewForumPostCreateRequest:
+      type: object
+      properties:
+        booking_id:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        room_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content:
+          type: string
+          minLength: 1
+      required:
+      - content
+      - hotel_name
+      - room_name
+    ReviewForumPostRequest:
+      type: object
+      properties:
+        booking_id:
+          type: string
+          maxLength: 64
+        hotel_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        room_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        scope_key:
+          type: string
+          minLength: 1
+          maxLength: 600
+        content:
+          type: string
+          minLength: 1
+      required:
+      - content
+      - hotel_name
+      - room_name
+      - scope_key
+    RoleEnum:
+      enum:
+      - SUPER_ADMIN
+      - CUSTOMER
+      - BUSINESS_OWNER
+      - STAFF
+      type: string
+      description: |-
+        * `SUPER_ADMIN` - Super Admin
+        * `CUSTOMER` - Customer
+        * `BUSINESS_OWNER` - Business_Owner
+        * `STAFF` - Staff
+    RoomAvailability:
+      type: object
+      properties:
+        id:
+          type: string
+        branch:
+          type: string
+        room_type:
+          type: string
+        name:
+          type: string
+        available:
+          type: boolean
+        check_in:
+          type: string
+          nullable: true
+        check_out:
+          type: string
+          nullable: true
+      required:
+      - available
+      - branch
+      - check_in
+      - check_out
+      - id
+      - name
+      - room_type
+    RoomType:
+      type: object
+      properties:
+        id:
+          type: string
+        branch:
+          type: string
+        name:
+          type: string
+        base_price:
+          type: integer
+        is_active:
+          type: boolean
+      required:
+      - base_price
+      - branch
+      - id
+      - is_active
+      - name
+    SendOTPRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
+    ServiceCategory:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - id
+      - is_active
+      - name
+    SnapshotTypeEnum:
+      enum:
+      - upcoming
+      - history
+      - payment
+      type: string
+      description: |-
+        * `upcoming` - Upcoming
+        * `history` - History
+        * `payment` - Payment
+    StatusEnum:
+      enum:
+      - pending
+      - confirmed
+      - checked_in
+      - completed
+      - cancelled
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `confirmed` - Confirmed
+        * `checked_in` - Checked In
+        * `completed` - Completed
+        * `cancelled` - Cancelled
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        phone:
+          type: string
+          maxLength: 32
+        name:
+          type: string
+          maxLength: 255
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 500
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        role_display:
+          type: string
+          readOnly: true
+        groups:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        is_active:
+          type: boolean
+      required:
+      - email
+      - groups
+      - id
+      - role_display
+    UserRegistrationRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 128
+        confirm_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        name:
+          type: string
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 32
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        register_token:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - confirm_password
+      - email
+      - password
+      - register_token
+    VerifyOTPRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        otp_code:
+          type: string
+          minLength: 1
+          maxLength: 6
+        session_id:
+          type: string
+      required:
+      - email
+      - otp_code
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows: {}

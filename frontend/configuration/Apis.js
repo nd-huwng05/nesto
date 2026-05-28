@@ -1,8 +1,10 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {Platform} from 'react-native';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BASE_URL || process.env.EXPO_BASE_URL || 'http://localhost:8000/api/v1';
-const OAUTH_URL = process.env.EXPO_PUBLIC_OAUTH_URL || process.env.EXPO_PUBLIC_OAUTH_BASE_URL || process.env.EXPO_PUBLIC_BASE_URL || process.env.EXPO_BASE_URL || 'http://localhost:8000/o';
+const LOCAL_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BASE_URL || process.env.EXPO_BASE_URL || `http://${LOCAL_HOST}:8000/api/v1`;
+const OAUTH_URL = process.env.EXPO_PUBLIC_OAUTH_URL || process.env.EXPO_PUBLIC_OAUTH_BASE_URL || process.env.EXPO_PUBLIC_BASE_URL || process.env.EXPO_BASE_URL || `http://${LOCAL_HOST}:8000/o`;
 const CLIENT_ID = process.env.EXPO_PUBLIC_CLIENT_ID;
 
 export const authClient = axios.create({
@@ -172,6 +174,23 @@ export const endpoints = {
     get_report_occupancy: 'reports/reports/occupancy/',
     get_report_revenue: 'reports/reports/revenue/',
     get_report_booking_stats: 'reports/reports/booking_stats/',
+
+    review_forum: 'reviews/forum',
+    review_forum_toggle_heart: 'reviews/forum',
+
+    customer_booking_snapshots: 'customers/me/booking-snapshots',
+    customer_booking_snapshot_detail: 'customers/me/booking-snapshots',
+
+    customer_notifications: 'customers/me/notifications',
+    customer_notifications_mark_all_read: 'customers/me/notifications/mark-all-read',
+    customer_notification_mark_read: 'customers/me/notifications',
+
+    customer_watchlist_posts: 'customers/watchlist/posts',
+    customer_watchlist_post_detail: 'customers/watchlist/posts',
+
+    customer_hotel_ratings: 'customers/me/hotel-ratings',
+    customer_hotel_rating_stats: 'customers/hotels',
+    customer_hotels: 'business/hotels/',
 
     mark_room_clean: 'rooms/rooms/update_status/',
     mark_room_dirty: 'rooms/rooms/update_status/',

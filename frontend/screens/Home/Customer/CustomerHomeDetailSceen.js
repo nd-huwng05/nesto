@@ -2,7 +2,7 @@ import {useEffect, useMemo, useState} from 'react';
 import {Image, RefreshControl, ScrollView, Text, TouchableOpacity, View, Modal} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
-import {fakeGetHomeDetail, fakeGetReviews} from '../../../configuration/FakeApi';
+import {fakeGetReviews} from '../../../configuration/FakeApi';
 import {
     FeaturedTag,
     GalleryStrip,
@@ -29,6 +29,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const params = route?.params ?? {};
     const room = params.room ?? {};
     const routeHotelName = params.hotelName ?? '';
+    const routeHotelPrice = params.hotelPrice ?? '';
     const heroImage = params.heroImage ?? room.image ?? 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
     const rating = Number.isFinite(params.rating) ? params.rating : 5;
     const reviews = Number.isFinite(params.reviews) ? params.reviews : 0;
@@ -50,31 +51,33 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const detailDescription = roomDescription.length >= 60
         ? roomDescription
         : (hotelDescription.length ? hotelDescription : defaultDescription);
-    const [mockHotelDetail, setMockHotelDetail] = useState(null);
     const [reviewsList, setReviewsList] = useState([]);
 
-    const hotelName = routeHotelName || mockHotelDetail?.name || 'Swiss Hotel';
-    const hotelId = params.hotelId ?? mockHotelDetail?.id ?? 'hotel-1';
+    const parseRoomPrice = (value) => {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+
+        const normalized = String(value || '')
+            .replace(/[^0-9.,-]/g, '')
+            .replace(/,/g, '');
+        const parsed = Number.parseFloat(normalized);
+        return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const hotelPriceAmount = parseRoomPrice(routeHotelPrice);
+    const standardRoomPrice = hotelPriceAmount;
+    const vipRoomPrice = Math.round(hotelPriceAmount * 1.35);
+    const superVipRoomPrice = Math.round(hotelPriceAmount * 1.7);
+
+    const hotelName = routeHotelName || 'Swiss Hotel';
+    const hotelId = params.hotelId ?? 'hotel-1';
     const hotelAddress = params.hotelAddress
         ?? params.location
-        ?? mockHotelDetail?.location
         ?? '211B Baker Street, London, England';
 
     useEffect(() => {
         let mounted = true;
-
-        const loadMockDetail = async () => {
-            try {
-                const data = await fakeGetHomeDetail();
-                if (mounted) {
-                    setMockHotelDetail(data);
-                }
-            } catch {
-                if (mounted) {
-                    setMockHotelDetail(null);
-                }
-            }
-        };
 
         const loadReviews = async () => {
             try {
@@ -89,7 +92,6 @@ export function CustomerHomeDetailSceen({navigation, route}) {
             }
         };
 
-        loadMockDetail();
         loadReviews();
 
         return () => {
@@ -103,7 +105,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
         ? `${detailDescription.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd()}...`
         : detailDescription;
 
-    const roomCards = params.roomCards ?? mockHotelDetail?.rooms ?? [
+    const roomCards = params.roomCards ?? [
         {
             id: 'room-1',
             name: 'Standard Room',
@@ -111,7 +113,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
             type: 'Family',
             view: 'Beach',
             image: heroImage,
-            price: {amount: 270, currency: 'USD'},
+            price: {amount: standardRoomPrice, currency: 'USD'},
         },
         {
             id: 'room-2',
@@ -120,7 +122,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
             type: 'Business',
             view: 'City',
             image: heroImage,
-            price: {amount: 160, currency: 'USD'},
+            price: {amount: vipRoomPrice, currency: 'USD'},
         },
         {
             id: 'room-3',
@@ -129,7 +131,34 @@ export function CustomerHomeDetailSceen({navigation, route}) {
             type: 'Suite',
             view: 'Ocean',
             image: heroImage,
-            price: {amount: 420, currency: 'USD'},
+            price: {amount: superVipRoomPrice, currency: 'USD'},
+        },
+        {
+            id: 'room-4',
+            name: 'Standard Room',
+            description: 'Quiet room facing the garden for relaxed stays.',
+            type: 'Family',
+            view: 'Garden',
+            image: heroImage,
+            price: {amount: Math.round(standardRoomPrice * 1.05), currency: 'USD'},
+        },
+        {
+            id: 'room-5',
+            name: 'VIP Room',
+            description: 'Executive room with workspace and premium service.',
+            type: 'Business',
+            view: 'City',
+            image: heroImage,
+            price: {amount: Math.round(vipRoomPrice * 1.08), currency: 'USD'},
+        },
+        {
+            id: 'room-6',
+            name: 'Super VIP Room',
+            description: 'Suite with direct ocean view and private lounge.',
+            type: 'Suite',
+            view: 'Ocean',
+            image: heroImage,
+            price: {amount: Math.round(superVipRoomPrice * 1.1), currency: 'USD'},
         },
     ];
 
@@ -171,7 +200,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
         });
     }, [roomCards, selectedType, selectedFeature]);
 
-    const ROOMS_PER_FLOOR = 4;
+    const ROOMS_PER_FLOOR = 3;
     const totalFloors = Math.max(1, Math.ceil(filteredRoomCards.length / ROOMS_PER_FLOOR));
 
     useEffect(() => {
@@ -442,8 +471,8 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                         <PaginationRow
                             currentFloor={currentFloor}
                             totalFloors={totalFloors}
-                            onPrev={() => setCurrentFloor((prev) => Math.max(1, prev - 1))}
-                            onNext={() => setCurrentFloor((prev) => Math.min(totalFloors, prev + 1))}
+                            onPrev={() => setCurrentFloor((prev) => (prev <= 1 ? totalFloors : prev - 1))}
+                            onNext={() => setCurrentFloor((prev) => (prev >= totalFloors ? 1 : prev + 1))}
                         />
                     </View>
 
