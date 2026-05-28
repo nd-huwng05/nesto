@@ -1,8 +1,9 @@
 import {useEffect, useState} from 'react';
-import {Image, ScrollView, Text, TouchableOpacity, View} from 'react-native';
+import {Image, RefreshControl, ScrollView, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons} from '@expo/vector-icons';
 import {GalleryStrip, RatingRow, WatchlistCard} from '../../../components/customer/CustomerHotelDetailSections';
+import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
 import {fakeGetReviews} from '../../../configuration/FakeApi';
 
 export function HomeDetailScreen({navigation, route}) {
@@ -10,6 +11,12 @@ export function HomeDetailScreen({navigation, route}) {
     const room = params.room ?? {};
     const hotelId = params.hotelId ?? 'hotel-1';
     const hotelName = params.hotelName ?? 'Swiss Hotel';
+    const hotelAddress = params.hotelAddress ?? '';
+    const resolvedRoomName =
+        room?.name
+        || room?.roomName
+        || (room?.roomNumber ? `Room ${room.roomNumber}` : '')
+        || (room?.number ? `Room ${room.number}` : 'Room');
     const heroImage = room.image ?? params.heroImage ?? 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
     const checkIn = typeof params.checkIn === 'string' ? params.checkIn : "9h00' 23 Mar 2026";
     const checkOut = typeof params.checkOut === 'string' ? params.checkOut : "9h00' 24 Mar 2026";
@@ -42,6 +49,7 @@ export function HomeDetailScreen({navigation, route}) {
         : (hotelDescription.length ? hotelDescription : defaultDescription);
     const [isDescriptionExpanded, setDescriptionExpanded] = useState(false);
     const [reviewsList, setReviewsList] = useState([]);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const extraDescription = params.extraDescription
         ?? 'Guests can enjoy daily breakfast, free high-speed Wi-Fi, and 24/7 room service with airport transfer support.';
     const fullDescription = `${detailDescription} ${extraDescription}`.trim();
@@ -74,9 +82,28 @@ export function HomeDetailScreen({navigation, route}) {
         };
     }, [hotelId]);
 
+    const handleRefresh = () => {
+        setIsRefreshing(true);
+        setTimeout(() => {
+            setIsRefreshing(false);
+        }, 600);
+    };
+
     return (
         <SafeAreaView className="flex-1 bg-[#ececec]">
-            <ScrollView showsVerticalScrollIndicator={false} className="flex-1 bg-[#ececec]" contentContainerStyle={{paddingBottom: 18}}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                className="flex-1 bg-[#ececec]"
+                contentContainerStyle={{paddingBottom: 98}}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={['#5b79df']}
+                        tintColor="#5b79df"
+                    />
+                }
+            >
                 <View className="mx-3 mt-2 rounded-[26px] overflow-hidden bg-[#ececec]">
                     <View className="relative">
                         <Image source={{uri: heroImage}} className="w-full h-[220px]" resizeMode="cover"/>
@@ -95,7 +122,7 @@ export function HomeDetailScreen({navigation, route}) {
                     <View className="bg-[#ececec] rounded-t-[34px] -mt-8 px-5 pt-6 pb-5">
                         <View className="flex-row items-start justify-between">
                             <View className="flex-1 pr-6">
-                                <Text className="font-sf-bold text-[34px] leading-[38px] text-black">{room.name ?? 'Room 121'}</Text>
+                                <Text className="font-sf-bold text-[34px] leading-[38px] text-black">{resolvedRoomName}</Text>
                                 <Text className="font-sf text-[17px] leading-[22px] text-[#8b8b8b] mt-1">{hotelName}</Text>
                             </View>
                             <TouchableOpacity
@@ -103,8 +130,10 @@ export function HomeDetailScreen({navigation, route}) {
                                 onPress={() => {
                                     navigation.navigate('CustomerBookingScreen', {
                                         syncToken: Date.now(),
+                                        roomId: room?.id,
                                         hotelName,
-                                        roomName: room.name ?? 'Room 121',
+                                        hotelAddress,
+                                        roomName: resolvedRoomName,
                                         heroImage,
                                         startDateIso,
                                         endDateIso,
@@ -144,6 +173,8 @@ export function HomeDetailScreen({navigation, route}) {
                     <WatchlistCard watchlist={watchlist} reviews={reviewsList}/>
                 </View>
             </ScrollView>
+
+            <CustomerBottomTabBar navigation={navigation} activeTab="Home"/>
         </SafeAreaView>
     );
 }

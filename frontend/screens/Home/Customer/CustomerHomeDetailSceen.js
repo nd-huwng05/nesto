@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from 'react';
-import {Image, ScrollView, Text, TouchableOpacity, View, Modal} from 'react-native';
+import {Image, RefreshControl, ScrollView, Text, TouchableOpacity, View, Modal} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
 import {fakeGetHomeDetail, fakeGetReviews} from '../../../configuration/FakeApi';
@@ -11,16 +11,27 @@ import {
     RoomCard,
     WatchlistCard,
 } from '../../../components/customer/CustomerHotelDetailSections';
+import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const getToday = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+};
+
+const getTomorrow = () => {
+    const today = getToday();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+};
 
 export function CustomerHomeDetailSceen({navigation, route}) {
     const params = route?.params ?? {};
     const room = params.room ?? {};
     const routeHotelName = params.hotelName ?? '';
     const heroImage = params.heroImage ?? room.image ?? 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
-    const rating = Number.isFinite(params.rating) ? params.rating : 4.5;
-    const reviews = Number.isFinite(params.reviews) ? params.reviews : 4231;
+    const rating = Number.isFinite(params.rating) ? params.rating : 5;
+    const reviews = Number.isFinite(params.reviews) ? params.reviews : 0;
     const watchlist = params.watchlist ?? {
         title: 'Watchlish',
         subtitle: "Review's customer were used room",
@@ -95,39 +106,30 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const roomCards = params.roomCards ?? mockHotelDetail?.rooms ?? [
         {
             id: 'room-1',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
+            name: 'Standard Room',
+            description: 'Comfortable room for everyday stay.',
             type: 'Family',
-            view: 'beach',
+            view: 'Beach',
             image: heroImage,
-            price: {amount: 1999000, currency: 'VND'},
+            price: {amount: 270, currency: 'USD'},
         },
         {
             id: 'room-2',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
-            type: 'Family',
-            view: 'beach',
+            name: 'VIP Room',
+            description: 'Spacious room with upgraded comfort and service.',
+            type: 'Business',
+            view: 'City',
             image: heroImage,
-            price: {amount: 1999000, currency: 'VND'},
+            price: {amount: 160, currency: 'USD'},
         },
         {
             id: 'room-3',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
-            type: 'Family',
-            view: 'beach',
+            name: 'Super VIP Room',
+            description: 'Premium suite with top-tier amenities and privacy.',
+            type: 'Suite',
+            view: 'Ocean',
             image: heroImage,
-            price: {amount: 1999000, currency: 'VND'},
-        },
-        {
-            id: 'room-4',
-            name: 'Room 121',
-            description: 'Room have view beach and use for one family,....',
-            type: 'Family',
-            view: 'beach',
-            image: heroImage,
-            price: {amount: 1899000, currency: 'VND'},
+            price: {amount: 420, currency: 'USD'},
         },
     ];
 
@@ -144,13 +146,17 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const [selectedTypeIndex, setSelectedTypeIndex] = useState(0);
     const [selectedFeatureIndex, setSelectedFeatureIndex] = useState(0);
     const [currentFloor, setCurrentFloor] = useState(1);
-    const [startDate, setStartDate] = useState(new Date(2026, 6, 8));
-    const [endDate, setEndDate] = useState(new Date(2026, 6, 15));
+    const [startDate, setStartDate] = useState(() => getToday());
+    const [endDate, setEndDate] = useState(() => getTomorrow());
     const [showDatePicker, setShowDatePicker] = useState(false);
-    const [tempStartDate, setTempStartDate] = useState(new Date(2026, 6, 8));
-    const [tempEndDate, setTempEndDate] = useState(new Date(2026, 6, 15));
+    const [tempStartDate, setTempStartDate] = useState(() => getToday());
+    const [tempEndDate, setTempEndDate] = useState(() => getTomorrow());
     const [activeDateField, setActiveDateField] = useState('start');
-    const [viewDate, setViewDate] = useState(new Date(2026, 6, 1));
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [viewDate, setViewDate] = useState(() => {
+        const today = getToday();
+        return new Date(today.getFullYear(), today.getMonth(), 1);
+    });
 
     const selectedType = typeOptions[selectedTypeIndex] ?? 'All type';
     const selectedFeature = featureOptions[selectedFeatureIndex] ?? 'Feature';
@@ -182,11 +188,6 @@ export function CustomerHomeDetailSceen({navigation, route}) {
         const start = (currentFloor - 1) * ROOMS_PER_FLOOR;
         return filteredRoomCards.slice(start, start + ROOMS_PER_FLOOR);
     }, [filteredRoomCards, currentFloor]);
-
-    const buildRoomDisplayName = (floor, indexInFloor) => {
-        const roomNumber = floor * 100 + (indexInFloor + 1);
-        return `Room ${roomNumber}`;
-    };
 
     const handleCycleType = () => {
         if (!typeOptions.length) return;
@@ -233,6 +234,11 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
     const handleSelectDate = (day) => {
         const pickedDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+        const today = getToday();
+
+        if (pickedDate < today) {
+            return;
+        }
 
         if (activeDateField === 'start') {
             setTempStartDate(pickedDate);
@@ -260,9 +266,28 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const bookingCheckIn = formatBookingDate(startDate);
     const bookingCheckOut = formatBookingDate(endDate);
 
+    const handleRefresh = () => {
+        setIsRefreshing(true);
+        setTimeout(() => {
+            setIsRefreshing(false);
+        }, 600);
+    };
+
     return (
         <SafeAreaView className="flex-1 bg-[#ececec]">
-            <ScrollView showsVerticalScrollIndicator={false} className="flex-1 bg-[#ececec]" contentContainerStyle={{paddingBottom: 18}}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                className="flex-1 bg-[#ececec]"
+                contentContainerStyle={{paddingBottom: 98}}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={['#5b79df']}
+                        tintColor="#5b79df"
+                    />
+                }
+            >
                 <View className="mx-3 mt-2 rounded-[26px] overflow-hidden bg-[#ececec]">
                     <View className="relative">
                         <Image source={{uri: heroImage}} className="w-full h-[220px]" resizeMode="cover"/>
@@ -358,8 +383,13 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                             pagedRoomCards.map((roomItem, indexInFloor) => {
                                 const displayRoom = {
                                     ...roomItem,
-                                    name: buildRoomDisplayName(currentFloor, indexInFloor),
+                                    name: roomItem?.name || `Room ${currentFloor * 100 + (indexInFloor + 1)}`,
                                 };
+                                const resolvedRoomName =
+                                    displayRoom?.name
+                                    || displayRoom?.roomName
+                                    || (displayRoom?.roomNumber ? `Room ${displayRoom.roomNumber}` : '')
+                                    || (displayRoom?.number ? `Room ${displayRoom.number}` : 'Room');
 
                                 return (
                                 <RoomCard
@@ -387,8 +417,10 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                                     })}
                                     onBookNow={(room) => navigation.navigate('CustomerBookingScreen', {
                                         syncToken: Date.now(),
+                                        roomId: room?.id,
                                         hotelName,
-                                        roomName: room.name ?? 'Room 121',
+                                        hotelAddress,
+                                        roomName: resolvedRoomName,
                                         heroImage: room.image ?? heroImage,
                                         startDateIso: startDate.toISOString(),
                                         endDateIso: endDate.toISOString(),
@@ -418,6 +450,8 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                     <WatchlistCard watchlist={watchlist} reviews={reviewsList}/>
                 </View>
             </ScrollView>
+
+            <CustomerBottomTabBar navigation={navigation} activeTab="Home"/>
 
             <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={handleCancelDatePicker}>
                 <View className="flex-1 bg-black/50 justify-end">
@@ -501,7 +535,9 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
                                         const day = cell.day;
                                         const candidateDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-                                        const isDisabled = activeDateField === 'end' && candidateDate <= tempStartDate;
+                                        const today = getToday();
+                                        const isPastDate = candidateDate < today;
+                                        const isDisabled = isPastDate || (activeDateField === 'end' && candidateDate <= tempStartDate);
                                         const isSelected = activeDateField === 'start'
                                             ? isSameDate(candidateDate, tempStartDate)
                                             : isSameDate(candidateDate, tempEndDate);

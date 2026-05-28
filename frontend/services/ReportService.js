@@ -1,7 +1,7 @@
 import Apis, {endpoints} from '../configuration/Apis';
 import {reportMockStore} from './reportMockStore';
 
-const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
+const useMock = () => process.env.EXPO_PUBLIC_MOCK === 'true';
 
 export const fetchReportBusinessFilters = async () => {
     if (useMock()) {

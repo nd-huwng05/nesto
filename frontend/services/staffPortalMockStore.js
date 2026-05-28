@@ -601,8 +601,8 @@ export const staffPortalMockStore = {
     async addExtraService(bookingId, serviceKey) {
         const booking = bookings.find((b) => b.id === bookingId);
         if (!booking) throw new Error('Booking not found');
-        if (booking.status !== 'CHECKED_IN') {
-            throw new Error('Services can only be added while guest is checked in');
+        if (booking.status !== 'PENDING' && booking.status !== 'CHECKED_IN') {
+            throw new Error('Services can only be added for a pending or checked-in booking');
         }
 
         const catalog = QUICK_ADD_SERVICES.find((s) => s.id === serviceKey);

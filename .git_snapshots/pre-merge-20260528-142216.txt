@@ -1,0 +1,105 @@
+﻿Branch:
+Customer
+
+Status --short:
+ M backend/bookings/admin.py
+ M backend/bookings/models.py
+ M backend/bookings/tests.py
+ M backend/bookings/views.py
+ M backend/config/settings/base.py
+ M backend/config/urls.py
+ M frontend/app.json
+ M frontend/components/customer/CustomerHotelDetailSections.js
+ M frontend/configuration/Apis.js
+ M frontend/configuration/FakeApi.js
+ M frontend/constants/authRoles.js
+ M frontend/hooks/customer/useCustomerProfile.js
+ M frontend/hooks/staff/useStaffSession.js
+ M frontend/package-lock.json
+ M frontend/package.json
+ M frontend/screens/Account/PasswordScreen.js
+ M frontend/screens/Home/Customer/CustomerBookingHistoryScreen.js
+ M frontend/screens/Home/Customer/CustomerBookingScreen.js
+ M frontend/screens/Home/Customer/CustomerBookingUpcomingScreen.js
+ M frontend/screens/Home/Customer/CustomerHomeDetailSceen.js
+ M frontend/screens/Home/Customer/CustomerHomeScreen.js
+ M frontend/screens/Home/Customer/CustomerLocketScreen.js
+ M frontend/screens/Home/Customer/CustomerNavigator.js
+ M frontend/screens/Home/Customer/CustomerPaymentScreen.js
+ M frontend/screens/Home/Customer/CustomerProfileScreen.js
+ M frontend/screens/Home/Customer/CustomerRoomDetailScreen.js
+ M frontend/screens/Home/Staff/StaffNavigator.js
+ M frontend/services/AuthService.js
+ M frontend/services/BranchService.js
+ M frontend/services/CustomerService.js
+ M frontend/services/ReceptionService.js
+ M frontend/services/ReportService.js
+ M frontend/services/StaffService.js
+ M frontend/services/authMockStore.js
+ M frontend/services/staffPortalMockStore.js
+ M frontend/utils/authStorage.js
+?? .expo/
+?? .git_snapshots/
+?? backend/bookings/migrations/0001_initial.py
+?? backend/bookings/migrations/0002_reviewforumpost.py
+?? backend/bookings/serializers.py
+?? backend/bookings/service.py
+?? backend/bookings/urls.py
+?? backend/services/SERVICE_LINE_CONTRACT.md
+?? frontend/assets/images/hotels/Logo-AI.png
+?? frontend/assets/images/hotels/Logo-MoMo-Square.webp
+?? frontend/assets/images/hotels/Logo-ZaloPay-Square-1024x1024.webp
+?? frontend/assets/images/hotels/README.md
+?? frontend/components/customer/CustomerBottomTabBar.js
+?? frontend/screens/Home/Customer/CustomerAddPostScreen.js
+?? frontend/screens/Home/Customer/CustomerNotificationsScreen.js
+?? frontend/screens/Home/Customer/CustomerReviewScreen.js
+?? frontend/screens/Home/Customer/CustomerServiceScreen.js
+?? frontend/services/NotificationService.js
+?? frontend/services/ReviewForumService.js
+?? frontend/utils/bookingId.js
+?? frontend/utils/serviceDateRange.js
+?? frontend/utils/serviceLineIdentity.js
+?? node_modules/
+?? package-lock.json
+?? package.json
+
+Changed files (unstaged):
+backend/bookings/admin.py
+backend/bookings/models.py
+backend/bookings/tests.py
+backend/bookings/views.py
+backend/config/settings/base.py
+backend/config/urls.py
+frontend/app.json
+frontend/components/customer/CustomerHotelDetailSections.js
+frontend/configuration/Apis.js
+frontend/configuration/FakeApi.js
+frontend/constants/authRoles.js
+frontend/hooks/customer/useCustomerProfile.js
+frontend/hooks/staff/useStaffSession.js
+frontend/package-lock.json
+frontend/package.json
+frontend/screens/Account/PasswordScreen.js
+frontend/screens/Home/Customer/CustomerBookingHistoryScreen.js
+frontend/screens/Home/Customer/CustomerBookingScreen.js
+frontend/screens/Home/Customer/CustomerBookingUpcomingScreen.js
+frontend/screens/Home/Customer/CustomerHomeDetailSceen.js
+frontend/screens/Home/Customer/CustomerHomeScreen.js
+frontend/screens/Home/Customer/CustomerLocketScreen.js
+frontend/screens/Home/Customer/CustomerNavigator.js
+frontend/screens/Home/Customer/CustomerPaymentScreen.js
+frontend/screens/Home/Customer/CustomerProfileScreen.js
+frontend/screens/Home/Customer/CustomerRoomDetailScreen.js
+frontend/screens/Home/Staff/StaffNavigator.js
+frontend/services/AuthService.js
+frontend/services/BranchService.js
+frontend/services/CustomerService.js
+frontend/services/ReceptionService.js
+frontend/services/ReportService.js
+frontend/services/StaffService.js
+frontend/services/authMockStore.js
+frontend/services/staffPortalMockStore.js
+frontend/utils/authStorage.js
+
+Changed files (staged):

@@ -1,9 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL
-const OAUTH_URL = process.env.EXPO_PUBLIC_OAUTH_URL
-console.log(OAUTH_URL)
-const CLIENT_ID = process.env.EXPO_PUBLIC_CLIENT_ID
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BASE_URL || process.env.EXPO_BASE_URL || 'http://localhost:8000/api/v1';
+const OAUTH_URL = process.env.EXPO_PUBLIC_OAUTH_URL || process.env.EXPO_PUBLIC_OAUTH_BASE_URL || process.env.EXPO_PUBLIC_BASE_URL || process.env.EXPO_BASE_URL || 'http://localhost:8000/o';
+const CLIENT_ID = process.env.EXPO_PUBLIC_CLIENT_ID;
 
 export const authClient = axios.create({
     baseURL: OAUTH_URL,
@@ -81,6 +81,8 @@ export const endpoints = {
     reset_password: 'accounts/auth/reset_password/',
 
     me: 'accounts/users/me/',
+    user_me: 'accounts/users/me/',
+    login: 'token/',
 
     get_companies: 'business/companies/',
     get_company_detail: 'business/companies',

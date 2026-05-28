@@ -1,17 +1,28 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Modal, RefreshControl } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {getSession} from '../../../utils/authStorage';
+import { createStaffBooking } from '../../../services/ReceptionService';
+import {normalizeServiceLine} from '../../../utils/serviceLineIdentity';
+import {nextLocalBookingId, normalizeBookingId} from '../../../utils/bookingId';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const UPCOMING_BOOKINGS_KEY = 'customer_paid_upcoming_bookings';
+const getToday = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+};
 
 const CustomerBookingScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
   const {
     hotelName = 'Swiss Hotel',
-    roomName = 'Room 121',
+    roomName: routeRoomName = '',
     checkIn: initialCheckIn = "9h00' 23 Mar 2026",
     checkOut: initialCheckOut = "9h00' 24 Mar 2026",
     startDateIso,
@@ -19,16 +30,43 @@ const CustomerBookingScreen = () => {
     startDate,
     endDate,
     roomPrice,
+    roomId,
+    hotelAddress,
     price: legacyPricePerHour,
     discount: legacyDiscountPerHour,
     vat: legacyVat,
     total: legacyTotal,
     deposit: legacyDeposit,
     syncToken,
+    selectedService: routeSelectedService = null,
+    selectedServices: routeSelectedServices = [],
     reviews = 3,
     rating = 4.5,
     heroImage = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
   } = route.params || {};
+
+  const resolveRoomName = (...values) => {
+    for (const raw of values) {
+      if (raw === null || raw === undefined) continue;
+      const value = String(raw).trim();
+      if (!value) continue;
+      const numericOnly = /^\d+$/.test(value);
+      return numericOnly ? `Room ${value}` : value;
+    }
+    return 'Room';
+  };
+
+  const roomName = resolveRoomName(
+    routeRoomName,
+    route.params?.room?.name,
+    route.params?.room?.roomName,
+    route.params?.roomName,
+    route.params?.roomNumber,
+    route.params?.room?.roomNumber,
+    route.params?.room?.number,
+    route.params?.selectedService?.roomName,
+    route.params?.selectedServices?.[0]?.roomName
+  );
 
   const parseDateFromLabel = (label, fallbackDate) => {
     const text = String(label || '').trim();
@@ -96,7 +134,7 @@ const CustomerBookingScreen = () => {
     const day = String(date.getDate()).padStart(2, '0');
     const month = MONTH_NAMES[date.getMonth()];
     const year = date.getFullYear();
-    return `9h00' ${day} ${month} ${year}`;
+    return `${day} ${month} ${year}`;
   };
 
   const checkIn = formatBookingDate(selectedStartDate);
@@ -117,12 +155,48 @@ const CustomerBookingScreen = () => {
   const dailyPrice = useMemo(() => {
     if (Number.isFinite(roomPrice) && roomPrice > 0) return roomPrice;
     if (Number.isFinite(legacyPricePerHour) && legacyPricePerHour > 0) return legacyPricePerHour * 24;
-    return 2250000;
+    return 270;
   }, [roomPrice, legacyPricePerHour]);
 
   const subtotalPrice = useMemo(() => {
     return dailyPrice * stayDays;
   }, [dailyPrice, stayDays]);
+
+  const selectedServices = useMemo(() => {
+    const services = Array.isArray(routeSelectedServices)
+      ? routeSelectedServices.filter((item) => item && typeof item === 'object' && item.id)
+      : [];
+
+    if (services.length) {
+      return services.map((item, index) => {
+        const price = Number(item.price || 0);
+        const normalized = {
+          ...item,
+          price: Number.isFinite(price) ? price : 0,
+        };
+
+        return normalizeServiceLine(normalized, {
+          lineNo: index + 1,
+          lineId: `line-${normalized?.id || 'service'}-${index + 1}`,
+          serviceCode: normalized?.code || '',
+        });
+      });
+    }
+
+    if (!routeSelectedService || typeof routeSelectedService !== 'object') return [];
+    const price = Number(routeSelectedService.price || 0);
+    const fallbackService = {
+      ...routeSelectedService,
+      price: Number.isFinite(price) ? price : 0,
+    };
+
+    return [normalizeServiceLine(fallbackService, {
+      lineNo: 1,
+      lineId: `line-${fallbackService?.id || 'service'}-1`,
+      serviceCode: fallbackService?.code || '',
+    })];
+  }, [routeSelectedServices, routeSelectedService]);
+  const selectedService = selectedServices[0] || null;
 
   const discountAmount = useMemo(() => {
     if (Number.isFinite(legacyDiscountPerHour) && legacyDiscountPerHour > 0) {
@@ -131,15 +205,35 @@ const CustomerBookingScreen = () => {
     return Math.round(subtotalPrice * 0.1);
   }, [legacyDiscountPerHour, stayHours, subtotalPrice]);
 
-  const taxableAmount = Math.max(0, subtotalPrice - discountAmount);
+  const roomSubtotal = Math.max(0, subtotalPrice - discountAmount);
+  const serviceFee = useMemo(() => {
+    return selectedServices.reduce((sum, item) => {
+      const isDirectPay = item?.id === 'airport_shuttle' && item?.paymentMode === 'direct_with_driver';
+      if (isDirectPay) return sum;
+      return sum + Number(item?.price || 0);
+    }, 0);
+  }, [selectedServices]);
+  const bookingSubtotal = roomSubtotal + serviceFee;
+  const taxableAmount = bookingSubtotal;
   const vatAmount = Number.isFinite(legacyVat) && legacyVat > 0 ? legacyVat : Math.round(taxableAmount * 0.1);
   const totalAmount = Number.isFinite(legacyTotal) && legacyTotal > 0 ? legacyTotal : taxableAmount + vatAmount;
   const depositPercent = 20;
   const lateCheckInPercent = 10;
   const depositAmount = Number.isFinite(legacyDeposit) && legacyDeposit > 0 ? legacyDeposit : Math.round(totalAmount * 0.2);
-  const pricePerHour = Math.max(1, Math.round(dailyPrice / 24));
-  const discountPerHour = Math.round(discountAmount / stayHours);
+  const pricePerHour = useMemo(() => {
+    const value = dailyPrice / 24;
+    if (!Number.isFinite(value) || value <= 0) return 1;
+    return Number(value.toFixed(2));
+  }, [dailyPrice]);
+  const discountPerHour = useMemo(() => {
+    if (!Number.isFinite(stayHours) || stayHours <= 0) return 0;
+    return Number((discountAmount / stayHours).toFixed(2));
+  }, [discountAmount, stayHours]);
   const stayTimeLabel = `${stayHours}h00`;
+  const [bookingId, setBookingId] = useState(null);
+  const [bookingError, setBookingError] = useState('');
+  const [accountLoaded, setAccountLoaded] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const lateCheckInLabel = useMemo(() => {
     const lateHours = stayHours * (lateCheckInPercent / 100);
@@ -148,7 +242,7 @@ const CustomerBookingScreen = () => {
     return `${String(hours).padStart(2, '0')}h${String(minutes).padStart(2, '0')}'`;
   }, [stayHours, lateCheckInPercent]);
 
-  const formatVnd = (amount) => Number(amount || 0).toLocaleString('en-US');
+  const formatUsd = (amount) => Number(amount || 0).toLocaleString('en-US');
 
   const [account, setAccount] = useState({
     name: 'Nguyen Ngoc Lan',
@@ -174,6 +268,10 @@ const CustomerBookingScreen = () => {
           });
         }
       } catch {
+      } finally {
+        if (mounted) {
+          setAccountLoaded(true);
+        }
       }
     };
 
@@ -194,6 +292,52 @@ const CustomerBookingScreen = () => {
       .join(' ');
   }, [account.name]);
 
+  useEffect(() => {
+    if (!accountLoaded) return;
+    let mounted = true;
+
+    const ensureDraftBooking = async () => {
+      if (!roomId) {
+        if (mounted) setBookingError('Missing room id for booking');
+        return;
+      }
+
+      try {
+        setBookingError('');
+        const result = await createStaffBooking({
+          roomId,
+          guestName: displayName,
+          email: account.email,
+          phone: account.phone,
+          hotelName,
+          hotelAddress: '',
+          walkIn: false,
+          checkInAt: selectedStartDate.toISOString(),
+          durationDays: stayDays,
+          durationHours: 0,
+        });
+
+        if (mounted) {
+          setBookingId(result?.status === 'success' ? result.data?.id || null : null);
+          if (result?.status !== 'success') {
+            setBookingError(result?.message || 'Unable to create booking');
+          }
+        }
+      } catch (error) {
+        if (mounted) {
+          setBookingError(error?.message || 'Unable to create booking');
+          setBookingId(null);
+        }
+      }
+    };
+
+    ensureDraftBooking();
+
+    return () => {
+      mounted = false;
+    };
+  }, [accountLoaded, roomId, hotelName, stayDays, selectedStartDate, displayName, account.email, account.phone]);
+
   const handleOpenDatePicker = (field) => {
     setActiveDateField(field);
     const baseDate = field === 'start' ? selectedStartDate : selectedEndDate;
@@ -213,6 +357,11 @@ const CustomerBookingScreen = () => {
 
   const handleSelectDate = (day) => {
     const pickedDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    const today = getToday();
+
+    if (pickedDate < today) {
+      return;
+    }
 
     if (activeDateField === 'start') {
       setSelectedStartDate(pickedDate);
@@ -231,12 +380,113 @@ const CustomerBookingScreen = () => {
     }
   };
 
+  const formatDateForUpcoming = (date) => {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  const handleBookNow = async () => {
+    const normalizedBookingId = normalizeBookingId(bookingId);
+    const safeBookingId = normalizedBookingId || await nextLocalBookingId();
+    const pendingInvoiceDetails = {
+      subtotalPrice: bookingSubtotal,
+      vatAmount,
+      payableServiceTotal: serviceFee,
+      totalAmount,
+      depositAmount,
+      paidAmount: 0,
+      remainingAmount: totalAmount,
+      selectedServices,
+    };
+    const pendingItem = {
+      id: `upcoming-${Date.now()}`,
+      bookingId: safeBookingId,
+      hotelName,
+      roomName,
+      checkIn: formatDateForUpcoming(selectedStartDate),
+      checkOut: formatDateForUpcoming(selectedEndDate),
+      checkInDateIso: selectedStartDate.toISOString(),
+      checkOutDateIso: selectedEndDate.toISOString(),
+      actionLabel: 'Payment',
+      actionColor: '#2aa8b9',
+      paymentStatus: 'pending',
+      image: heroImage,
+      createdAt: new Date().toISOString(),
+      customerEmail: String(account.email || '').trim().toLowerCase(),
+      customerName: displayName,
+      customerPhone: String(account.phone || 'N/A').trim() || 'N/A',
+      subtotalPrice: bookingSubtotal,
+      vatAmount,
+      payableServiceTotal: serviceFee,
+      totalAmount,
+      depositAmount,
+      paidAmount: 0,
+      remainingAmount: totalAmount,
+      selectedServices,
+      selectedService: selectedServices[0] || null,
+      invoiceDetails: pendingInvoiceDetails,
+    };
+
+    try {
+      const raw = await AsyncStorage.getItem(UPCOMING_BOOKINGS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      const current = Array.isArray(parsed) ? parsed : [];
+
+      const deduped = current.filter((item) => String(item?.bookingId || '').trim() !== safeBookingId);
+      await AsyncStorage.setItem(UPCOMING_BOOKINGS_KEY, JSON.stringify([pendingItem, ...deduped]));
+    } catch {
+      // Do not block navigation when local persistence fails.
+    }
+
+    navigation.navigate('CustomerPaymentScreen', {
+      bookingId: safeBookingId,
+      heroImage,
+      hotelName,
+      roomName,
+      checkIn,
+      checkOut,
+      checkInDateIso: selectedStartDate.toISOString(),
+      checkOutDateIso: selectedEndDate.toISOString(),
+      name: displayName,
+      email: account.email,
+      phone: account.phone,
+      totalAmount,
+      depositAmount,
+      subtotalPrice: bookingSubtotal,
+      vatAmount,
+      pricePerHour,
+      discountPerHour,
+      stayTimeLabel,
+      selectedService,
+      selectedServices,
+    });
+  };
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+    }, 600);
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        <View style={styles.heroWrap}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 24 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={['#5b79df']}
+            tintColor="#5b79df"
+          />
+        }
+      >
+        <View style={[styles.heroWrap, {marginTop: insets.top + 8}] }>
           <Image source={{ uri: heroImage }} style={styles.heroImage} resizeMode="cover" />
-          <View style={styles.heroActions}>
+          <View style={[styles.heroActions, {top: Math.max(12, insets.top + 4)}]}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={22} color="#222" />
             </TouchableOpacity>
@@ -299,34 +549,59 @@ const CustomerBookingScreen = () => {
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Check-out:</Text><Text style={styles.summaryValue}>{checkOut}</Text></View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Time:</Text><Text style={styles.summaryValue}>{stayTimeLabel}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Price:</Text><Text style={styles.summaryValue}>{formatVnd(pricePerHour)} VND/h</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Discount:</Text><Text style={styles.summaryValue}>{formatVnd(discountPerHour)} VND/h</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Price:</Text><Text style={styles.summaryValue}>{formatVnd(subtotalPrice)} VND</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>VAT (10%):</Text><Text style={styles.summaryValue}>{formatVnd(vatAmount)} VND</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Price:</Text><Text style={styles.summaryValue}>{formatUsd(pricePerHour)} USD/h</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Discount:</Text><Text style={styles.summaryValue}>{formatUsd(discountPerHour)} USD/h</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Room price:</Text><Text style={styles.summaryValue}>{formatUsd(roomSubtotal)} USD</Text></View>
+          {selectedServices.length ? <View style={styles.summaryDivider} /> : null}
+          {selectedServices.length ? <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Selected services:</Text><Text style={styles.summaryValue}>{selectedServices.length}</Text></View> : null}
+          {selectedServices.length ? selectedServices.map((service, index) => {
+            const isDirectPay = service?.id === 'airport_shuttle' && service?.paymentMode === 'direct_with_driver';
+            const displayCode = String(service?.display_code || '').trim() || String(service?.service_code || service?.code || 'N/A').trim() || 'N/A';
+            return (
+              <View key={String(service?.line_id || '').trim() || `${service.id}-${index}`}>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Service code:</Text><Text style={styles.summaryValue}>{displayCode}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Service name:</Text><Text style={styles.summaryValue}>{service.name || 'N/A'}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Service fee:</Text><Text style={styles.summaryValue}>{isDirectPay ? 'Paid directly to driver' : `${formatUsd(service.price)} USD`}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Date:</Text><Text style={styles.summaryValue}>{service.date || 'Select date'}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Time:</Text><Text style={styles.summaryValue}>{service.time || 'Select time'}</Text></View>
+                {service?.notes ? <Text style={styles.summaryServiceHint}>Notes: {service.notes}</Text> : null}
+                {service?.paymentNote ? <Text style={styles.summaryServiceHint}>{service.paymentNote}</Text> : null}
+                {index < selectedServices.length - 1 ? <View style={styles.summaryDivider} /> : null}
+              </View>
+            );
+          }) : null}
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Subtotal:</Text><Text style={styles.summaryValue}>{formatUsd(bookingSubtotal)} USD</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>VAT (10%):</Text><Text style={styles.summaryValue}>{formatUsd(vatAmount)} USD</Text></View>
           <View style={styles.summaryDivider} />
-          <View style={styles.summaryRow}><Text style={styles.summaryLabelBold}>Total Price:</Text><Text style={styles.summaryValueBold}>{formatVnd(totalAmount)} VND</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabelBold}>Deposit (20%):</Text><Text style={styles.summaryValueBold}>{formatVnd(depositAmount)} VND</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabelBold}>Total Price:</Text><Text style={styles.summaryValueBold}>{formatUsd(totalAmount)} USD</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabelBold}>Deposit (20%):</Text><Text style={styles.summaryValueBold}>{formatUsd(depositAmount)} USD</Text></View>
         </View>
       </ScrollView>
       <TouchableOpacity
-        style={styles.bookBtn}
-        onPress={() => navigation.navigate('CustomerPaymentScreen', {
-          heroImage,
+        style={[styles.addServiceBtn, !bookingId ? styles.addServiceBtnDisabled : null]}
+        onPress={() => navigation.push('CustomerServiceScreen', {
+          bookingId,
           hotelName,
+          hotelAddress,
           roomName,
           checkIn,
           checkOut,
-          name: displayName,
-          email: account.email,
-          phone: account.phone,
-          totalAmount,
-          depositAmount,
-          subtotalPrice,
-          vatAmount,
-          pricePerHour,
-          discountPerHour,
-          stayTimeLabel,
+          startDateIso: selectedStartDate.toISOString(),
+          endDateIso: selectedEndDate.toISOString(),
+          bookingMinDateIso: selectedStartDate.toISOString(),
+          bookingMaxDateIso: selectedEndDate.toISOString(),
+          bookingStartDateIso: selectedStartDate.toISOString(),
+          bookingEndDateIso: selectedEndDate.toISOString(),
+          selectedService,
+          selectedServices,
         })}
+      >
+        <Text style={styles.addServiceBtnText}>{selectedServices.length ? 'Edit services' : 'Choose services'}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.bookBtn}
+        onPress={handleBookNow}
       >
         <Text style={styles.bookBtnText}>Book now</Text>
       </TouchableOpacity>
@@ -403,7 +678,9 @@ const CustomerBookingScreen = () => {
 
                   const day = cell.day;
                   const candidateDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-                  const isDisabled = activeDateField === 'end' && candidateDate <= selectedStartDate;
+                  const today = getToday();
+                  const isPastDate = candidateDate < today;
+                  const isDisabled = isPastDate || (activeDateField === 'end' && candidateDate <= selectedStartDate);
                   const isSelected = activeDateField === 'start'
                     ? isSameDate(candidateDate, selectedStartDate)
                     : isSameDate(candidateDate, selectedEndDate);
@@ -657,6 +934,12 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 8,
   },
+  summaryServiceHint: {
+    marginBottom: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#6b7280',
+  },
   bookBtn: {
     backgroundColor: '#8EA6FF',
     margin: 16,
@@ -672,6 +955,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 17,
     fontWeight: 'bold',
+  },
+  addServiceBtn: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 999,
+    paddingVertical: 13,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#8EA6FF',
+  },
+  addServiceBtnDisabled: {
+    opacity: 0.55,
+  },
+  addServiceBtnText: {
+    color: '#5167d8',
+    fontSize: 16,
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,

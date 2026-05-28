@@ -2,6 +2,7 @@
   "expo": {
     "name": "nesto",
     "slug": "frontend",
+    "scheme": "nesto",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.svg",

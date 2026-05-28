@@ -2,7 +2,7 @@ import Apis, {endpoints} from '../configuration/Apis';
 import {MANAGER_ID} from './branchMockStore';
 import {staffMockStore} from './staffMockStore';
 
-const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
+const useMock = () => process.env.EXPO_PUBLIC_MOCK === 'true';
 
 export {MANAGER_ID};
 export {STAFF_ROLES} from './staffMockStore';

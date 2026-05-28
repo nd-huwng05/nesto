@@ -29,8 +29,8 @@ const HOTELS = [
         rooms: [
             {
                 id: 'room-1',
-                name: 'Sun Suites',
-                description: 'Room have view beach and use for one family.',
+                name: 'Standard Room',
+                description: 'Comfortable room for everyday stay.',
                 type: 'Family',
                 view: 'Beach',
                 image: 'https://images.unsplash.com/photo-1462396881884-de2c07cb95ed?fit=crop&w=720&q=80',
@@ -43,8 +43,8 @@ const HOTELS = [
             },
             {
                 id: 'room-2',
-                name: 'Royal Resort',
-                description: 'Spacious room suitable for business trip.',
+                name: 'VIP Room',
+                description: 'Spacious room with upgraded comfort and service.',
                 type: 'Business',
                 view: 'City',
                 image: 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?fit=crop&w=720&q=80',
@@ -55,11 +55,57 @@ const HOTELS = [
                 created_at: '2026-05-01T10:15:00.000Z',
                 updated_at: '2026-05-01T10:15:00.000Z',
             },
+            {
+                id: 'room-3',
+                name: 'Super VIP Room',
+                description: 'Premium suite with top-tier amenities and privacy.',
+                type: 'Suite',
+                view: 'Ocean',
+                image: 'https://images.unsplash.com/photo-1445019980597-93fa8acb246c?fit=crop&w=720&q=80',
+                price: {
+                    amount: 420,
+                    currency: 'USD',
+                },
+                created_at: '2026-05-01T10:15:00.000Z',
+                updated_at: '2026-05-01T10:15:00.000Z',
+            },
         ],
         created_at: '2026-05-01T10:15:00.000Z',
         updated_at: '2026-05-01T10:15:00.000Z',
     },
 ];
+
+const HOTEL_REVIEWS = {
+    'hotel-1': [
+        {
+            id: 'review-1',
+            title: 'Watchlish',
+            subtitle: "Review's customer were used room",
+            reviewer: 'Ngoc Lan',
+            review: 'The view is very beautifull',
+            image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
+            avatar: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?fit=crop&w=500&q=80&fm=jpg',
+        },
+        {
+            id: 'review-2',
+            title: 'Watchlish',
+            subtitle: "Review's customer were used room",
+            reviewer: 'Hoang Minh',
+            review: 'Service is friendly and room is very clean',
+            image: 'https://images.unsplash.com/photo-1445019980597-93fa8acb246c?fit=crop&w=1400&q=80&fm=jpg',
+            avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?fit=crop&w=500&q=80&fm=jpg',
+        },
+        {
+            id: 'review-3',
+            title: 'Watchlish',
+            subtitle: "Review's customer were used room",
+            reviewer: 'My Anh',
+            review: 'Breakfast was good and location is convenient',
+            image: 'https://images.unsplash.com/photo-1468824357306-a439d58ccb1c?fit=crop&w=1400&q=80&fm=jpg',
+            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?fit=crop&w=500&q=80&fm=jpg',
+        },
+    ],
+};
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -159,6 +205,13 @@ export async function fakeGet(path, query = {}) {
 export async function fakeGetHomeDetail() {
     const envelope = await fakeGet('/home-detail/');
     return envelope.data;
+}
+
+export async function fakeGetReviews(hotelId = 'hotel-1') {
+    await delay(MOCK_DELAY_MS);
+    const key = String(hotelId || '').trim();
+    const reviews = HOTEL_REVIEWS[key] || HOTEL_REVIEWS['hotel-1'] || [];
+    return reviews;
 }
 
 export async function fakePost(path, payload = {}) {

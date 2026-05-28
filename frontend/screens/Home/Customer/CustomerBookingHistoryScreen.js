@@ -1,73 +1,1043 @@
-import React, {useMemo, useState} from 'react';
-import {Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, Animated, Image, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useFocusEffect} from '@react-navigation/native';
+import {Ionicons} from '@expo/vector-icons';
+import {LinearGradient} from 'expo-linear-gradient';
+import * as Clipboard from 'expo-clipboard';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
+import {getSession} from '../../../utils/authStorage';
+import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
+import {displayBookingId} from '../../../utils/bookingId';
+import {createReviewForumPost, fetchReviewForumPosts, toggleReviewForumHeart} from '../../../services/ReviewForumService';
+import {getUnreadCustomerNotificationCount, pushCustomerNotification} from '../../../services/NotificationService';
 
-const HISTORY_BOOKINGS = [
-    {
-        id: 'history-1',
-        roomName: 'Room 301',
-        roomCode: 'Ocean View Suite',
-        bookingId: '#AQRZO01',
-        stayDate: 'Mar 10-12, 2026',
-        status: 'Complete',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
-    },
-    {
-        id: 'history-2',
-        roomName: 'Room 302',
-        roomCode: 'Deluxe Room',
-        bookingId: '#AQRZO02',
-        stayDate: 'Mar 10-12, 2026',
-        status: 'Complete',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
-    },
-    {
-        id: 'history-3',
-        roomName: 'Room 303',
-        roomCode: 'Premium Suite',
-        bookingId: '#AQRZO03',
-        stayDate: 'Mar 10-12, 2026',
-        status: 'Complete',
-        image: require('../../../assets/images/hotels/sun-suites-business.jpg'),
-    },
-];
+const HISTORY_BOOKINGS_KEY = 'customer_paid_history_bookings';
+const UPCOMING_BOOKINGS_KEY = 'customer_paid_upcoming_bookings';
+const HOTEL_RATINGS_KEY = 'customer_hotel_ratings';
+const REVIEW_FORUM_KEY = 'customer_room_review_forum_posts';
+const BOOKING_TEST_RESET_FLAG = 'customer_booking_test_reset_done_v4';
+const DEFAULT_BOOKING_IMAGE = require('../../../assets/images/hotels/sun-suites-business.jpg');
+const ANDROID_REFRESH_TOP_OFFSET = -170;
+const formatUsd = (amount) => Number(amount || 0).toLocaleString('en-US');
 
-function HistoryBookingCard({item}) {
+const normalizeBookingId = (value) => String(value || '').trim().toUpperCase().replace(/^#/, '');
+const FORCE_REMOVED_BOOKING_IDS = new Set(['BK296489']);
+
+const normalizeReviewScopePart = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+const buildReviewScope = (item) => {
+    const hotelName = String(item?.hotelName || item?.roomCode || '').trim();
+    const roomName = String(item?.roomName || '').trim();
+    const scopeKey = `${normalizeReviewScopePart(hotelName)}::${normalizeReviewScopePart(roomName)}`;
+
+    return {
+        hotelName,
+        roomName,
+        scopeKey,
+    };
+};
+
+const formatRelativeTime = (isoTime, nowMs) => {
+    const timeMs = Date.parse(String(isoTime || ''));
+    if (!Number.isFinite(timeMs)) return 'Just now';
+
+    const diffSeconds = Math.max(0, Math.floor((nowMs - timeMs) / 1000));
+    if (diffSeconds < 10) return 'Just now';
+    if (diffSeconds < 60) return `${diffSeconds}s ago`;
+
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+};
+
+const normalizeReviewPost = (post) => {
+    const likedByIds = Array.isArray(post?.liked_by_ids)
+        ? post.liked_by_ids
+        : Array.isArray(post?.likedBy)
+        ? post.likedBy
+        : [];
+
+    return {
+        id: String(post?.id || ''),
+        bookingId: String(post?.booking_id || post?.bookingId || '').trim(),
+        scopeKey: String(post?.scope_key || post?.scopeKey || '').trim(),
+        hotelName: String(post?.hotel_name || post?.hotelName || '').trim(),
+        roomName: String(post?.room_name || post?.roomName || '').trim(),
+        content: String(post?.content || '').trim(),
+        authorName: String(post?.author_name || post?.authorName || 'Guest').trim() || 'Guest',
+        authorEmail: String(post?.author_email || post?.authorEmail || '').trim().toLowerCase(),
+        createdAt: String(post?.created_at || post?.createdAt || new Date().toISOString()),
+        likedBy: likedByIds.map((value) => String(value || '').trim()).filter(Boolean),
+        heartsCount: Number(post?.hearts_count ?? post?.heartsCount ?? likedByIds.length) || 0,
+        likedByMe: Boolean(post?.liked_by_me ?? post?.likedByMe ?? false),
+    };
+};
+
+const readAmountIfPresent = (source, key) => {
+    if (!source || typeof source !== 'object' || !(key in source)) return null;
+
+    const parsed = Number(source[key]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, parsed);
+};
+
+const deriveRemainingAmountFromRecords = (records) => {
+    if (!Array.isArray(records) || records.length === 0) return 0;
+
+    const snapshots = records
+        .map((record) => {
+            if (!record || typeof record !== 'object') return null;
+
+            const explicitRemaining =
+                readAmountIfPresent(record, 'remainingAmount') ??
+                readAmountIfPresent(record?.invoiceDetails, 'remainingAmount');
+            const totalAmount =
+                readAmountIfPresent(record, 'totalAmount') ??
+                readAmountIfPresent(record?.invoiceDetails, 'totalAmount');
+            const paidAmount =
+                readAmountIfPresent(record, 'paidAmount') ??
+                readAmountIfPresent(record?.invoiceDetails, 'paidAmount');
+
+            const computedRemaining =
+                totalAmount !== null ? Math.max(0, Number((totalAmount - (paidAmount || 0)).toFixed(2))) : null;
+
+            const resolvedRemaining = explicitRemaining !== null ? explicitRemaining : computedRemaining;
+            if (resolvedRemaining === null) return null;
+
+            const sortTime = Date.parse(
+                record?.paidAt ||
+                record?.updatedAt ||
+                record?.checkedOutAt ||
+                record?.createdAt ||
+                0
+            ) || 0;
+
+            return {
+                sortTime,
+                remainingAmount: Math.max(0, Number(resolvedRemaining || 0)),
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => right.sortTime - left.sortTime);
+
+    if (!snapshots.length) return 0;
+    return snapshots[0].remainingAmount;
+};
+
+const resolveImageSource = (image) => {
+    if (typeof image === 'number') return image;
+    if (typeof image === 'string' && image.trim().length > 0) return {uri: image};
+    if (image && typeof image === 'object' && typeof image.uri === 'string') {
+        return {uri: image.uri};
+    }
+    return DEFAULT_BOOKING_IMAGE;
+};
+
+const toImageUri = (image) => {
+    if (typeof image === 'string' && image.trim().length > 0) return image;
+    if (typeof image === 'number') return Image.resolveAssetSource(image)?.uri || '';
+    if (image && typeof image === 'object' && typeof image.uri === 'string') return image.uri;
+    return '';
+};
+
+const parseDateFromAny = (value) => {
+    if (!value) return null;
+
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+        return value;
+    }
+
+    const text = String(value).trim();
+    if (!text) return null;
+
+    const ddmmyyyy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyy) {
+        const day = Number.parseInt(ddmmyyyy[1], 10);
+        const month = Number.parseInt(ddmmyyyy[2], 10) - 1;
+        const year = Number.parseInt(ddmmyyyy[3], 10);
+        const parsed = new Date(year, month, day);
+        return Number.isFinite(parsed.getTime()) ? parsed : null;
+    }
+
+    const shortMonth = text.match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/);
+    if (shortMonth) {
+        const monthMap = {
+            jan: 0,
+            feb: 1,
+            mar: 2,
+            apr: 3,
+            may: 4,
+            jun: 5,
+            jul: 6,
+            aug: 7,
+            sep: 8,
+            oct: 9,
+            nov: 10,
+            dec: 11,
+        };
+
+        const day = Number.parseInt(shortMonth[1], 10);
+        const month = monthMap[String(shortMonth[2]).toLowerCase()];
+        const year = Number.parseInt(shortMonth[3], 10);
+        if (Number.isInteger(month)) {
+            const parsed = new Date(year, month, day);
+            return Number.isFinite(parsed.getTime()) ? parsed : null;
+        }
+    }
+
+    const isoParsed = new Date(text);
+    return Number.isFinite(isoParsed.getTime()) ? isoParsed : null;
+};
+
+const toIsoFromDateLike = (value) => {
+    const parsed = parseDateFromAny(value);
+    if (!parsed) return '';
+    return parsed.toISOString();
+};
+
+const getIsoFromHistoryItem = (item, kind) => {
+    const isStart = kind === 'start';
+    const isoKey = isStart ? 'checkInDateIso' : 'checkOutDateIso';
+    const labelKey = isStart ? 'checkInLabel' : 'checkOutLabel';
+    const rawKey = isStart ? 'checkIn' : 'checkOut';
+
+    const directIso = toIsoFromDateLike(item?.[isoKey]);
+    if (directIso) return directIso;
+
+    const fromLabel = toIsoFromDateLike(item?.[labelKey]);
+    if (fromLabel) return fromLabel;
+
+    const fromRaw = toIsoFromDateLike(item?.[rawKey]);
+    if (fromRaw) return fromRaw;
+
+    const stayDate = String(item?.stayDate || '').trim();
+    if (stayDate.includes('-')) {
+        const [left, right] = stayDate.split('-').map((part) => part.trim());
+        const fromStay = toIsoFromDateLike(isStart ? left : right);
+        if (fromStay) return fromStay;
+    }
+
+    return '';
+};
+
+const formatDateLabel = (dateValue) => {
+    const parsed = parseDateFromAny(dateValue);
+    if (!parsed) return 'N/A';
+
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = parsed.getFullYear();
+    return `${day}/${month}/${year}`;
+};
+
+const deriveStatusType = (startDate, endDate, rawStatus, forceComplete) => {
+    if (forceComplete) return 'complete';
+
+    const statusText = String(rawStatus || '').trim().toLowerCase();
+    if (statusText.includes('checked out')) return 'complete';
+
+    return 'staying';
+};
+
+function HistoryBookingCard({item, onCopyBookingId, onReviewPress, onPrimaryPress}) {
+    const overlayTag = String(item?.roomCode || 'Reservation').trim();
+    const overlayTitle = String(item?.roomName || 'Room').trim();
+    const isComplete = item?.statusType === 'complete';
+    const primaryLabel = isComplete ? 'Book again' : 'Check out';
+
     return (
         <View style={styles.bookingCardWrap}>
             <View style={styles.imageSection}>
-                <Image source={item.image} style={styles.bookingImage} resizeMode="cover"/>
-                <View style={styles.statusBadge}>
-                    <Text style={styles.statusText}>{item.status}</Text>
+                <Image source={resolveImageSource(item.image)} style={styles.bookingImage} resizeMode="cover"/>
+                <LinearGradient
+                    colors={['rgba(5, 12, 25, 0.03)', 'rgba(5, 12, 25, 0.72)']}
+                    start={{x: 0.5, y: 0.2}}
+                    end={{x: 0.5, y: 1}}
+                    style={styles.imageGradient}
+                />
+                <View style={styles.imageOverlayTextWrap}>
+                    <Text style={styles.imageOverlayTag}>{overlayTag}</Text>
+                    <Text style={styles.imageOverlayTitle} numberOfLines={1}>{overlayTitle}</Text>
+                </View>
+                <View style={[styles.statusBadge, !isComplete ? styles.statusBadgeStaying : null]}>
+                    <Text style={[styles.statusText, !isComplete ? styles.statusTextStaying : null]}>{item.status}</Text>
                 </View>
             </View>
 
             <View style={styles.infoSection}>
                 <Text style={styles.roomCode}>{item.roomCode}</Text>
                 <Text style={styles.roomName}>{item.roomName}</Text>
-                <Text style={styles.bookingIdText}>Booking ID: {item.bookingId}</Text>
+                <TouchableOpacity
+                    style={styles.metaRow}
+                    activeOpacity={0.9}
+                    onLongPress={() => onCopyBookingId?.(item?.bookingId)}
+                    delayLongPress={220}
+                >
+                    <Text style={styles.metaLabel}>Booking ID: </Text>
+                    <Text style={styles.metaValue}>{displayBookingId(item.bookingId)}</Text>
+                </TouchableOpacity>
                 <Text style={styles.stayDateText}>Stay: {item.stayDate}</Text>
             </View>
 
             <View style={styles.actionRow}>
-                <TouchableOpacity style={styles.actionBtnSecondary}>
-                    <Text style={styles.actionBtnSecondaryText}>Review</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionBtnPrimary}>
-                    <Text style={styles.actionBtnPrimaryText}>Book again</Text>
-                </TouchableOpacity>
+                <AnimatedActionButton variant="secondary" label="Review" onPress={() => onReviewPress?.(item)}/>
+                <AnimatedActionButton variant="primary" label={primaryLabel} onPress={() => onPrimaryPress?.(item)}/>
             </View>
         </View>
     );
 }
 
+function AnimatedActionButton({variant, label, onPress}) {
+    const scaleAnim = React.useRef(new Animated.Value(1)).current;
+
+    const animateTo = (value) => {
+        Animated.spring(scaleAnim, {
+            toValue: value,
+            speed: 25,
+            bounciness: 4,
+            useNativeDriver: true,
+        }).start();
+    };
+
+    const isPrimary = variant === 'primary';
+
+    return (
+        <Animated.View style={[styles.actionBtnAnimatedWrap, {transform: [{scale: scaleAnim}]}]}>
+            <TouchableOpacity
+                style={isPrimary ? styles.actionBtnPrimary : styles.actionBtnSecondary}
+                activeOpacity={0.92}
+                onPressIn={() => animateTo(0.96)}
+                onPressOut={() => animateTo(1)}
+                onPress={onPress}
+            >
+                <Text style={isPrimary ? styles.actionBtnPrimaryText : styles.actionBtnSecondaryText}>{label}</Text>
+            </TouchableOpacity>
+        </Animated.View>
+    );
+}
+
 export default function CustomerBookingHistoryScreen({navigation}) {
-    const bookings = useMemo(() => HISTORY_BOOKINGS, []);
+    const [bookings, setBookings] = useState([]);
     const [activeTab, setActiveTab] = useState('History');
     const [searchQuery, setSearchQuery] = useState('');
-    const bottomNavIconSize = 22;
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
+    const [checkoutRating, setCheckoutRating] = useState(0);
+    const [pendingCheckoutItem, setPendingCheckoutItem] = useState(null);
+    const [thankYouModalVisible, setThankYouModalVisible] = useState(false);
+    const [paymentRequiredModalVisible, setPaymentRequiredModalVisible] = useState(false);
+    const [paymentRequiredAmount, setPaymentRequiredAmount] = useState(0);
+    const [paymentRequiredBooking, setPaymentRequiredBooking] = useState(null);
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const [reviewModalVisible, setReviewModalVisible] = useState(false);
+    const [reviewTargetScope, setReviewTargetScope] = useState(null);
+    const [reviewDraft, setReviewDraft] = useState('');
+    const [reviewPosts, setReviewPosts] = useState([]);
+    const [reviewViewer, setReviewViewer] = useState({
+        id: '',
+        name: 'Guest',
+        email: '',
+    });
+    const [reviewLoading, setReviewLoading] = useState(false);
+    const [reviewNow, setReviewNow] = useState(Date.now());
+
+    useEffect(() => {
+        if (!reviewModalVisible) return undefined;
+
+        const timer = setInterval(() => {
+            setReviewNow(Date.now());
+        }, 30000);
+
+        return () => clearInterval(timer);
+    }, [reviewModalVisible]);
+
+    const loadReviewPostsByScope = async (scope) => {
+        const scopeKey = String(scope?.scopeKey || '').trim();
+        if (!scopeKey) return [];
+
+        try {
+            const remotePosts = await fetchReviewForumPosts({
+                hotelName: scope.hotelName,
+                roomName: scope.roomName,
+            });
+            const normalizedRemote = remotePosts
+                .map(normalizeReviewPost)
+                .filter((post) => post.scopeKey === scopeKey)
+                .sort((left, right) => (Date.parse(right?.createdAt || 0) || 0) - (Date.parse(left?.createdAt || 0) || 0));
+
+            await AsyncStorage.setItem(REVIEW_FORUM_KEY, JSON.stringify(normalizedRemote));
+            return normalizedRemote;
+        } catch {
+            const rawPosts = await AsyncStorage.getItem(REVIEW_FORUM_KEY);
+            const parsedPosts = rawPosts ? JSON.parse(rawPosts) : [];
+            const safePosts = Array.isArray(parsedPosts)
+                ? parsedPosts.map(normalizeReviewPost).filter((post) => post && typeof post === 'object')
+                : [];
+
+            return safePosts
+                .filter((post) => String(post?.scopeKey || '') === scopeKey)
+                .sort((left, right) => {
+                    const leftTime = Date.parse(left?.createdAt || 0) || 0;
+                    const rightTime = Date.parse(right?.createdAt || 0) || 0;
+                    return rightTime - leftTime;
+                });
+        }
+    };
+
+    useEffect(() => {
+        if (!reviewModalVisible || !reviewTargetScope?.scopeKey) return undefined;
+
+        let mounted = true;
+        const refresh = async () => {
+            try {
+                const scopedPosts = await loadReviewPostsByScope(reviewTargetScope);
+                if (mounted) setReviewPosts(scopedPosts);
+            } catch {
+                if (mounted) setReviewPosts([]);
+            }
+        };
+
+        refresh();
+        const timer = setInterval(refresh, 10000);
+
+        return () => {
+            mounted = false;
+            clearInterval(timer);
+        };
+    }, [reviewModalVisible, reviewTargetScope]);
+
+    const handleRefresh = React.useCallback(() => {
+        setIsRefreshing(true);
+        setTimeout(() => {
+            setIsRefreshing(false);
+        }, 600);
+    }, []);
+
+    const handleCopyBookingId = async (bookingId) => {
+        const value = String(bookingId || '').trim();
+        if (!value) return;
+
+        try {
+            await Clipboard.setStringAsync(value);
+            Alert.alert('Copied', `You have saved ${value} to clipboard cache.`);
+        } catch {
+            Alert.alert('Copy failed', 'Unable to copy Booking ID. Please try again.');
+        }
+    };
+
+    const closeReviewModal = () => {
+        setReviewModalVisible(false);
+        setReviewDraft('');
+        setReviewPosts([]);
+        setReviewTargetScope(null);
+    };
+
+    const handleReviewPress = async (item) => {
+        const nextScope = buildReviewScope(item);
+        if (!nextScope.scopeKey || !nextScope.hotelName || !nextScope.roomName) {
+            Alert.alert('Review', 'Unable to open review forum for this booking.');
+            return;
+        }
+
+        navigation.navigate('CustomerReviewScreen', {
+            hotelName: nextScope.hotelName,
+            roomName: nextScope.roomName,
+            roomCode: String(item?.roomCode || '').trim(),
+            bookingId: String(item?.bookingId || '').trim(),
+        });
+    };
+
+    const handleSubmitReview = async () => {
+        const scope = reviewTargetScope;
+        const content = reviewDraft.trim();
+
+        if (!scope?.scopeKey) {
+            Alert.alert('Review', 'Review scope is missing. Please try again.');
+            return;
+        }
+        if (content.length < 8) {
+            Alert.alert('Review', 'Please write at least 8 characters for your review.');
+            return;
+        }
+
+        try {
+            await createReviewForumPost({
+                hotelName: scope.hotelName,
+                roomName: scope.roomName,
+                content,
+            });
+
+            setReviewDraft('');
+            setReviewNow(Date.now());
+            setReviewPosts(await loadReviewPostsByScope(scope));
+        } catch (error) {
+            try {
+                const nowIso = new Date().toISOString();
+                const rawPosts = await AsyncStorage.getItem(REVIEW_FORUM_KEY);
+                const parsedPosts = rawPosts ? JSON.parse(rawPosts) : [];
+                const safePosts = Array.isArray(parsedPosts)
+                    ? parsedPosts.filter((post) => post && typeof post === 'object')
+                    : [];
+
+                const localPost = {
+                    id: `review-local-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                    bookingId: '',
+                    scopeKey: scope.scopeKey,
+                    hotelName: scope.hotelName,
+                    roomName: scope.roomName,
+                    content,
+                    authorName: reviewViewer?.name || 'Guest',
+                    authorEmail: reviewViewer?.email || '',
+                    createdAt: nowIso,
+                    likedBy: [],
+                    heartsCount: 0,
+                    likedByMe: false,
+                };
+
+                const mergedLocal = [localPost, ...safePosts]
+                    .map(normalizeReviewPost)
+                    .filter((post) => String(post?.scopeKey || '') === String(scope.scopeKey || ''))
+                    .sort((left, right) => (Date.parse(right?.createdAt || 0) || 0) - (Date.parse(left?.createdAt || 0) || 0));
+
+                await AsyncStorage.setItem(REVIEW_FORUM_KEY, JSON.stringify(mergedLocal));
+                setReviewDraft('');
+                setReviewNow(Date.now());
+                setReviewPosts(mergedLocal);
+                Alert.alert('Review', `Backend is not available now (${String(error?.message || 'network error')}). Your review was saved locally.`);
+            } catch {
+                Alert.alert('Review', String(error?.message || 'Unable to submit your review right now. Please try again.'));
+            }
+        }
+    };
+
+    const handleToggleReviewLike = async (postId) => {
+        const scope = reviewTargetScope;
+        if (!scope?.scopeKey || !postId) return;
+
+        try {
+            const updatedPost = await toggleReviewForumHeart(postId);
+            const normalizedPost = normalizeReviewPost(updatedPost || {});
+
+            setReviewPosts((prev) => prev.map((post) => (
+                String(post?.id) === String(postId) ? normalizedPost : post
+            )));
+        } catch (error) {
+            const viewerId = String(reviewViewer?.id || '').trim().toLowerCase();
+            if (!viewerId) {
+                Alert.alert('Review', String(error?.message || 'Unable to update reaction right now. Please try again.'));
+                return;
+            }
+
+            const nextPosts = reviewPosts.map((post) => {
+                if (String(post?.id) !== String(postId)) return post;
+                const likedBy = Array.isArray(post?.likedBy) ? post.likedBy : [];
+                const alreadyLiked = likedBy.includes(viewerId);
+                const nextLikedBy = alreadyLiked
+                    ? likedBy.filter((id) => id !== viewerId)
+                    : [...likedBy, viewerId];
+
+                return {
+                    ...post,
+                    likedBy: nextLikedBy,
+                    heartsCount: nextLikedBy.length,
+                    likedByMe: !alreadyLiked,
+                };
+            });
+
+            setReviewPosts(nextPosts);
+        }
+    };
+
+    const getOutstandingAmountByBookingId = async (bookingId) => {
+        const normalizedBookingId = normalizeBookingId(bookingId);
+        if (!normalizedBookingId) return 0;
+
+        const [rawUpcoming, rawHistory] = await AsyncStorage.multiGet([
+            UPCOMING_BOOKINGS_KEY,
+            HISTORY_BOOKINGS_KEY,
+        ]);
+
+        const parsedUpcoming = rawUpcoming?.[1] ? JSON.parse(rawUpcoming[1]) : [];
+        const parsedHistory = rawHistory?.[1] ? JSON.parse(rawHistory[1]) : [];
+        const allRecords = [
+            ...(Array.isArray(parsedUpcoming) ? parsedUpcoming : []),
+            ...(Array.isArray(parsedHistory) ? parsedHistory : []),
+        ];
+
+        const sameBookingRecords = allRecords.filter((record) => {
+            if (!record || typeof record !== 'object') return false;
+            if (FORCE_REMOVED_BOOKING_IDS.has(normalizeBookingId(record?.bookingId || record?.id))) return false;
+            return normalizeBookingId(record?.bookingId || record?.id) === normalizedBookingId;
+        });
+
+        return deriveRemainingAmountFromRecords(sameBookingRecords);
+    };
+
+    const persistCheckoutComplete = async (bookingId, bookingFallback = null) => {
+        const nowIso = new Date().toISOString();
+        const [rawUpcoming, rawHistory] = await AsyncStorage.multiGet([
+            UPCOMING_BOOKINGS_KEY,
+            HISTORY_BOOKINGS_KEY,
+        ]);
+
+        const parsedUpcoming = rawUpcoming?.[1] ? JSON.parse(rawUpcoming[1]) : [];
+        const parsedHistory = rawHistory?.[1] ? JSON.parse(rawHistory[1]) : [];
+        const upcoming = (Array.isArray(parsedUpcoming) ? parsedUpcoming : []).filter(
+            (item) => !FORCE_REMOVED_BOOKING_IDS.has(normalizeBookingId(item?.bookingId || item?.id))
+        );
+        const history = (Array.isArray(parsedHistory) ? parsedHistory : []).filter(
+            (item) => !FORCE_REMOVED_BOOKING_IDS.has(normalizeBookingId(item?.bookingId || item?.id))
+        );
+        const normalizedBookingId = normalizeBookingId(bookingId);
+
+        const isSameBooking = (record) => normalizeBookingId(record?.bookingId) === normalizedBookingId;
+
+        const toCheckedOutRecord = (record) => {
+            if (!isSameBooking(record)) return record;
+
+            return {
+                ...record,
+                status: 'Complete',
+                checkoutCompleted: true,
+                checkedOutAt: nowIso,
+                actionDisabled: true,
+                actionLabel: String(record?.actionType || '').trim().toLowerCase() === 'checkin' ? 'Checked out' : record?.actionLabel,
+            };
+        };
+
+        const nextUpcoming = upcoming.filter((record) => !isSameBooking(record));
+        const nextHistory = history.map(toCheckedOutRecord);
+        const hasHistoryRecord = nextHistory.some(isSameBooking);
+
+        if (!hasHistoryRecord) {
+            const fallbackRecords = upcoming
+                .filter(isSameBooking)
+                .map(toCheckedOutRecord)
+                .filter((record) => record && typeof record === 'object' && record.id);
+
+            if (fallbackRecords.length > 0) {
+                nextHistory.push(...fallbackRecords);
+            } else if (normalizedBookingId) {
+                nextHistory.push({
+                    id: `history-checkout-${normalizedBookingId}-${Date.now()}`,
+                    bookingId: String(bookingId || '').trim(),
+                    hotelName: bookingFallback?.hotelName || bookingFallback?.roomCode || 'Hotel',
+                    roomCode: bookingFallback?.roomCode || bookingFallback?.hotelName || 'Hotel',
+                    roomName: bookingFallback?.roomName || 'Room',
+                    image: bookingFallback?.image || DEFAULT_BOOKING_IMAGE,
+                    checkIn: bookingFallback?.checkInLabel || bookingFallback?.checkIn || '',
+                    checkOut: bookingFallback?.checkOutLabel || bookingFallback?.checkOut || '',
+                    checkInDateIso: bookingFallback?.checkInDateIso || '',
+                    checkOutDateIso: bookingFallback?.checkOutDateIso || '',
+                    status: 'Complete',
+                    checkoutCompleted: true,
+                    checkedOutAt: nowIso,
+                    actionDisabled: true,
+                    actionType: 'checkin',
+                    actionLabel: 'Checked out',
+                    paymentStatus: Number(bookingFallback?.remainingAmount || 0) > 0 ? 'pending' : 'completed',
+                    totalAmount: Number(bookingFallback?.totalAmount || 0),
+                    paidAmount: Number(bookingFallback?.paidAmount || 0),
+                    remainingAmount: Number(bookingFallback?.remainingAmount || 0),
+                    depositAmount: Number(bookingFallback?.depositAmount || 0),
+                    subtotalPrice: Number(bookingFallback?.subtotalPrice || 0),
+                    vatAmount: Number(bookingFallback?.vatAmount || 0),
+                    selectedService: bookingFallback?.selectedService || null,
+                    selectedServices: Array.isArray(bookingFallback?.selectedServices) ? bookingFallback.selectedServices : [],
+                    createdAt: nowIso,
+                });
+            }
+        }
+
+        await AsyncStorage.multiSet([
+            [UPCOMING_BOOKINGS_KEY, JSON.stringify(nextUpcoming)],
+            [HISTORY_BOOKINGS_KEY, JSON.stringify(nextHistory)],
+        ]);
+    };
+
+    const closeCheckoutModal = () => {
+        setCheckoutModalVisible(false);
+        setCheckoutRating(0);
+        setPendingCheckoutItem(null);
+    };
+
+    const openPaymentRequiredModal = (item, amount) => {
+        setPaymentRequiredBooking(item || null);
+        setPaymentRequiredAmount(Math.max(0, Number(amount || 0)));
+        setPaymentRequiredModalVisible(true);
+    };
+
+    const closePaymentRequiredModal = () => {
+        setPaymentRequiredModalVisible(false);
+        setPaymentRequiredAmount(0);
+        setPaymentRequiredBooking(null);
+    };
+
+    const handleGoToPaymentFromModal = () => {
+        const item = paymentRequiredBooking;
+        if (!item) {
+            closePaymentRequiredModal();
+            return;
+        }
+
+        const bookingId = String(item?.bookingId || '').trim();
+        closePaymentRequiredModal();
+
+        navigation.navigate('CustomerBookingUpcomingScreen', {
+            openPaymentForm: true,
+            openPaymentBookingId: bookingId,
+            openPaymentBooking: {
+                id: bookingId ? `${bookingId}-payment` : `payment-${Date.now()}`,
+                bookingId,
+                hotelName: item?.hotelName || item?.roomCode,
+                roomName: item?.roomName,
+                image: toImageUri(item?.image),
+                checkIn: item?.checkInLabel || item?.checkIn || '',
+                checkOut: item?.checkOutLabel || item?.checkOut || '',
+                checkInDateIso: item?.checkInDateIso || '',
+                checkOutDateIso: item?.checkOutDateIso || '',
+                actionType: 'payment',
+                actionLabel: 'Payment',
+                paymentStatus: paymentRequiredAmount > 0 ? 'pending' : 'completed',
+                paymentMethod: item?.paymentMethod || 'momo',
+                totalAmount: Number(item?.totalAmount || 0),
+                paidAmount: Number(item?.paidAmount || 0),
+                remainingAmount: Math.max(0, Number(paymentRequiredAmount || item?.remainingAmount || 0)),
+                depositAmount: Number(item?.depositAmount || 0),
+                subtotalPrice: Number(item?.subtotalPrice || 0),
+                vatAmount: Number(item?.vatAmount || 0),
+                selectedService: item?.selectedService || null,
+                selectedServices: Array.isArray(item?.selectedServices) ? item.selectedServices : [],
+                invoiceDetails: item?.invoiceDetails || null,
+            },
+        });
+    };
+
+    const persistHotelRating = async (item, rating) => {
+        const hotelName = String(item?.hotelName || item?.roomCode || '').trim();
+        if (!hotelName) return;
+
+        const boundedRating = Math.max(1, Math.min(5, Number(rating || 0)));
+        if (!Number.isFinite(boundedRating)) return;
+
+        const [session, rawRatings] = await Promise.all([
+            getSession(),
+            AsyncStorage.getItem(HOTEL_RATINGS_KEY),
+        ]);
+
+        const parsedRatings = rawRatings ? JSON.parse(rawRatings) : [];
+        const safeRatings = Array.isArray(parsedRatings)
+            ? parsedRatings.filter((record) => record && typeof record === 'object')
+            : [];
+
+        const normalizedBookingId = normalizeBookingId(item?.bookingId);
+        const deduped = normalizedBookingId
+            ? safeRatings.filter((record) => normalizeBookingId(record?.bookingId) !== normalizedBookingId)
+            : safeRatings;
+
+        const ratingRecord = {
+            id: `hotel-rating-${Date.now()}`,
+            bookingId: String(item?.bookingId || '').trim(),
+            hotelName,
+            roomName: String(item?.roomName || '').trim(),
+            rating: boundedRating,
+            customerName: String(session?.user?.name || session?.user?.full_name || '').trim(),
+            customerEmail: String(session?.user?.email || '').trim().toLowerCase(),
+            createdAt: new Date().toISOString(),
+        };
+
+        await AsyncStorage.setItem(HOTEL_RATINGS_KEY, JSON.stringify([ratingRecord, ...deduped]));
+    };
+
+    const handleSubmitCheckoutRating = async () => {
+        const item = pendingCheckoutItem;
+        if (!item) {
+            closeCheckoutModal();
+            return;
+        }
+
+        if (checkoutRating <= 0) {
+            Alert.alert('Rating required', 'Please choose a star rating before checkout.');
+            return;
+        }
+
+        try {
+            await persistHotelRating(item, checkoutRating);
+        } catch {
+            Alert.alert('Rating', 'Unable to save your rating right now. Please try again.');
+            return;
+        }
+
+        try {
+            await persistCheckoutComplete(item?.bookingId, item);
+        } catch {
+            Alert.alert('Check out', 'Unable to update checkout status right now. Please try again.');
+            return;
+        }
+
+        setBookings((prev) => prev.map((booking) => {
+            if (String(booking?.bookingId || '') !== String(item?.bookingId || '')) return booking;
+            return {
+                ...booking,
+                statusType: 'complete',
+                status: 'Complete',
+            };
+        }));
+
+        await pushCustomerNotification({
+            title: 'Checked out successfully',
+            type: 'checkout',
+            message: `You checked out booking ${String(item?.bookingId || '').trim()} at ${String(item?.hotelName || item?.roomCode || 'Hotel')} - ${String(item?.roomName || 'Room')}.`,
+            meta: {
+                bookingId: String(item?.bookingId || '').trim(),
+                hotelName: String(item?.hotelName || item?.roomCode || '').trim(),
+                roomName: String(item?.roomName || '').trim(),
+            },
+        });
+        setUnreadNotificationCount(await getUnreadCustomerNotificationCount());
+
+        closeCheckoutModal();
+        setThankYouModalVisible(true);
+    };
+
+    const handlePrimaryPress = async (item) => {
+        if (item?.statusType === 'complete') {
+            const startDateIso = getIsoFromHistoryItem(item, 'start');
+            const endDateIso = getIsoFromHistoryItem(item, 'end');
+            const selectedServices = Array.isArray(item?.selectedServices) ? item.selectedServices : [];
+
+            navigation.push('CustomerBookingScreen', {
+                syncToken: `rebook-${Date.now()}`,
+                hotelName: item?.hotelName || item?.roomCode || 'Hotel',
+                roomName: item?.roomName || 'Room',
+                heroImage: toImageUri(item?.image),
+                startDateIso,
+                endDateIso,
+                checkIn: item?.checkInLabel || item?.checkIn || '',
+                checkOut: item?.checkOutLabel || item?.checkOut || '',
+                hotelAddress: item?.hotelAddress || '',
+                selectedService: item?.selectedService || selectedServices[0] || null,
+                selectedServices,
+                totalAmount: Number(item?.totalAmount || 0),
+                depositAmount: Number(item?.depositAmount || 0),
+                subtotalPrice: Number(item?.subtotalPrice || 0),
+                vatAmount: Number(item?.vatAmount || 0),
+            });
+            return;
+        }
+
+        let remainingAmount = Math.max(0, Number(item?.remainingAmount || 0));
+        try {
+            const outstandingAmount = await getOutstandingAmountByBookingId(item?.bookingId);
+            if (Number.isFinite(outstandingAmount)) {
+                remainingAmount = Math.max(0, Number(outstandingAmount || 0));
+            }
+        } catch {
+            // Keep fallback value from UI state when storage read fails.
+        }
+
+        if (remainingAmount > 0) {
+            openPaymentRequiredModal(item, remainingAmount);
+            return;
+        }
+
+        setPendingCheckoutItem(item);
+        setCheckoutRating(0);
+        setCheckoutModalVisible(true);
+    };
+
+    useFocusEffect(
+        React.useCallback(() => {
+            let mounted = true;
+
+            const loadHistoryBookings = async () => {
+                try {
+                    const resetFlag = await AsyncStorage.getItem(BOOKING_TEST_RESET_FLAG);
+                    if (!resetFlag) {
+                        await AsyncStorage.multiRemove([UPCOMING_BOOKINGS_KEY, HISTORY_BOOKINGS_KEY]);
+                        await AsyncStorage.setItem(BOOKING_TEST_RESET_FLAG, '1');
+                    }
+
+                    const [{user}, rawHistory, rawUpcoming] = await Promise.all([
+                        getSession(),
+                        AsyncStorage.getItem(HISTORY_BOOKINGS_KEY),
+                        AsyncStorage.getItem(UPCOMING_BOOKINGS_KEY),
+                    ]);
+
+                    const parsed = rawHistory ? JSON.parse(rawHistory) : [];
+                    const parsedUpcoming = rawUpcoming ? JSON.parse(rawUpcoming) : [];
+                    const allItems = Array.isArray(parsed)
+                        ? parsed
+                            .filter((item) => item && typeof item === 'object' && item.id)
+                            .filter((item) => !FORCE_REMOVED_BOOKING_IDS.has(normalizeBookingId(item?.bookingId || item?.id)))
+                        : [];
+                    const allUpcoming = Array.isArray(parsedUpcoming)
+                        ? parsedUpcoming
+                            .filter((item) => item && typeof item === 'object' && item.id)
+                            .filter((item) => !FORCE_REMOVED_BOOKING_IDS.has(normalizeBookingId(item?.bookingId || item?.id)))
+                        : [];
+
+                    await AsyncStorage.multiSet([
+                        [HISTORY_BOOKINGS_KEY, JSON.stringify(allItems)],
+                        [UPCOMING_BOOKINGS_KEY, JSON.stringify(allUpcoming)],
+                    ]);
+
+                    const userEmail = String(user?.email || '').trim().toLowerCase();
+                    const scopedItems = userEmail
+                        ? allItems.filter(
+                            (item) => String(item?.customerEmail || '').trim().toLowerCase() === userEmail
+                        )
+                        : allItems;
+
+                    const scopedUpcoming = userEmail
+                        ? allUpcoming.filter(
+                            (item) => String(item?.customerEmail || '').trim().toLowerCase() === userEmail
+                        )
+                        : allUpcoming;
+
+                    const combined = [...scopedItems, ...scopedUpcoming];
+                    const groupedByBooking = new Map();
+
+                    combined.forEach((item) => {
+                        const bookingId = String(item?.bookingId || item?.id || '').trim();
+                        if (!bookingId) return;
+                        if (!groupedByBooking.has(bookingId)) {
+                            groupedByBooking.set(bookingId, []);
+                        }
+                        groupedByBooking.get(bookingId).push(item);
+                    });
+
+                    const mergedBookings = Array.from(groupedByBooking.entries()).map(([bookingId, records], index) => {
+                        const ordered = [...records].sort((left, right) => {
+                            const leftTime = Date.parse(left?.paidAt || left?.createdAt || 0) || 0;
+                            const rightTime = Date.parse(right?.paidAt || right?.createdAt || 0) || 0;
+                            return rightTime - leftTime;
+                        });
+
+                        const pickFirst = (...fields) => {
+                            for (const item of ordered) {
+                                for (const field of fields) {
+                                    const value = item?.[field];
+                                    if (typeof value === 'string' && value.trim()) return value.trim();
+                                    if (value !== null && value !== undefined && typeof value !== 'string') return value;
+                                }
+                            }
+                            return '';
+                        };
+
+                        const pickNumber = (...fields) => {
+                            for (const item of ordered) {
+                                for (const field of fields) {
+                                    const value = item?.[field] ?? item?.invoiceDetails?.[field];
+                                    const asNumber = Number(value);
+                                    if (Number.isFinite(asNumber)) return asNumber;
+                                }
+                            }
+                            return 0;
+                        };
+
+                        const pickArray = (...fields) => {
+                            for (const item of ordered) {
+                                for (const field of fields) {
+                                    const value = item?.[field] ?? item?.invoiceDetails?.[field];
+                                    if (Array.isArray(value)) return value;
+                                }
+                            }
+                            return [];
+                        };
+
+                        const pickObject = (...fields) => {
+                            for (const item of ordered) {
+                                for (const field of fields) {
+                                    const value = item?.[field] ?? item?.invoiceDetails?.[field];
+                                    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+                                }
+                            }
+                            return null;
+                        };
+
+                        const roomCode = pickFirst('roomCode', 'hotelName') || 'Hotel';
+                        const hotelName = pickFirst('hotelName', 'roomCode') || roomCode;
+                        const roomName = pickFirst('roomName') || 'Room';
+                        const checkInRaw = pickFirst('checkInDateIso', 'checkInAt', 'checkIn');
+                        const checkOutRaw = pickFirst('checkOutDateIso', 'checkOutAt', 'checkOut');
+                        const checkInLabel = pickFirst('checkIn') || formatDateLabel(checkInRaw);
+                        const checkOutLabel = pickFirst('checkOut') || formatDateLabel(checkOutRaw);
+                        const stayDateLabel = pickFirst('stayDate') || `${formatDateLabel(checkInRaw)} - ${formatDateLabel(checkOutRaw)}`;
+                        const startDate = parseDateFromAny(checkInRaw);
+                        const endDate = parseDateFromAny(checkOutRaw);
+                        const forceComplete = ordered.some((record) => Boolean(record?.checkoutCompleted));
+                        const statusType = deriveStatusType(startDate, endDate, pickFirst('status'), forceComplete);
+                        const remainingAmount = deriveRemainingAmountFromRecords(ordered);
+
+                        return {
+                            id: `history-merged-${bookingId}-${index}`,
+                            bookingId,
+                            hotelName,
+                            roomCode,
+                            roomName,
+                            image: pickFirst('image') || DEFAULT_BOOKING_IMAGE,
+                            checkInLabel,
+                            checkOutLabel,
+                            checkInDateIso: pickFirst('checkInDateIso') || '',
+                            checkOutDateIso: pickFirst('checkOutDateIso') || '',
+                            stayDate: stayDateLabel,
+                            checkoutCompleted: forceComplete,
+                            statusType,
+                            status: statusType === 'complete' ? 'Complete' : 'Staying',
+                            remainingAmount,
+                            totalAmount: pickNumber('totalAmount'),
+                            depositAmount: pickNumber('depositAmount'),
+                            subtotalPrice: pickNumber('subtotalPrice'),
+                            vatAmount: pickNumber('vatAmount'),
+                            selectedServices: pickArray('selectedServices'),
+                            selectedService: pickObject('selectedService'),
+                            sortTime: Date.parse(pickFirst('paidAt', 'createdAt')) || 0,
+                        };
+                    });
+
+                    const orderedItems = [...mergedBookings].sort((left, right) => right.sortTime - left.sortTime);
+
+                    if (mounted) {
+                        setBookings(orderedItems);
+                        const unreadCount = await getUnreadCustomerNotificationCount();
+                        setUnreadNotificationCount(unreadCount);
+                    }
+                } catch {
+                    if (mounted) {
+                        setBookings([]);
+                        setUnreadNotificationCount(0);
+                    }
+                }
+            };
+
+            loadHistoryBookings();
+
+            return () => {
+                mounted = false;
+            };
+        }, [])
+    );
+
+    const filteredBookings = useMemo(() => {
+        const keyword = searchQuery.trim().toLowerCase();
+        if (!keyword) return bookings;
+
+        return bookings.filter((item) => {
+            const haystack = `${item?.roomName || ''} ${item?.roomCode || ''} ${item?.bookingId || ''} ${item?.stayDate || ''} ${item?.status || ''}`.toLowerCase();
+            return haystack.includes(keyword);
+        });
+    }, [bookings, searchQuery]);
 
     return (
         <SafeAreaView style={styles.page}>
@@ -77,16 +1047,22 @@ export default function CustomerBookingHistoryScreen({navigation}) {
                     <Text style={styles.currentValue}>Labuan Bajo, INA</Text>
                 </View>
                 <View style={styles.headerActions}>
-                    <View style={styles.bellWrap}>
+                    <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('CustomerNotificationsScreen')}>
                         <Ionicons name="notifications" size={19} color="#1f1f1f"/>
-                        <View style={styles.alertDot}/>
-                    </View>
-                    <Image source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}} style={styles.avatar}/>
+                        {unreadNotificationCount > 0 ? (
+                            <View style={styles.alertBadge}>
+                                <Text style={styles.alertBadgeText}>{`+${Math.min(unreadNotificationCount, 99)}`}</Text>
+                            </View>
+                        ) : null}
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => navigation.navigate('CustomerProfileScreen')}>
+                        <Image source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}} style={styles.avatar}/>
+                    </TouchableOpacity>
                 </View>
             </View>
 
             <View style={styles.searchWrap}>
-                <Image source={'../../../assets/images/hotels/icon.png'} style={styles.aiSearchIcon}/>
+                <Image source={require('../../../assets/images/hotels/Logo-AI.png')} style={styles.aiSearchIcon}/>
                 <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -118,30 +1094,231 @@ export default function CustomerBookingHistoryScreen({navigation}) {
                 })}
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={['#5b79df']}
+                        tintColor="#5b79df"
+                        progressViewOffset={Platform.OS === 'android' ? ANDROID_REFRESH_TOP_OFFSET : 0}
+                    />
+                }
+            >
                 {activeTab === 'History'
-                    ? bookings.map((item) => <HistoryBookingCard key={item.id} item={item}/>)
+                    ? filteredBookings.length
+                        ? filteredBookings.map((item) => (
+                            <HistoryBookingCard
+                                key={item.id}
+                                item={item}
+                                onCopyBookingId={handleCopyBookingId}
+                                onReviewPress={handleReviewPress}
+                                onPrimaryPress={handlePrimaryPress}
+                            />
+                        ))
+                        : <Text style={styles.emptyText}>{searchQuery.trim() ? 'No booking history matches your keyword.' : 'No booking history yet. Your paid bookings will appear here.'}</Text>
                     : <Text style={styles.emptyText}>No upcoming bookings.</Text>}
             </ScrollView>
 
-            <View style={styles.bottomNav}>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerHomeScreen')}>
-                    <Ionicons name="home-outline" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Home</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem}>
-                    <MaterialCommunityIcons name="map-marker-radius" size={bottomNavIconSize} color="#8294FF"/>
-                    <Text style={[styles.bottomLabel, styles.bottomLabelActive]}>Booking</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerLocketScreen')}>
-                    <Ionicons name="heart-outline" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Watchlist</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerProfileScreen')}>
-                    <Feather name="user" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Profile</Text>
-                </TouchableOpacity>
-            </View>
+            <Modal
+                visible={checkoutModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={closeCheckoutModal}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalTitle}>Confirm check out</Text>
+                        <Text style={styles.modalMessage}>
+                            Are you sure you want to check out {String(pendingCheckoutItem?.roomName || 'this room')}?
+                        </Text>
+
+                        <Text style={styles.ratingLabel}>Rate your stay</Text>
+                        <View style={styles.ratingRow}>
+                            {[1, 2, 3, 4, 5].map((star) => {
+                                const selected = star <= checkoutRating;
+                                return (
+                                    <TouchableOpacity
+                                        key={star}
+                                        onPress={() => setCheckoutRating(star)}
+                                        style={styles.ratingStarBtn}
+                                        activeOpacity={0.85}
+                                    >
+                                        <Ionicons
+                                            name={selected ? 'star' : 'star-outline'}
+                                            size={28}
+                                            color={selected ? '#f6b100' : '#b9beca'}
+                                        />
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.modalCancelBtn} onPress={closeCheckoutModal}>
+                                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalSubmitBtn, checkoutRating <= 0 ? styles.modalSubmitBtnDisabled : null]}
+                                onPress={handleSubmitCheckoutRating}
+                                disabled={checkoutRating <= 0}
+                            >
+                                <Text style={styles.modalSubmitBtnText}>Submit rating & Check out</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={paymentRequiredModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={closePaymentRequiredModal}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.paymentRequiredCard}>
+                        <Text style={styles.paymentRequiredTitle}>Payment required</Text>
+                        <Text style={styles.paymentRequiredMessage}>
+                            Customer has not fully paid. Remaining amount: {formatUsd(paymentRequiredAmount)} USD.
+                        </Text>
+
+                        <View style={styles.paymentRequiredActions}>
+                            <TouchableOpacity
+                                style={styles.paymentRequiredCancelBtn}
+                                onPress={closePaymentRequiredModal}
+                                activeOpacity={0.88}
+                            >
+                                <Text style={styles.paymentRequiredCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.paymentRequiredGoBtn}
+                                onPress={handleGoToPaymentFromModal}
+                                activeOpacity={0.88}
+                            >
+                                <Text style={styles.paymentRequiredGoText}>Go to payment</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={thankYouModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setThankYouModalVisible(false)}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.thankYouCard}>
+                        <View style={styles.thankYouIconWrap}>
+                            <Ionicons name="checkmark-circle" size={58} color="#26a269"/>
+                        </View>
+                        <Text style={styles.thankYouTitle}>Thank you!</Text>
+                        <Text style={styles.thankYouMessage}>
+                            Thank you for using our service. We hope to see you again soon!
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.thankYouBtn}
+                            onPress={() => setThankYouModalVisible(false)}
+                            activeOpacity={0.9}
+                        >
+                            <Text style={styles.thankYouBtnText}>Done</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={reviewModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={closeReviewModal}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.reviewModalCard}>
+                        <View style={styles.reviewHeaderRow}>
+                            <View style={styles.reviewHeaderTextWrap}>
+                                <Text style={styles.reviewTitle}>Review Forum</Text>
+                                <Text style={styles.reviewSubtitle} numberOfLines={2}>
+                                    {String(reviewTargetScope?.hotelName || 'Hotel')} • {String(reviewTargetScope?.roomName || 'Room')}
+                                </Text>
+                            </View>
+                            <TouchableOpacity style={styles.reviewCloseBtn} onPress={closeReviewModal}>
+                                <Ionicons name="close" size={18} color="#4f5568"/>
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.reviewScopeHint}>
+                            Only guests who booked this same hotel and room type can view and interact with these reviews.
+                        </Text>
+
+                        <View style={styles.reviewComposerWrap}>
+                            <TextInput
+                                value={reviewDraft}
+                                onChangeText={setReviewDraft}
+                                style={styles.reviewComposerInput}
+                                placeholder="Share your experience, for example: clean room, friendly staff, tasty food..."
+                                placeholderTextColor="#9398a8"
+                                multiline
+                                textAlignVertical="top"
+                            />
+                            <TouchableOpacity
+                                style={[styles.reviewSubmitBtn, reviewDraft.trim().length < 8 ? styles.reviewSubmitBtnDisabled : null]}
+                                onPress={handleSubmitReview}
+                                disabled={reviewDraft.trim().length < 8}
+                                activeOpacity={0.9}
+                            >
+                                <Text style={styles.reviewSubmitBtnText}>Post Review</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView
+                            style={styles.reviewList}
+                            contentContainerStyle={styles.reviewListContent}
+                            showsVerticalScrollIndicator={false}
+                        >
+                            {reviewLoading ? (
+                                <Text style={styles.reviewEmptyText}>Loading reviews...</Text>
+                            ) : reviewPosts.length ? reviewPosts.map((post) => {
+                                const likedBy = Array.isArray(post?.likedBy) ? post.likedBy : [];
+                                const isLiked = Boolean(post?.likedByMe) || likedBy.includes(String(reviewViewer?.id || '').trim().toLowerCase());
+                                const heartsCount = Number(post?.heartsCount ?? likedBy.length) || 0;
+
+                                return (
+                                    <View key={post.id} style={styles.reviewPostCard}>
+                                        <View style={styles.reviewPostTopRow}>
+                                            <Text style={styles.reviewPostAuthor}>{post?.authorName || 'Guest'}</Text>
+                                            <Text style={styles.reviewPostTime}>{formatRelativeTime(post?.createdAt, reviewNow)}</Text>
+                                        </View>
+                                        <Text style={styles.reviewPostContent}>{String(post?.content || '').trim()}</Text>
+                                        <TouchableOpacity
+                                            style={styles.reviewLikeBtn}
+                                            onPress={() => handleToggleReviewLike(post?.id)}
+                                            activeOpacity={0.85}
+                                        >
+                                            <Ionicons
+                                                name={isLiked ? 'heart' : 'heart-outline'}
+                                                size={18}
+                                                color={isLiked ? '#ef4d7a' : '#6e7486'}
+                                            />
+                                            <Text style={[styles.reviewLikeText, isLiked ? styles.reviewLikeTextActive : null]}>
+                                                {heartsCount} {heartsCount === 1 ? 'heart' : 'hearts'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                );
+                            }) : (
+                                <Text style={styles.reviewEmptyText}>No reviews yet for this hotel and room type. Be the first to share!</Text>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            <CustomerBottomTabBar navigation={navigation} activeTab="Booking"/>
         </SafeAreaView>
     );
 }
@@ -161,13 +1338,13 @@ const styles = StyleSheet.create({
     },
     currentLabel: {
         fontFamily: 'SF-Regular',
-        fontSize: 17,
+        fontSize: 12,
         color: '#383838',
     },
     currentValue: {
         fontFamily: 'SF-Bold',
-        fontSize: 37,
-        lineHeight: 41,
+        fontSize: 32,
+        lineHeight: 36,
         color: '#1b1b1b',
     },
     headerActions: {
@@ -182,16 +1359,24 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderRadius: 15,
     },
-    alertDot: {
-        width: 7,
-        height: 7,
-        borderRadius: 999,
+    alertBadge: {
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
         backgroundColor: '#ff3b30',
         position: 'absolute',
-        top: 4,
-        right: 2,
+        top: 1,
+        right: -2,
+        paddingHorizontal: 4,
+        alignItems: 'center',
+        justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#f2f2f2',
+    },
+    alertBadgeText: {
+        fontFamily: 'SF-Bold',
+        fontSize: 9,
+        color: '#fff',
     },
     avatar: {
         width: 30,
@@ -217,15 +1402,15 @@ const styles = StyleSheet.create({
         elevation: 5,
     },
     aiSearchIcon: {
-        width: 22,
-        height: 22,
+        width: 30,
+        height: 30,
         resizeMode: 'contain',
     },
     searchInput: {
         flex: 1,
         marginLeft: 8,
         fontFamily: 'SF-Regular',
-        fontSize: 20,
+        fontSize: 14,
         color: '#1f1f1f',
         paddingVertical: 0,
     },
@@ -242,7 +1427,7 @@ const styles = StyleSheet.create({
     },
     tabText: {
         fontFamily: 'SF-Regular',
-        fontSize: 20,
+        fontSize: 15,
         color: '#9a9a9a',
         marginBottom: 8,
     },
@@ -268,18 +1453,19 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         overflow: 'hidden',
         backgroundColor: '#fff',
-        marginBottom: 22,
+        marginBottom: 14,
         shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 3,
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: {width: 0, height: 4},
+        elevation: 4,
         borderWidth: 1,
-        borderColor: '#e0e0e0',
+        borderColor: '#e9e9ee',
     },
     imageSection: {
         position: 'relative',
         width: '100%',
-        height: 150,
+        height: 132,
         backgroundColor: '#f0f0f0',
     },
     bookingImage: {
@@ -288,11 +1474,35 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 16,
         borderTopRightRadius: 16,
     },
+    imageGradient: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    imageOverlayTextWrap: {
+        position: 'absolute',
+        left: 12,
+        right: 12,
+        bottom: 12,
+    },
+    imageOverlayTag: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 11,
+        color: '#d7e7ff',
+        marginBottom: 2,
+        letterSpacing: 0.4,
+    },
+    imageOverlayTitle: {
+        fontFamily: 'SF-Bold',
+        fontSize: 16,
+        color: '#ffffff',
+        textShadowColor: 'rgba(0, 0, 0, 0.45)',
+        textShadowOffset: {width: 0, height: 1},
+        textShadowRadius: 3,
+    },
     statusBadge: {
         position: 'absolute',
-        top: 12,
-        right: 12,
-        backgroundColor: '#c6e9d8',
+        top: 10,
+        right: 10,
+        backgroundColor: '#d2f2e3',
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 10,
@@ -300,107 +1510,414 @@ const styles = StyleSheet.create({
     },
     statusText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 17,
+        fontSize: 13,
         color: '#1e7e34',
-        fontWeight: '600',
+        letterSpacing: 0.2,
+    },
+    statusBadgeStaying: {
+        backgroundColor: '#ffe9c7',
+    },
+    statusTextStaying: {
+        color: '#c76a00',
     },
     infoSection: {
-        paddingHorizontal: 16,
-        paddingVertical: 22,
+        paddingHorizontal: 14,
+        paddingTop: 12,
+        paddingBottom: 14,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        borderBottomColor: '#efeff4',
     },
     roomCode: {
         fontFamily: 'SF-Regular',
-        fontSize: 17,
-        color: '#999999',
-        marginBottom: 12,
+        fontSize: 12,
+        color: '#94949c',
+        marginBottom: 8,
         textTransform: 'capitalize',
     },
     roomName: {
         fontFamily: 'SF-Bold',
-        fontSize: 23,
-        lineHeight: 27,
-        color: '#121212',
-        marginBottom: 16,
-    },
-    bookingIdText: {
-        fontFamily: 'SF-Bold',
         fontSize: 18,
-        color: '#666666',
+        lineHeight: 23,
+        color: '#121212',
         marginBottom: 10,
-        fontWeight: '700',
+    },
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    metaLabel: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 14,
+        color: '#5f5f66',
+    },
+    metaValue: {
+        fontFamily: 'SF-Bold',
+        fontSize: 14,
+        color: '#4a4a50',
     },
     stayDateText: {
         fontFamily: 'SF-Regular',
-        fontSize: 18,
-        color: '#666666',
+        fontSize: 13,
+        lineHeight: 18,
+        color: '#66666d',
     },
     actionRow: {
         flexDirection: 'row',
-        paddingHorizontal: 16,
-        paddingVertical: 16,
-        gap: 16,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        gap: 10,
+    },
+    actionBtnAnimatedWrap: {
+        flex: 1,
     },
     actionBtnSecondary: {
-        flex: 1,
-        borderWidth: 1.5,
-        borderColor: '#333',
-        borderRadius: 24,
-        paddingVertical: 12,
+        borderWidth: 1.4,
+        borderColor: '#3f3f45',
+        borderRadius: 18,
+        height: 48,
         alignItems: 'center',
         justifyContent: 'center',
     },
     actionBtnSecondaryText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 20,
-        color: '#333',
+        fontSize: 14,
+        color: '#3f3f45',
     },
     actionBtnPrimary: {
         flex: 1,
         backgroundColor: '#8294FF',
-        borderRadius: 24,
-        paddingVertical: 12,
+        borderRadius: 18,
+        height: 48,
         alignItems: 'center',
         justifyContent: 'center',
     },
     actionBtnPrimaryText: {
         fontFamily: 'SF-Semibold',
-        fontSize: 20,
+        fontSize: 14,
         color: '#fff',
     },
     emptyText: {
         fontFamily: 'SF-Regular',
         color: '#8f8f8f',
-        fontSize: 20,
+        fontSize: 15,
         textAlign: 'center',
         marginTop: 30,
     },
-    bottomNav: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
+    modalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 22,
+    },
+    modalCard: {
+        width: '100%',
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        paddingHorizontal: 18,
+        paddingTop: 18,
+        paddingBottom: 16,
+    },
+    modalTitle: {
+        fontFamily: 'SF-Bold',
+        fontSize: 23,
+        color: '#171717',
+        marginBottom: 8,
+    },
+    modalMessage: {
+        fontFamily: 'SF-Regular',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#50505a',
+        marginBottom: 14,
+    },
+    ratingLabel: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 16,
+        color: '#1f1f28',
+        marginBottom: 8,
+    },
+    ratingRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-around',
-        borderTopWidth: 1,
-        borderColor: '#d8d8d8',
-        backgroundColor: '#f2f2f2',
-        paddingTop: 8,
-        paddingBottom: 9,
+        marginBottom: 16,
     },
-    bottomItem: {
+    ratingStarBtn: {
+        marginRight: 6,
+    },
+    modalActions: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    modalCancelBtn: {
+        flex: 1,
+        height: 44,
+        borderRadius: 12,
+        borderWidth: 1.2,
+        borderColor: '#4a4a50',
         alignItems: 'center',
-        minWidth: 64,
+        justifyContent: 'center',
     },
-    bottomLabel: {
-        marginTop: 3,
+    modalCancelBtnText: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 14,
+        color: '#4a4a50',
+    },
+    modalSubmitBtn: {
+        flex: 1.4,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: '#8294FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 8,
+    },
+    modalSubmitBtnDisabled: {
+        opacity: 0.55,
+    },
+    modalSubmitBtnText: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 13,
+        color: '#fff',
+        textAlign: 'center',
+    },
+    thankYouCard: {
+        width: '100%',
+        backgroundColor: '#fff',
+        borderRadius: 18,
+        paddingHorizontal: 20,
+        paddingTop: 20,
+        paddingBottom: 18,
+        alignItems: 'center',
+    },
+    thankYouIconWrap: {
+        width: 78,
+        height: 78,
+        borderRadius: 999,
+        backgroundColor: '#ebf8f0',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 12,
+    },
+    thankYouTitle: {
+        fontFamily: 'SF-Bold',
+        fontSize: 26,
+        color: '#1a1a1f',
+        marginBottom: 8,
+    },
+    thankYouMessage: {
+        fontFamily: 'SF-Regular',
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#5c5c67',
+        textAlign: 'center',
+        marginBottom: 16,
+    },
+    thankYouBtn: {
+        width: '100%',
+        height: 46,
+        borderRadius: 12,
+        backgroundColor: '#8294FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    thankYouBtnText: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 15,
+        color: '#fff',
+    },
+    reviewModalCard: {
+        width: '100%',
+        maxHeight: '88%',
+        backgroundColor: '#fff',
+        borderRadius: 18,
+        overflow: 'hidden',
+    },
+    reviewHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 8,
+    },
+    reviewHeaderTextWrap: {
+        flex: 1,
+        paddingRight: 12,
+    },
+    reviewTitle: {
+        fontFamily: 'SF-Bold',
+        fontSize: 22,
+        color: '#191b22',
+    },
+    reviewSubtitle: {
+        marginTop: 4,
+        fontFamily: 'SF-Semibold',
+        fontSize: 13,
+        color: '#5f6678',
+    },
+    reviewCloseBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#f3f4f8',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    reviewScopeHint: {
+        marginTop: 2,
+        marginHorizontal: 16,
+        marginBottom: 10,
         fontFamily: 'SF-Regular',
         fontSize: 12,
-        color: '#8f8f8f',
+        lineHeight: 17,
+        color: '#747b8f',
     },
-    bottomLabelActive: {
-        color: '#8294FF',
+    reviewComposerWrap: {
+        marginHorizontal: 16,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e7e9f2',
+        borderRadius: 14,
+        padding: 10,
+        backgroundColor: '#fafbff',
+    },
+    reviewComposerInput: {
+        minHeight: 88,
+        fontFamily: 'SF-Regular',
+        fontSize: 14,
+        color: '#20242e',
+        marginBottom: 10,
+    },
+    reviewSubmitBtn: {
+        height: 40,
+        borderRadius: 11,
+        backgroundColor: '#8294FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    reviewSubmitBtnDisabled: {
+        opacity: 0.5,
+    },
+    reviewSubmitBtnText: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 14,
+        color: '#fff',
+    },
+    reviewList: {
+        flex: 1,
+    },
+    reviewListContent: {
+        paddingHorizontal: 16,
+        paddingTop: 4,
+        paddingBottom: 16,
+        gap: 10,
+    },
+    reviewPostCard: {
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#e8ebf3',
+        backgroundColor: '#fff',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+    },
+    reviewPostTopRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+    },
+    reviewPostAuthor: {
+        fontFamily: 'SF-Bold',
+        fontSize: 14,
+        color: '#212530',
+    },
+    reviewPostTime: {
+        fontFamily: 'SF-Regular',
+        fontSize: 12,
+        color: '#7a8193',
+    },
+    reviewPostContent: {
+        fontFamily: 'SF-Regular',
+        fontSize: 14,
+        lineHeight: 20,
+        color: '#333945',
+        marginBottom: 10,
+    },
+    reviewLikeBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        gap: 6,
+        paddingVertical: 2,
+    },
+    reviewLikeText: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 12,
+        color: '#6e7486',
+    },
+    reviewLikeTextActive: {
+        color: '#ef4d7a',
+    },
+    reviewEmptyText: {
+        marginTop: 22,
+        fontFamily: 'SF-Regular',
+        fontSize: 13,
+        lineHeight: 19,
+        color: '#7f8597',
+        textAlign: 'center',
+    },
+    paymentRequiredCard: {
+        width: '100%',
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        paddingHorizontal: 18,
+        paddingTop: 18,
+        paddingBottom: 14,
+    },
+    paymentRequiredTitle: {
+        fontFamily: 'SF-Bold',
+        fontSize: 23,
+        color: '#1a1a1f',
+        marginBottom: 8,
+    },
+    paymentRequiredMessage: {
+        fontFamily: 'SF-Regular',
+        fontSize: 16,
+        lineHeight: 22,
+        color: '#4e4e58',
+        marginBottom: 14,
+    },
+    paymentRequiredActions: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    paymentRequiredCancelBtn: {
+        flex: 1,
+        height: 44,
+        borderRadius: 12,
+        borderWidth: 1.2,
+        borderColor: '#4a4a50',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    paymentRequiredCancelText: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 14,
+        color: '#4a4a50',
+    },
+    paymentRequiredGoBtn: {
+        flex: 1.3,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: '#8294FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    paymentRequiredGoText: {
+        fontFamily: 'SF-Semibold',
+        fontSize: 14,
+        color: '#fff',
     },
 });

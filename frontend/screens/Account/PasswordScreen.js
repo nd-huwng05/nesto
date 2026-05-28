@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import { Alert } from 'react-native';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { QuestionLayout } from '../../layout/QuestionLayout';
@@ -8,28 +6,22 @@ import { AuthAlternateButton } from '../../components/auth/AuthAlternateButton';
 import { passwordSchema } from '../../validation/authSchemas';
 import { useAuth } from '../../hooks/account/useAuth';
 
-const navigateByRole = (navigation, user) => {
-    const role = user?.role;
-    if (role === 'BUSINESS_OWNER') {
-        navigation.reset({
-            index: 0,
-            routes: [{ name: 'HomeFlow' }],
-        });
-    } else {
-        navigation.reset({
-            index: 0,
-            routes: [{ name: 'HomeFlow' }],
-        });
-    }
-};
-
 export default function PasswordScreen({ navigation, route }) {
-    const { email } = route.params || {};
+    const { email, identifier } = route.params || {};
+    const loginIdentifier = String(identifier || email || '').trim();
+    const normalizedIdentifier = loginIdentifier.toLowerCase().replace(/\.@/g, '@');
     const { login, isLoading } = useAuth();
+
+    const customerIdentifiers = [
+        'customer@nesto.vn',
+        'custumer@nesto.vn',
+        '0901234567',
+    ];
 
     const {
         control,
         handleSubmit,
+        reset,
         formState: { errors, isValid },
     } = useForm({
         resolver: yupResolver(passwordSchema),
@@ -38,21 +30,34 @@ export default function PasswordScreen({ navigation, route }) {
     });
 
     const onSubmit = async ({ password }) => {
-        try {
-            const result = await login(email, password);
-            if (result.success && result.user) {
-                navigateByRole(navigation, result.user);
+        const result = await login(loginIdentifier, password);
+        if (result.success) {
+            const normalizedRole = String(result?.user?.role || '').trim().toUpperCase();
+            const token = String(result?.data?.access_token || '');
+            const isCustomerIdentifier = customerIdentifiers.includes(normalizedIdentifier) || normalizedIdentifier.includes('customer');
+            const isCustomerResult = normalizedRole === 'CUSTOMER' || token.startsWith('mock_customer_');
+            const forceFlow = (isCustomerIdentifier || isCustomerResult) ? 'CustomerFlow' : undefined;
+
+            let root = navigation;
+            while (root.getParent?.()) {
+                root = root.getParent();
             }
-        } catch (err) {
-            Alert.alert('Sign in failed', err?.message || 'Email or password is incorrect');
+
+            root.reset({
+                index: 0,
+                routes: [{ name: 'HomeFlow', params: forceFlow ? { forceFlow } : undefined }],
+            });
+            return;
         }
+
+        reset({ password: '' });
     };
 
     return (
         <QuestionLayout
             navigation={navigation}
             title="What's your password?"
-            subtitle={`Signing in as ${email}`}
+            subtitle={`Signing in as ${loginIdentifier}`}
             isValid={isValid}
             isLoading={isLoading}
             onContinue={handleSubmit(onSubmit)}
@@ -68,7 +73,7 @@ export default function PasswordScreen({ navigation, route }) {
 
             <AuthAlternateButton
                 label="Forgot password?"
-                onPress={() => navigation.navigate('ForgotPasswordScreen', { email })}
+                onPress={() => navigation.navigate('ForgotPasswordScreen', { email: loginIdentifier })}
             />
         </QuestionLayout>
     );

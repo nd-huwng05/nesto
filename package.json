@@ -1,0 +1,11 @@
+{
+  "name": "nesto-root",
+  "private": true,
+  "scripts": {
+    "start": "npx expo start frontend",
+    "expo:start": "npx expo start frontend",
+    "expo:start:clear": "npx expo start frontend --clear",
+    "expo:start:offline": "npx expo start frontend --offline",
+    "expo:doctor": "cd frontend && npx expo-doctor"
+  }
+}

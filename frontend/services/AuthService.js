@@ -33,10 +33,10 @@ const logBackendError = (context, error) => {
     }
 };
 
-export const login = async (email, password) => {
+export const login = async (identifier, password) => {
     const params = new URLSearchParams();
     params.append('grant_type', 'password');
-    params.append('username', email.trim().toLowerCase());
+    params.append('username', String(identifier || '').trim().toLowerCase());
     params.append('password', password);
     params.append('client_id', CLIENT_ID);
 
@@ -67,10 +67,10 @@ export const loginWithGoogle = async (idToken) => {
     params.append('client_id', CLIENT_ID);
 
     try {
-        const response = await authClient.post(endpoints.login, params.toString());
+        const response = await authClient.post(endpoints.token, params.toString());
         await saveTokens(response.data.access_token, response.data.refresh_token);
 
-        const userResponse = await apiClient.get(endpoints.user_me);
+        const userResponse = await apiClient.get(endpoints.me);
         await saveUser(userResponse.data);
 
         return {
@@ -202,11 +202,15 @@ export const getCurrentUser = async () => {
         if (userStr) {
             return JSON.parse(userStr);
         }
-        const response = await apiClient.get(endpoints.user_me);
+        const response = await apiClient.get(endpoints.me);
         await saveUser(response.data);
         return response.data;
     } catch (error) {
         logBackendError('GetCurrentUser', error);
         return null;
     }
+};
+
+export const authApi = async (identifier, password) => {
+    return login(identifier, password);
 };

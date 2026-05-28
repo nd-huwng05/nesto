@@ -7,6 +7,7 @@ export const AUTH_ROLES = {
     RECEPTIONIST: 'RECEPTIONIST',
     HOUSEKEEPING: 'HOUSEKEEPING',
     SERVICE: 'SERVICE',
+    CUSTOMER: 'CUSTOMER',
 };
 
 export const isSuperAdmin = (role) => role === AUTH_ROLES.SUPER_ADMIN;
@@ -37,3 +38,9 @@ export const isReceptionistRole = (role) =>
 export const isHousekeepingRole = (role) => role === AUTH_ROLES.HOUSEKEEPING;
 
 export const isServiceRole = (role) => role === AUTH_ROLES.SERVICE;
+
+export const resolveHomeFlowName = (role) => {
+    if (role === AUTH_ROLES.SUPER_ADMIN) return 'BusinessFlow';
+    if (role === AUTH_ROLES.CUSTOMER) return 'CustomerFlow';
+    return 'StaffFlow';
+};

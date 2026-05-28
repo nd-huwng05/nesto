@@ -10,6 +10,10 @@ import CustomerPaymentScreen from './CustomerPaymentScreen';
 import CustomerBookingUpcomingScreen from './CustomerBookingUpcomingScreen';
 import CustomerBookingHistoryScreen from './CustomerBookingHistoryScreen';
 import CustomerLocketScreen from './CustomerLocketScreen';
+import CustomerServiceScreen from './CustomerServiceScreen';
+import CustomerAddPostScreen from './CustomerAddPostScreen';
+import CustomerReviewScreen from './CustomerReviewScreen';
+import CustomerNotificationsScreen from './CustomerNotificationsScreen';
 
 const CustomerStack = createNativeStackNavigator();
 
@@ -25,8 +29,12 @@ export default function CustomerNavigator() {
                 <CustomerStack.Screen name="CustomerBookingUpcomingScreen" component={CustomerBookingUpcomingScreen} />
                 <CustomerStack.Screen name="CustomerBookingHistoryScreen" component={CustomerBookingHistoryScreen} />
                 <CustomerStack.Screen name="CustomerLocketScreen" component={CustomerLocketScreen} />
+                <CustomerStack.Screen name="CustomerAddPostScreen" component={CustomerAddPostScreen} />
                 <CustomerStack.Screen name="CustomerBookingScreen" component={CustomerBookingScreen} />
                 <CustomerStack.Screen name="CustomerPaymentScreen" component={CustomerPaymentScreen} />
+                <CustomerStack.Screen name="CustomerServiceScreen" component={CustomerServiceScreen} />
+                <CustomerStack.Screen name="CustomerReviewScreen" component={CustomerReviewScreen} />
+                <CustomerStack.Screen name="CustomerNotificationsScreen" component={CustomerNotificationsScreen} />
             </CustomerStack.Navigator>
         </View>
     );

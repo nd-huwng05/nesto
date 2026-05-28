@@ -2,7 +2,7 @@ import Apis, {endpoints} from '../configuration/Apis';
 import {staffPortalMockStore} from './staffPortalMockStore';
 import {connectBookingUpdates, connectServiceOrderUpdates, wsManager} from './WebSocketService';
 
-const useMock = () => Boolean(process.env.EXPO_PRIVATE_MOCK);
+const useMock = () => process.env.EXPO_PUBLIC_MOCK === 'true';
 
 const networkDelay = (minMs = 500, maxMs = 800) => {
     const ms = minMs + Math.floor(Math.random() * (maxMs - minMs + 1));

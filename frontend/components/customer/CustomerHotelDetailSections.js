@@ -1,9 +1,24 @@
-import {useEffect, useState, useRef} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, FlatList, PanResponder} from 'react-native';
 import {Ionicons, MaterialIcons} from '@expo/vector-icons';
 
 const DEFAULT_WATCHLIST_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80';
 const DEFAULT_REVIEWER_AVATAR = 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=500&q=80';
+
+const ROOM_TYPE_COLORS = {
+    standard: '#2f6fd6',
+    vip: '#c58a00',
+    superVip: '#a33dc7',
+    default: '#101010',
+};
+
+function getRoomTypeColor(roomName) {
+    const key = String(roomName || '').trim().toLowerCase();
+    if (key.includes('super vip')) return ROOM_TYPE_COLORS.superVip;
+    if (key.includes('vip')) return ROOM_TYPE_COLORS.vip;
+    if (key.includes('standard')) return ROOM_TYPE_COLORS.standard;
+    return ROOM_TYPE_COLORS.default;
+}
 
 export function formatMoney(amount, currency) {
     const safeAmount = Number.isFinite(amount) ? amount : 0;
@@ -49,7 +64,8 @@ export function GalleryStrip({gallery}) {
 }
 
 export function RatingRow({rating, reviews}) {
-    const safeRating = Number.isFinite(rating) ? rating : 0;
+    const safeRating = Number.isFinite(rating) ? rating : 5;
+    const safeReviews = Number.isFinite(reviews) ? reviews : 0;
     const displayRating = Math.max(0, Math.min(5, safeRating)).toFixed(1);
 
     const stars = Array.from({length: 5}, (_, index) => {
@@ -71,7 +87,7 @@ export function RatingRow({rating, reviews}) {
         <View className="flex-row items-center mt-4 flex-wrap">
             <View className="flex-row items-center mr-3">{stars}</View>
             <Text className="font-sf-bold text-[17px] text-black mr-1">{displayRating}</Text>
-            <Text className="font-sf text-[17px] text-[#c7c7c7]">-{reviews.toLocaleString('vi-VN')} Reviews</Text>
+            <Text className="font-sf text-[17px] text-[#c7c7c7]">-{safeReviews.toLocaleString('vi-VN')} Reviews</Text>
         </View>
     );
 }
@@ -79,6 +95,7 @@ export function RatingRow({rating, reviews}) {
 export function RoomCard({room, onViewDetail, onBookNow}) {
     const priceAmount = room?.price?.amount;
     const priceCurrency = room?.price?.currency ?? 'VND';
+    const roomNameColor = getRoomTypeColor(room?.name);
     const [roomImage, setRoomImage] = useState(room?.image ?? DEFAULT_WATCHLIST_IMAGE);
 
     useEffect(() => {
@@ -93,38 +110,46 @@ export function RoomCard({room, onViewDetail, onBookNow}) {
 
     return (
         <View className="rounded-[24px] bg-white p-5 mb-5 flex-row" style={styles.cardShadow}>
-            <View className="w-[42%]">
+            <View style={styles.roomMediaColumn}>
                 <Image source={{uri: roomImage}} className="w-full h-[150px] rounded-[16px]" resizeMode="cover" onError={handleRoomImageError}/>
-                <Text className="font-sf-bold text-[17px] leading-[22px] text-black mt-3 text-center" numberOfLines={2}>
-                    {room.name}
-                </Text>
             </View>
 
-            <View className="flex-1 ml-5 justify-between">
+            <View style={styles.roomInfoColumn}>
                 <View>
-                    <Text className="font-sf-semi text-[14px] text-[#11b825] font-bold text-right">{formatMoney(priceAmount, priceCurrency)}</Text>
+                    <View style={styles.roomHeaderRow}>
+                        <Text
+                            style={[styles.roomNameInline, {color: roomNameColor}]}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                        >
+                            {room.name}
+                        </Text>
+                        <Text style={styles.priceText}>{formatMoney(priceAmount, priceCurrency)}</Text>
+                    </View>
 
-                    <Text className="font-sf text-[12px] text-[#7e7e7e] leading-5 mt-3" numberOfLines={2}>
+                    <Text style={styles.roomDescription} numberOfLines={2}>
                         {room.description}
                     </Text>
 
-                    <View className="mt-4">
-                        <Text className="font-sf text-[12px] text-[#7e7e7e]">Type: <Text className="font-sf-semi text-[#333]">{room.type}</Text></Text>
-                        <Text className="font-sf text-[12px] text-[#7e7e7e] mt-2">Feature: <Text className="font-sf-semi text-[#333]">{room.view}</Text></Text>
+                    <View style={styles.metaWrap}>
+                        <Text style={styles.metaLine}>Type: <Text style={styles.metaValue}>{room.type}</Text></Text>
+                        <Text style={styles.metaLine}>Feature: <Text style={styles.metaValue}>{room.view}</Text></Text>
                     </View>
                 </View>
 
-                <View className="flex-row justify-end items-center gap-2 mt-4">
+                <View style={styles.actionRow}>
                     <TouchableOpacity 
                         onPress={onViewDetail} 
                         activeOpacity={0.7}
                         className="px-3 py-2 rounded-full border border-[#ddd] bg-[#f9f9f9]"
+                        style={styles.actionButton}
                     >
                         <Text className="font-sf-semi text-[13px] text-[#333]">View Detail</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
                         activeOpacity={0.7}
                         className="px-4 py-2 rounded-full bg-primary"
+                        style={styles.actionButton}
                         onPress={() => {
                             if (typeof onBookNow === 'function') {
                                 onBookNow(room);
@@ -183,97 +208,95 @@ export function WatchlistCard({watchlist, reviews = []}) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [failedImages, setFailedImages] = useState({});
     const [failedAvatars, setFailedAvatars] = useState({});
-    const panResponder = useRef(null);
-    const startX = useRef(0);
     const currentIndexRef = useRef(0);
 
-    if (!reviewList.length) {
-        return null;
-    }
+    useEffect(() => {
+        if (!reviewList.length) {
+            setCurrentIndex(0);
+            currentIndexRef.current = 0;
+            return;
+        }
 
-    // Update ref khi currentIndex thay đổi
+        if (currentIndex > reviewList.length - 1) {
+            const nextIndex = reviewList.length - 1;
+            setCurrentIndex(nextIndex);
+            currentIndexRef.current = nextIndex;
+        }
+    }, [currentIndex, reviewList.length]);
+
     useEffect(() => {
         currentIndexRef.current = currentIndex;
     }, [currentIndex]);
 
-    const currentReview = reviewList[currentIndex];
-
-    useEffect(() => {
-        panResponder.current = PanResponder.create({
+    const panResponder = useMemo(
+        () => PanResponder.create({
             onStartShouldSetPanResponder: () => false,
             onMoveShouldSetPanResponder: (_, gestureState) => {
                 const absDx = Math.abs(gestureState.dx);
                 const absDy = Math.abs(gestureState.dy);
                 return absDx > 12 && absDx > absDy;
             },
-            onPanResponderGrant: () => {
-                startX.current = 0;
+            onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+                const absDx = Math.abs(gestureState.dx);
+                const absDy = Math.abs(gestureState.dy);
+                return absDx > 12 && absDx > absDy;
             },
             onPanResponderRelease: (_, gestureState) => {
                 const distance = gestureState.dx;
                 const threshold = 50;
 
-                if (distance > threshold) {
-                    // Kéo phải -> prev
-                    if (currentIndexRef.current > 0) {
-                        setCurrentIndex(currentIndexRef.current - 1);
-                    }
-                } else if (distance < -threshold) {
-                    // Kéo trái -> next
-                    if (currentIndexRef.current < reviewList.length - 1) {
-                        setCurrentIndex(currentIndexRef.current + 1);
-                    }
+                if (distance > threshold && currentIndexRef.current > 0) {
+                    setCurrentIndex(currentIndexRef.current - 1);
+                }
+
+                if (distance < -threshold && currentIndexRef.current < reviewList.length - 1) {
+                    setCurrentIndex(currentIndexRef.current + 1);
                 }
             },
             onPanResponderTerminationRequest: () => false,
-        });
-    }, [reviewList.length]);
+        }),
+        [reviewList.length]
+    );
 
-    const handleImageError = (reviewId) => {
-        setFailedImages(prev => ({...prev, [reviewId]: true}));
+    if (!reviewList.length) {
+        return null;
+    }
+
+    const activeReview = reviewList[currentIndex] || reviewList[0];
+    const reviewKey = String(activeReview?.id ?? currentIndex);
+    const activeImage = failedImages[reviewKey] ? DEFAULT_WATCHLIST_IMAGE : (activeReview?.image ?? DEFAULT_WATCHLIST_IMAGE);
+    const activeAvatar = failedAvatars[reviewKey] ? DEFAULT_REVIEWER_AVATAR : (activeReview?.avatar ?? DEFAULT_REVIEWER_AVATAR);
+
+    const handleImageError = () => {
+        setFailedImages((prev) => ({...prev, [reviewKey]: true}));
     };
 
-    const handleAvatarError = (reviewId) => {
-        setFailedAvatars(prev => ({...prev, [reviewId]: true}));
+    const handleAvatarError = () => {
+        setFailedAvatars((prev) => ({...prev, [reviewKey]: true}));
     };
-
-    const imageUri = failedImages[currentReview.id] ? DEFAULT_WATCHLIST_IMAGE : (currentReview?.image ?? DEFAULT_WATCHLIST_IMAGE);
-    const avatarUri = failedAvatars[currentReview.id] ? DEFAULT_REVIEWER_AVATAR : (currentReview?.avatar ?? DEFAULT_REVIEWER_AVATAR);
 
     return (
         <View className="rounded-[26px] bg-black p-4 mt-2 mb-8">
-            <Text className="font-wendy text-[23px] text-[#e4ef27]">Watchlish</Text>
-            <Text className="text-white text-[14px] mt-1">Review's customer were used room</Text>
+            <Text className="font-wendy text-[23px] text-[#e4ef27]">{activeReview?.title || watchlist?.title}</Text>
+            <Text className="text-white text-[14px] mt-1">{activeReview?.subtitle || watchlist?.subtitle}</Text>
 
-            <View className="mt-4 rounded-[24px] overflow-hidden" {...panResponder.current?.panHandlers}>
-                <Image 
-                    source={{uri: imageUri}} 
-                    className="w-full h-[360px]" 
-                    resizeMode="cover" 
-                    onError={() => handleImageError(currentReview.id)}
-                />
+            <View className="mt-4 rounded-[24px] overflow-hidden" {...panResponder.panHandlers}>
+                <Image source={{uri: activeImage}} className="w-full h-[360px]" resizeMode="cover" onError={handleImageError}/>
                 <View style={styles.reviewBubble}>
-                    <Text className="text-white text-[14px]">{currentReview.review}</Text>
+                    <Text className="text-white text-[14px]">{activeReview?.review}</Text>
                 </View>
             </View>
 
             <View className="flex-row items-center justify-center mt-4">
                 <View className="w-[24px] h-[24px] rounded-full overflow-hidden border border-[#1f8fff] mr-3">
-                    <Image 
-                        source={{uri: avatarUri}} 
-                        className="w-full h-full" 
-                        resizeMode="cover" 
-                        onError={() => handleAvatarError(currentReview.id)}
-                    />
+                    <Image source={{uri: activeAvatar}} className="w-full h-full" resizeMode="cover" onError={handleAvatarError}/>
                 </View>
-                <Text className="text-white text-[15px]">{currentReview.reviewer}</Text>
+                <Text className="text-white text-[15px]">{activeReview?.reviewer}</Text>
             </View>
 
-            {reviewList.length > 1 && (
-                <Text className="text-white text-[12px] text-center mt-3">
-                    {currentIndex + 1} / {reviewList.length}
-                </Text>
-            )}
+            {reviewList.length > 1 ? (
+                <Text className="text-white text-[12px] text-center mt-2">{currentIndex + 1} / {reviewList.length}</Text>
+            ) : null}
         </View>
     );
 }
@@ -288,6 +311,69 @@ const styles = StyleSheet.create({
     },
     galleryRow: {
         paddingRight: 8,
+    },
+    roomMediaColumn: {
+        width: '42%',
+    },
+    roomInfoColumn: {
+        flex: 1,
+        marginLeft: 14,
+        minWidth: 0,
+        justifyContent: 'space-between',
+    },
+    roomHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 8,
+        minHeight: 44,
+    },
+    roomNameInline: {
+        flex: 1,
+        fontSize: 17,
+        lineHeight: 22,
+        fontFamily: 'SF-Bold',
+        fontWeight: '700',
+    },
+    priceText: {
+        fontSize: 14,
+        color: '#11b825',
+        fontFamily: 'SF-Bold',
+        fontWeight: '700',
+        marginTop: 1,
+    },
+    roomDescription: {
+        fontSize: 12,
+        lineHeight: 20,
+        color: '#7e7e7e',
+        fontFamily: 'SF-Regular',
+        marginTop: 6,
+    },
+    metaWrap: {
+        marginTop: 10,
+        gap: 4,
+    },
+    metaLine: {
+        fontSize: 12,
+        lineHeight: 18,
+        color: '#7e7e7e',
+        fontFamily: 'SF-Regular',
+    },
+    metaValue: {
+        color: '#333',
+        fontFamily: 'SF-Bold',
+        fontWeight: '600',
+    },
+    actionRow: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        marginTop: 12,
+        flexWrap: 'nowrap',
+    },
+    actionButton: {
+        marginLeft: 10,
+        minHeight: 38,
     },
     reviewBubble: {
         position: 'absolute',

@@ -7,9 +7,6 @@ export const useCustomerProfile = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
-    /**
-     * Load profile from session storage
-     */
     const loadProfile = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -33,11 +30,6 @@ export const useCustomerProfile = () => {
         }
     }, []);
 
-    /**
-     * Update customer profile
-     * @param {Object} updates - Profile updates
-     * @returns {Object} - {success, error}
-     */
     const updateProfile = useCallback(async (updates) => {
         if (!profile) {
             return { success: false, error: 'No profile loaded' };
@@ -46,7 +38,7 @@ export const useCustomerProfile = () => {
         setIsSaving(true);
         try {
             const updatedProfile = { ...profile, ...updates };
-            const { user: sessionUser } = await getSession();
+            const { token, user: sessionUser } = await getSession();
 
             if (sessionUser) {
                 const updatedUser = {
@@ -54,7 +46,7 @@ export const useCustomerProfile = () => {
                     ...updates,
                     updated_at: new Date().toISOString(),
                 };
-                await saveSession(sessionUser.id, updatedUser);
+                await saveSession(token, updatedUser);
                 setProfile(updatedProfile);
                 return { success: true };
             }
@@ -68,11 +60,6 @@ export const useCustomerProfile = () => {
         }
     }, [profile]);
 
-    /**
-     * Update customer avatar
-     * @param {string} avatarUrl - Avatar image URL or URI
-     * @returns {Object} - {success, error}
-     */
     const updateAvatar = useCallback(
         async (avatarUrl) => {
             if (!avatarUrl) {
@@ -83,10 +70,6 @@ export const useCustomerProfile = () => {
         [updateProfile]
     );
 
-    /**
-     * Get customer statistics
-     * @returns {Object} - Statistics object
-     */
     const getStats = useCallback(() => {
         return {
             totalBookings: 12,
@@ -96,19 +79,15 @@ export const useCustomerProfile = () => {
         };
     }, [profile]);
 
-    /**
-     * Verify customer email
-     * @returns {Object} - {success, error}
-     */
     const verifyEmail = useCallback(async () => {
         try {
             setIsSaving(true);
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
-            const { user } = await getSession();
+            const { token, user } = await getSession();
             if (user) {
                 const updatedUser = { ...user, emailVerified: true };
-                await saveSession(user.id, updatedUser);
+                await saveSession(token, updatedUser);
                 return { success: true };
             }
 
@@ -120,19 +99,15 @@ export const useCustomerProfile = () => {
         }
     }, []);
 
-    /**
-     * Verify customer phone
-     * @returns {Object} - {success, error}
-     */
     const verifyPhone = useCallback(async () => {
         try {
             setIsSaving(true);
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
-            const { user } = await getSession();
+            const { token, user } = await getSession();
             if (user) {
                 const updatedUser = { ...user, phoneVerified: true };
-                await saveSession(user.id, updatedUser);
+                await saveSession(token, updatedUser);
                 return { success: true };
             }
 
@@ -143,8 +118,7 @@ export const useCustomerProfile = () => {
             setIsSaving(false);
         }
     }, []);
-
-    // Load profile on mount
+    
     useEffect(() => {
         loadProfile();
     }, [loadProfile]);

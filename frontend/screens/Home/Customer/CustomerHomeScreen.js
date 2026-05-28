@@ -1,12 +1,21 @@
-import {Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions} from 'react-native';
+import {Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useMemo, useState} from 'react';
-import {AntDesign, Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
+import {useCallback, useMemo, useState} from 'react';
+import {AntDesign, Ionicons} from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useFocusEffect} from '@react-navigation/native';
 import {familyHotels, businessHotels} from '../../../configuration/hotelsData';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
+import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
+import {getUnreadCustomerNotificationCount} from '../../../services/NotificationService';
 
 const tabs = ['ALL', 'Featured', 'Suite', 'View', 'Family', 'Business'];
 const DEFAULT_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
+const WATCHLIST_CUSTOM_POSTS_KEY = 'customer_watchlist_custom_posts';
+const HOTEL_RATINGS_KEY = 'customer_hotel_ratings';
+const DEFAULT_RATING_VALUE = 5;
+
+const normalizeHotelName = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 const toImageUri = (image) => {
     if (typeof image === 'number') {
@@ -20,7 +29,9 @@ const toImageUri = (image) => {
 
 function HotelCard({item, onPress, cardWidth}) {
     const imageUri = toImageUri(item?.image);
-    const displayRating = Number.parseFloat(item?.rating || '0').toFixed(1);
+    const safeRating = Number.isFinite(item?.syncedRating) ? item.syncedRating : DEFAULT_RATING_VALUE;
+    const reviewCount = Number.isFinite(item?.reviewCount) ? item.reviewCount : 0;
+    const displayRating = safeRating.toFixed(1);
 
     return (
         <TouchableOpacity style={[styles.hotelCard, {width: cardWidth}]} activeOpacity={0.92} onPress={onPress}>
@@ -34,7 +45,7 @@ function HotelCard({item, onPress, cardWidth}) {
                     <Text style={styles.hotelCity} numberOfLines={1}>{item.city}</Text>
                     <View style={styles.ratingRow}>
                         <AntDesign name="star" size={12} color="#f5c51a"/>
-                        <Text style={styles.hotelRating}>{displayRating}</Text>
+                        <Text style={styles.hotelRating}>{displayRating} ({reviewCount})</Text>
                     </View>
                 </View>
             </View>
@@ -85,8 +96,8 @@ function Section({title, data, cardWidth, navigation}) {
                                         location: item.address || item.city,
                                         hotelDescription: item.description || '',
                                         heroImage: imageUri,
-                                        rating: Number.parseFloat(item?.rating || '0'),
-                                        reviews: Number.parseInt(item?.reviews || '4231', 10),
+                                        rating: Number.isFinite(item?.syncedRating) ? item.syncedRating : DEFAULT_RATING_VALUE,
+                                        reviews: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
                                     })
                                 }
                             />
@@ -125,15 +136,80 @@ function filterHotelsByTab(tab, catalog) {
     });
 }
 
+function filterHotelsByKeyword(items, keyword) {
+    if (!keyword) return items;
+
+    return items.filter((item) => {
+        const haystack = `${item?.title || ''} ${item?.city || ''} ${item?.category || ''}`.toLowerCase();
+        return haystack.includes(keyword);
+    });
+}
+
 export function HomeScreen({navigation}) {
     const {width} = useWindowDimensions();
     const horizontalPadding = 16;
     const gap = 12;
     const contentWidth = Math.max(width - horizontalPadding * 2, 240);
     const cardWidth = (contentWidth - gap) / 2;
-    const bottomNavIconSize = 22;
     const [activeTab, setActiveTab] = useState('ALL');
     const [searchText, setSearchText] = useState('');
+    const [ratingStatsByHotel, setRatingStatsByHotel] = useState({});
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const keyword = searchText.trim().toLowerCase();
+
+    const loadRatingStats = useCallback(async () => {
+        try {
+            const [rawCustomPosts, rawHotelRatings] = await AsyncStorage.multiGet([
+                WATCHLIST_CUSTOM_POSTS_KEY,
+                HOTEL_RATINGS_KEY,
+            ]);
+            const parsedCustomPosts = rawCustomPosts?.[1] ? JSON.parse(rawCustomPosts[1]) : [];
+            const parsedHotelRatings = rawHotelRatings?.[1] ? JSON.parse(rawHotelRatings[1]) : [];
+            const safeCustomPosts = Array.isArray(parsedCustomPosts)
+                ? parsedCustomPosts.filter((item) => item && typeof item === 'object')
+                : [];
+            const safeHotelRatings = Array.isArray(parsedHotelRatings)
+                ? parsedHotelRatings.filter((item) => item && typeof item === 'object')
+                : [];
+
+            const allRatingSources = [...safeCustomPosts, ...safeHotelRatings];
+
+            const summary = {};
+            allRatingSources.forEach((item) => {
+                const hotelKey = normalizeHotelName(item?.hotelName);
+                const ratingValue = Number(item?.rating);
+                if (!hotelKey || !Number.isFinite(ratingValue)) return;
+
+                if (!summary[hotelKey]) {
+                    summary[hotelKey] = {sum: 0, count: 0};
+                }
+                summary[hotelKey].sum += Math.max(1, Math.min(5, ratingValue));
+                summary[hotelKey].count += 1;
+            });
+
+            setRatingStatsByHotel(summary);
+        } catch {
+            setRatingStatsByHotel({});
+        }
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            const runLoad = async () => {
+                await loadRatingStats();
+                setUnreadNotificationCount(await getUnreadCustomerNotificationCount());
+            };
+
+            runLoad();
+        }, [loadRatingStats])
+    );
+
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        await loadRatingStats();
+        setIsRefreshing(false);
+    }, [loadRatingStats]);
 
     const catalog = useMemo(
         () => [
@@ -143,48 +219,87 @@ export function HomeScreen({navigation}) {
         []
     );
 
-    const filteredHotels = useMemo(() => {
-        const byTab = filterHotelsByTab(activeTab, catalog);
+    const enrichedCatalog = useMemo(() => {
+        const findStats = (title) => {
+            const normalizedTitle = normalizeHotelName(title);
+            if (!normalizedTitle) return null;
+            if (ratingStatsByHotel[normalizedTitle]) return ratingStatsByHotel[normalizedTitle];
 
-        const keyword = searchText.trim().toLowerCase();
-        if (!keyword) return byTab;
+            const matchedKey = Object.keys(ratingStatsByHotel).find(
+                (key) => key.includes(normalizedTitle) || normalizedTitle.includes(key)
+            );
+            return matchedKey ? ratingStatsByHotel[matchedKey] : null;
+        };
 
-        return byTab.filter((item) => {
-            const haystack = `${item.title} ${item.city} ${item.category}`.toLowerCase();
-            return haystack.includes(keyword);
+        return catalog.map((item) => {
+            const stats = findStats(item?.title);
+            const reviewCount = stats?.count || 0;
+            const syncedRating = reviewCount > 0
+                ? Number((stats.sum / reviewCount).toFixed(1))
+                : DEFAULT_RATING_VALUE;
+
+            return {
+                ...item,
+                syncedRating,
+                reviewCount,
+            };
         });
-    }, [activeTab, catalog, searchText]);
+    }, [catalog, ratingStatsByHotel]);
+
+    const filteredHotels = useMemo(() => {
+        const byTab = filterHotelsByTab(activeTab, enrichedCatalog);
+        return filterHotelsByKeyword(byTab, keyword);
+    }, [activeTab, enrichedCatalog, keyword]);
 
     const allTabOrder = ['Featured', 'Suite', 'View', 'Family', 'Business'];
     const allTabSections = useMemo(() => {
-        return allTabOrder.map((tab) => ({
+        const sections = allTabOrder.map((tab) => ({
             title: tab,
-            data: filterHotelsByTab(tab, catalog),
+            data: filterHotelsByKeyword(filterHotelsByTab(tab, enrichedCatalog), keyword),
         }));
-    }, [catalog]);
+
+        return keyword ? sections.filter((section) => section.data.length > 0) : sections;
+    }, [enrichedCatalog, keyword]);
 
     return (
         <SafeAreaView style={styles.page}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={['#5b79df']}
+                        tintColor="#5b79df"
+                    />
+                }
+            >
                 <View style={styles.headerRow}>
                     <View style={styles.locationWrap}>
                         <Text style={styles.locationLabel}>Current Location</Text>
                         <Text style={styles.locationValue} numberOfLines={1}>Labuan Bajo, INA</Text>
                     </View>
                     <View style={styles.headerActions}>
-                        <View style={styles.bellWrap}>
+                            <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('CustomerNotificationsScreen')}>
                             <Ionicons name="notifications" size={20} color="#1f1f1f"/>
-                            <View style={styles.alertDot}/>
-                        </View>
-                        <Image
-                            source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}}
-                            style={styles.avatar}
-                        />
+                                {unreadNotificationCount > 0 ? (
+                                    <View style={styles.alertBadge}>
+                                        <Text style={styles.alertBadgeText}>{`+${Math.min(unreadNotificationCount, 99)}`}</Text>
+                                    </View>
+                                ) : null}
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => navigation.navigate('CustomerProfileScreen')}>
+                                <Image
+                                    source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}}
+                                    style={styles.avatar}
+                                />
+                            </TouchableOpacity>
                     </View>
                 </View>
 
                 <View style={styles.searchBox}>
-                    <Image source={'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg'} style={styles.aiSearchIcon}/>
+                    <Image source={require('../../../assets/images/hotels/Logo-AI.png')} style={styles.aiSearchIcon}/>
                     <TextInput
                         value={searchText}
                         onChangeText={setSearchText}
@@ -197,38 +312,25 @@ export function HomeScreen({navigation}) {
                 <CategoryTabs activeTab={activeTab} onTabPress={setActiveTab} />
 
                 {activeTab === 'ALL' ? (
-                    allTabSections.map((section) => (
-                        <Section
-                            key={section.title}
-                            title={section.title}
-                            data={section.data}
-                            cardWidth={cardWidth}
-                            navigation={navigation}
-                        />
-                    ))
+                    allTabSections.length ? (
+                        allTabSections.map((section) => (
+                            <Section
+                                key={section.title}
+                                title={section.title}
+                                data={section.data}
+                                cardWidth={cardWidth}
+                                navigation={navigation}
+                            />
+                        ))
+                    ) : (
+                        <Text style={styles.emptyText}>No hotel matches your keyword.</Text>
+                    )
                 ) : (
                     <Section title={activeTab} data={filteredHotels} cardWidth={cardWidth} navigation={navigation}/>
                 )}
             </ScrollView>
 
-            <View style={styles.bottomNav}>
-                <TouchableOpacity style={styles.bottomItem}>
-                    <Ionicons name="home" size={bottomNavIconSize} color="#8294FF"/>
-                    <Text style={[styles.bottomLabel, styles.bottomLabelActive]}>Home</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerBookingUpcomingScreen')}>
-                    <MaterialCommunityIcons name="map-marker-radius-outline" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Booking</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerLocketScreen')}>
-                    <Ionicons name="heart-outline" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Watchlist</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerProfileScreen')}>
-                    <Feather name="user" size={bottomNavIconSize} color="#8f8f8f"/>
-                    <Text style={styles.bottomLabel}>Profile</Text>
-                </TouchableOpacity>
-            </View>
+            <CustomerBottomTabBar navigation={navigation} activeTab="Home"/>
         </SafeAreaView>
     );
 }
@@ -275,16 +377,24 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    alertDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 999,
+    alertBadge: {
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
         backgroundColor: '#ff3b30',
         position: 'absolute',
-        top: 4,
-        right: 4,
+        top: 1,
+        right: -2,
+        paddingHorizontal: 4,
+        alignItems: 'center',
+        justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#efefef',
+    },
+    alertBadgeText: {
+        fontFamily: 'SF-Bold',
+        fontSize: 9,
+        color: '#fff',
     },
     avatar: {
         width: 40,
@@ -305,8 +415,8 @@ const styles = StyleSheet.create({
         backgroundColor: '#efefef',
     },
     aiSearchIcon: {
-        width: 22,
-        height: 22,
+        width: 30,
+        height: 30,
         resizeMode: 'contain',
     },
     searchInput: {
@@ -429,33 +539,5 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#7e7e7e',
         paddingVertical: 8,
-    },
-    bottomNav: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: 76,
-        borderTopWidth: 1,
-        borderTopColor: '#d6d6d6',
-        backgroundColor: '#f6f6f6',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-around',
-        paddingBottom: 6,
-    },
-    bottomItem: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        flex: 1,
-    },
-    bottomLabel: {
-        marginTop: 4,
-        fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#8f8f8f',
-    },
-    bottomLabelActive: {
-        color: '#8294FF',
     },
 });

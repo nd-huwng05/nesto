@@ -1,9 +1,10 @@
 import {useEffect, useMemo, useState} from 'react';
-import {Alert, Image, StyleSheet, Switch, Text, TouchableOpacity, View} from 'react-native';
+import {Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import {getSession, clearSession} from '../../../utils/authStorage';
+import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
 
 function SectionRow({icon, label, value, valueColor = '#8294FF', danger = false, showSeparator = false, onPress}) {
     return (
@@ -26,6 +27,7 @@ export function CustomerProfileScreen({navigation}) {
         role: 'customer',
         phone: 'N/A',
     });
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const handleLogout = () => {
         Alert.alert(
@@ -107,89 +109,92 @@ export function CustomerProfileScreen({navigation}) {
         return text.charAt(0).toUpperCase() + text.slice(1);
     };
 
+    const handleRefresh = () => {
+        setIsRefreshing(true);
+        setTimeout(() => {
+            setIsRefreshing(false);
+        }, 600);
+    };
+
     return (
         <SafeAreaView style={styles.page}>
-            <View style={styles.headerDecorWrap}>
-                <View style={styles.decorCircleOne} />
-                <View style={styles.decorCircleTwo} />
-                <View style={styles.profileCard}>
-                    <Image source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}} style={styles.profileAvatar} />
-                    <View style={styles.profileInfoWrap}>
-                        <Text style={styles.profileName}>{displayName}</Text>
-                        <Text style={styles.profileMeta}>Username: {account.username}</Text>
-                        <Text style={styles.profileMeta}>Email: {account.email}</Text>
-                        <Text style={styles.profileMeta}>Role: {capitalizeFirst(account.role)}</Text>
-                        <Text style={styles.profileMeta}>Phone number: {account.phone}</Text>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={['#5b79df']}
+                        tintColor="#5b79df"
+                    />
+                }
+            >
+                <View style={styles.headerDecorWrap}>
+                    <View style={styles.decorCircleOne} />
+                    <View style={styles.decorCircleTwo} />
+                    <View style={styles.profileCard}>
+                        <Image source={{uri: STAFF_MEDIA.USER_PLACEHOLDER}} style={styles.profileAvatar} />
+                        <View style={styles.profileInfoWrap}>
+                            <Text style={styles.profileName}>{displayName}</Text>
+                            <Text style={styles.profileMeta}>Username: {account.username}</Text>
+                            <Text style={styles.profileMeta}>Email: {account.email}</Text>
+                            <Text style={styles.profileMeta}>Role: {capitalizeFirst(account.role)}</Text>
+                            <Text style={styles.profileMeta}>Phone number: {account.phone}</Text>
+                        </View>
                     </View>
                 </View>
-            </View>
 
-            <View style={styles.sectionCard}>
-                <Text style={styles.sectionTitle}>General</Text>
-                <SectionRow
-                    icon={<Feather name="user" size={17} color="#2f2f2f" />}
-                    label="Update profile"
-                    showSeparator={false}
-                />
-                <SectionRow
-                    icon={<Ionicons name="lock-closed-outline" size={17} color="#2f2f2f" />}
-                    label="Forgot password"
-                    showSeparator
-                />
-                <SectionRow
-                    icon={<Feather name="phone" size={17} color="#2f2f2f" />}
-                    label="Change phone number"
-                    showSeparator
-                />
-            </View>
-
-            <View style={[styles.sectionCard, styles.sectionCardSpaced]}>
-                <Text style={styles.sectionTitle}>Other</Text>
-                <SectionRow
-                    icon={<Ionicons name="language-outline" size={17} color="#2f2f2f" />}
-                    label="Language"
-                    value="English"
-                    showSeparator={false}
-                />
-                <View style={styles.rowItem}>
-                    <View style={styles.rowDivider} />
-                    <View style={styles.rowLeft}>
-                        <Ionicons name="color-wand-outline" size={17} color="#2f2f2f" />
-                        <Text style={styles.rowLabel}>Theme dark</Text>
-                    </View>
-                    <Switch
-                        value
-                        thumbColor="#ffffff"
-                        trackColor={{false: '#c6c6c6', true: '#8294FF'}}
+                <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>General</Text>
+                    <SectionRow
+                        icon={<Feather name="user" size={17} color="#2f2f2f" />}
+                        label="Update profile"
+                        showSeparator={false}
+                    />
+                    <SectionRow
+                        icon={<Ionicons name="lock-closed-outline" size={17} color="#2f2f2f" />}
+                        label="Forgot password"
+                        showSeparator
+                    />
+                    <SectionRow
+                        icon={<Feather name="phone" size={17} color="#2f2f2f" />}
+                        label="Change phone number"
+                        showSeparator
                     />
                 </View>
-                <SectionRow
-                    icon={<MaterialCommunityIcons name="logout" size={18} color="#ff2f2f" />}
-                    label="Logout"
-                    danger
-                    showSeparator
-                    onPress={handleLogout}
-                />
-            </View>
 
-            <View style={styles.bottomNav}>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerHomeScreen')}>
-                    <Ionicons name="home-outline" size={22} color="#8f8f8f" />
-                    <Text style={styles.bottomLabel}>Home</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerBookingUpcomingScreen')}>
-                    <MaterialCommunityIcons name="map-marker-radius-outline" size={22} color="#8f8f8f" />
-                    <Text style={styles.bottomLabel}>Booking</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem} onPress={() => navigation.navigate('CustomerLocketScreen')}>
-                    <Ionicons name="heart-outline" size={22} color="#8f8f8f" />
-                    <Text style={styles.bottomLabel}>Watchlist</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bottomItem}>
-                    <Feather name="user" size={22} color="#8294FF" />
-                    <Text style={[styles.bottomLabel, styles.bottomLabelActive]}>Profile</Text>
-                </TouchableOpacity>
-            </View>
+                <View style={[styles.sectionCard, styles.sectionCardSpaced]}>
+                    <Text style={styles.sectionTitle}>Other</Text>
+                    <SectionRow
+                        icon={<Ionicons name="language-outline" size={17} color="#2f2f2f" />}
+                        label="Language"
+                        value="English"
+                        showSeparator={false}
+                    />
+                    <View style={styles.rowItem}>
+                        <View style={styles.rowDivider} />
+                        <View style={styles.rowLeft}>
+                            <Ionicons name="color-wand-outline" size={17} color="#2f2f2f" />
+                            <Text style={styles.rowLabel}>Theme dark</Text>
+                        </View>
+                        <Switch
+                            value
+                            thumbColor="#ffffff"
+                            trackColor={{false: '#c6c6c6', true: '#8294FF'}}
+                        />
+                    </View>
+                    <SectionRow
+                        icon={<MaterialCommunityIcons name="logout" size={18} color="#ff2f2f" />}
+                        label="Logout"
+                        danger
+                        showSeparator
+                        onPress={handleLogout}
+                    />
+                </View>
+            </ScrollView>
+
+            <CustomerBottomTabBar navigation={navigation} activeTab="Profile"/>
         </SafeAreaView>
     );
 }
@@ -200,7 +205,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#f4f4f4',
         paddingHorizontal: 14,
         paddingTop: 8,
-        paddingBottom: 10,
+    },
+    scrollContent: {
+        paddingBottom: 98,
     },
     headerDecorWrap: {
         position: 'relative',
@@ -281,6 +288,7 @@ const styles = StyleSheet.create({
     },
     sectionCardSpaced: {
         marginTop: 18,
+        marginBottom: 92,
     },
     sectionTitle: {
         fontFamily: 'SF-Regular',
@@ -323,29 +331,5 @@ const styles = StyleSheet.create({
     rowValue: {
         fontFamily: 'SF-Regular',
         fontSize: 16,
-    },
-    bottomNav: {
-        marginTop: 'auto',
-        borderTopWidth: 1,
-        borderTopColor: '#d2d2d2',
-        backgroundColor: '#efefef',
-        paddingTop: 10,
-        paddingBottom: 8,
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-    },
-    bottomItem: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 3,
-    },
-    bottomLabel: {
-        fontFamily: 'SF-Regular',
-        fontSize: 12,
-        color: '#8f8f8f',
-    },
-    bottomLabelActive: {
-        color: '#8294FF',
-        fontFamily: 'SF-Bold',
     },
 });

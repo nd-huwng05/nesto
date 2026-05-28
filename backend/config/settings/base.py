@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'channels',
     'core',
     'accounts',
+    'bookings',
 ]
 
 MIDDLEWARE = [
