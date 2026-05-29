@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useFocusEffect} from '@react-navigation/native';
 import {
     ActivityIndicator,
@@ -19,9 +20,14 @@ import {
     confirmCheckIn,
     fetchAvailableRoomsForSwitch,
     fetchBookingDetails,
+    fetchFinalBill,
+    fetchLiveBill,
     processPaymentAndCheckOut,
     switchBookingRoom,
 } from '../../../services/ReceptionService';
+import {normalizeStaffBooking} from '../../../utils/staffBookingMapper';
+import {connectBookingLiveBill, connectBookingUpdates} from '../../../services/WebSocketService';
+import {isBookingWsPayload, isLiveBillWsEvent, mergeWsPayloadIntoStaffBooking} from '../../../utils/liveBill';
 import {StaffUserAvatar} from '../../../components/staff/StaffUserAvatar';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {UI} from '../../../styles/uiTokens';
@@ -205,6 +211,15 @@ function PendingCheckInView({
     );
 }
 
+function formatOvertimeLabel(finalBill, fallbackLabel) {
+    const lateMinutes = Number(finalBill?.lateMinutes || 0);
+    if (lateMinutes > 0) {
+        const blocks = Number(finalBill?.penaltyBlocks || Math.ceil(lateMinutes / 15));
+        return `${blocks} × 15 min late`;
+    }
+    return fallbackLabel || '';
+}
+
 function CheckOutSummaryView({
     booking,
     navigation,
@@ -215,43 +230,50 @@ function CheckOutSummaryView({
     processing,
 }) {
     const bill = booking.checkoutBill || {};
+    const finalBill = booking.finalBill || {};
     const room = booking.roomNumber || '—';
-    const roomSubtotal = bill.roomSubtotal ?? booking.basePrice - (booking.discount || 0);
-    const serviceTotal = bill.serviceTotal ?? 0;
+    const roomSubtotal =
+        finalBill.roomTotal ??
+        booking.roomTotal ??
+        bill.roomSubtotal ??
+        Math.max(0, (booking.totalAmount || 0) - (booking.discount || 0));
+    const serviceTotal = finalBill.servicesTotal ?? booking.servicesTotal ?? bill.serviceTotal ?? 0;
+    const depositPaid = finalBill.depositPaid ?? finalBill.depositAmount ?? 0;
+    const depositPct = finalBill.depositPercentage ?? booking.depositPercentage ?? 0;
     const isCompleted = booking.status === 'CHECKED_OUT';
     const canAddServices = booking.status === 'CHECKED_IN';
-    const extraItems = bill.extraServices || booking.extraServices || [];
+    const extraItems = booking.extraServices || bill.extraServices || [];
 
-    const [overtimeTick, setOvertimeTick] = useState(0);
-
-    useEffect(() => {
-        if (booking.status !== 'CHECKED_IN') return undefined;
-        const id = setInterval(() => setOvertimeTick((t) => t + 1), 30000);
-        return () => clearInterval(id);
-    }, [booking.status]);
-
-    const overtime = useMemo(() => {
+    const overtimeAmount = useMemo(() => {
+        if (booking.overtimeCharge != null) {
+            return Number(booking.overtimeCharge) || 0;
+        }
+        if (finalBill.overtimeCharge != null) {
+            return Number(finalBill.overtimeCharge) || 0;
+        }
         if (booking.status === 'CHECKED_OUT') {
-            return {
-                hours: bill.overtimeHours ?? 0,
-                amount: bill.overtimeSurcharge ?? 0,
-                hoursLabel: bill.overtimeHoursLabel || '',
-            };
+            return Number(bill.overtimeSurcharge) || 0;
         }
         if (booking.status === 'CHECKED_IN') {
-            return calculateOvertimeCharge(booking, new Date());
+            return calculateOvertimeCharge(booking, new Date()).amount;
         }
-        return {hours: 0, amount: 0, hoursLabel: ''};
-    }, [booking, bill, overtimeTick]);
+        return 0;
+    }, [booking, bill, finalBill]);
+
+    const overtimeLabel = useMemo(() => {
+        if (overtimeAmount <= 0) return '';
+        return formatOvertimeLabel(finalBill, calculateOvertimeCharge(booking, new Date()).hoursLabel);
+    }, [booking, finalBill, overtimeAmount]);
 
     const totals = useMemo(
         () =>
             computeCheckoutTotals({
                 roomSubtotal,
                 serviceTotal,
-                overtimeAmount: overtime.amount,
+                overtimeAmount,
+                depositPaid,
             }),
-        [roomSubtotal, serviceTotal, overtime.amount]
+        [roomSubtotal, serviceTotal, overtimeAmount, depositPaid]
     );
 
     return (
@@ -316,10 +338,7 @@ function CheckOutSummaryView({
                     <View style={styles.divider} />
 
                     <SummaryRow label="Room charge:" value={formatVnd(roomSubtotal)} />
-                    <OvertimeSummaryRow
-                        hoursLabel={overtime.hoursLabel}
-                        amount={overtime.amount}
-                    />
+                    <OvertimeSummaryRow hoursLabel={overtimeLabel} amount={overtimeAmount} />
                     <SummaryRow label="Discount:" value={formatVnd(booking.discount)} />
 
                     {extraItems.map((item) => (
@@ -344,11 +363,12 @@ function CheckOutSummaryView({
 
                     <View style={styles.divider} />
 
-                    <SummaryRow label="Subtotal:" value={formatVnd(totals.subtotal)} />
-                    <SummaryRow label="VAT (10%):" value={formatVnd(totals.vat)} />
-                    <SummaryRow label="Total Price:" value={formatVnd(totals.totalPrice)} />
-                    <SummaryRow label="Deposit (20%):" value={formatVnd(totals.deposit)} />
-                    <SummaryRow label="Final payment:" value={formatVnd(totals.finalPayment)} isFinal />
+                    <SummaryRow label="Subtotal (room + services + overtime):" value={formatVnd(totals.grossTotal)} />
+                    <SummaryRow
+                        label={`Deposit paid${depositPct ? ` (${depositPct}%)` : ''}:`}
+                        value={formatVnd(totals.depositPaid)}
+                    />
+                    <SummaryRow label="Amount due at checkout:" value={formatVnd(totals.finalPayment)} isFinal />
                 </View>
             </View>
 
@@ -548,7 +568,7 @@ export default function BookingDetailScreen({navigation, route}) {
         setLoadError(null);
         const result = await fetchBookingDetails(bookingId);
         if (result.status === 'success' && result.data) {
-            setBooking(result.data);
+            setBooking(normalizeStaffBooking(result.data));
         } else {
             setBooking(null);
             setLoadError(result.message || 'Unable to load booking details.');
@@ -556,10 +576,78 @@ export default function BookingDetailScreen({navigation, route}) {
         setLoading(false);
     }, [bookingId]);
 
+    const refreshLiveBill = useCallback(async () => {
+        if (!bookingId || booking?.status !== 'CHECKED_IN') return;
+        const result = await fetchLiveBill(bookingId);
+        if (result.status === 'success' && result.data) {
+            setBooking((prev) => {
+                if (!prev) return prev;
+                const live = result.data;
+                return {
+                    ...prev,
+                    roomTotal: live.roomTotal ?? prev.roomTotal,
+                    servicesTotal: live.servicesTotal ?? prev.servicesTotal,
+                    subtotal: live.subtotal ?? prev.subtotal,
+                    overtimeCharge: live.overtimeCharge ?? prev.overtimeCharge,
+                    lateMinutes: live.lateMinutes ?? prev.lateMinutes,
+                    isOvertime: live.isOvertime ?? prev.isOvertime,
+                    totalAmount: live.totalAmount ?? prev.totalAmount,
+                    finalBill: live.finalBill ?? prev.finalBill,
+                    extraServices: live.extraServices ?? prev.extraServices,
+                };
+            });
+        }
+    }, [bookingId, booking?.status]);
+
     useFocusEffect(
         useCallback(() => {
-            loadBooking();
-        }, [loadBooking])
+            let mounted = true;
+            let disconnectWs = () => {};
+
+            const bootstrap = async () => {
+                try {
+                    await loadBooking();
+                    if (!mounted || !bookingId) return;
+                    const token = (await AsyncStorage.getItem('access_token')) || '';
+                    if (!token) return;
+
+                    const handleBillPayload = (payload) => {
+                        if (!isLiveBillWsEvent(payload)) return;
+                        if (!isBookingWsPayload(payload, bookingId)) return;
+                        setBooking((prev) => mergeWsPayloadIntoStaffBooking(prev, payload));
+                    };
+
+                    const disconnectBill = await connectBookingLiveBill(bookingId, {
+                        token,
+                        onMessage: handleBillPayload,
+                        onMaxRetries: () => {
+                            refreshLiveBill().catch(() => {});
+                        },
+                    });
+
+                    let disconnectBranch = () => {};
+                    if (branchId) {
+                        disconnectBranch = await connectBookingUpdates(branchId, {
+                            token,
+                            onMessage: handleBillPayload,
+                        });
+                    }
+
+                    disconnectWs = () => {
+                        disconnectBill?.();
+                        disconnectBranch?.();
+                    };
+                } catch (error) {
+                    console.error('Live updates unavailable:', error?.message || error);
+                }
+            };
+
+            bootstrap();
+            return () => {
+                mounted = false;
+                disconnectWs?.();
+            };
+        }, [loadBooking, branchId, bookingId])
     );
 
     const openRoomPicker = async (mode) => {
@@ -567,7 +655,7 @@ export default function BookingDetailScreen({navigation, route}) {
         setRoomModalMode(mode);
         setRoomModalVisible(true);
         setLoadingSwitchRooms(true);
-        const result = await fetchAvailableRoomsForSwitch(branchId, booking.roomType);
+        const result = await fetchAvailableRoomsForSwitch(branchId, booking.roomType, bookingId);
         setLoadingSwitchRooms(false);
         if (result.status === 'success') {
             setSwitchRooms(result.data || []);
@@ -588,7 +676,7 @@ export default function BookingDetailScreen({navigation, route}) {
             const result = await assignRoomAndCheckIn(bookingId, room.id);
             setProcessing(false);
             if (result.status === 'success' && result.data) {
-                setBooking(result.data);
+                setBooking(normalizeStaffBooking(result.data));
                 Alert.alert('Checked in', result.message || `Room ${room.roomNumber} assigned.`);
                 return;
             }
@@ -599,7 +687,7 @@ export default function BookingDetailScreen({navigation, route}) {
         const result = await switchBookingRoom(bookingId, room.id);
         setProcessing(false);
         if (result.status === 'success' && result.data) {
-            setBooking(result.data);
+            setBooking(normalizeStaffBooking(result.data));
             Alert.alert('Room updated', result.data.roomChangeNote || `Room ${room.roomNumber}.`);
             return;
         }
@@ -615,8 +703,8 @@ export default function BookingDetailScreen({navigation, route}) {
                     setProcessing(true);
                     const result = await confirmCheckIn(bookingId);
                     setProcessing(false);
-                    if (result.status === 'success') {
-                        setBooking(result.data);
+                    if (result.status === 'success' && result.data) {
+                        setBooking(normalizeStaffBooking(result.data));
                         Alert.alert('Checked in', result.message || 'Guest is now in-house.');
                         return;
                     }
@@ -627,14 +715,19 @@ export default function BookingDetailScreen({navigation, route}) {
     };
 
     const resolveCheckoutFinalPayment = () => {
+        const fb = booking?.finalBill;
+        if (fb?.amountDue != null) {
+            return Number(fb.amountDue) || 0;
+        }
         const bill = booking?.checkoutBill || {};
-        const roomSubtotal = bill.roomSubtotal ?? booking.basePrice - (booking.discount || 0);
+        const roomSubtotal = bill.roomSubtotal ?? booking.totalAmount ?? 0;
         const serviceTotal = bill.serviceTotal ?? 0;
         const overtime = calculateOvertimeCharge(booking, new Date());
         return computeCheckoutTotals({
             roomSubtotal,
             serviceTotal,
             overtimeAmount: overtime.amount,
+            depositPaid: fb?.depositPaid ?? fb?.depositAmount ?? 0,
         }).finalPayment;
     };
 
@@ -655,7 +748,28 @@ export default function BookingDetailScreen({navigation, route}) {
                     text: 'Confirm',
                     onPress: async () => {
                         setProcessing(true);
-                        const result = await processPaymentAndCheckOut(bookingId, paymentMethod);
+                        let checkoutAmount = amountDue;
+                        const billResult = await fetchFinalBill(bookingId);
+                        if (billResult.status === 'success' && billResult.data) {
+                            setBooking((prev) =>
+                                prev ? {...prev, finalBill: billResult.data} : prev
+                            );
+                            if (billResult.data.amountDue != null) {
+                                checkoutAmount = Number(billResult.data.amountDue) || 0;
+                            }
+                        } else if (billResult.status === 'error') {
+                            setProcessing(false);
+                            Alert.alert(
+                                'Bill unavailable',
+                                billResult.message || 'Could not load final bill. Try again.'
+                            );
+                            return;
+                        }
+                        const result = await processPaymentAndCheckOut(
+                            bookingId,
+                            paymentMethod,
+                            checkoutAmount
+                        );
                         setProcessing(false);
                         if (result.status === 'success') {
                             Alert.alert(
@@ -672,6 +786,14 @@ export default function BookingDetailScreen({navigation, route}) {
         );
     };
 
+    useEffect(() => {
+        if (booking?.status !== 'CHECKED_IN' || !bookingId) return undefined;
+        const id = setInterval(() => {
+            refreshLiveBill();
+        }, 30000);
+        return () => clearInterval(id);
+    }, [booking?.status, bookingId, refreshLiveBill]);
+
     if (loading) {
         return (
             <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -687,7 +809,10 @@ export default function BookingDetailScreen({navigation, route}) {
             <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
                 <View style={styles.centered}>
                     <Text style={styles.errorText}>{loadError || 'Booking not found.'}</Text>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.retryBtn}>
+                    <TouchableOpacity onPress={loadBooking} style={styles.retryBtn}>
+                        <Text style={styles.retryBtnText}>Retry</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.retryBtn, {marginTop: 8}]}>
                         <Text style={styles.retryBtnText}>Go back</Text>
                     </TouchableOpacity>
                 </View>
@@ -695,8 +820,12 @@ export default function BookingDetailScreen({navigation, route}) {
         );
     }
 
-    const isPending = booking.status === 'PENDING';
-    const isCheckoutPhase = booking.status === 'CHECKED_IN' || booking.status === 'CHECKED_OUT';
+    const isCancelled =
+        booking.status === 'CANCELLED' || booking.status === 'CANCELLED_NO_SHOW';
+    const isCheckInPhase =
+        !isCancelled && (booking.status === 'PENDING' || booking.status === 'CONFIRMED');
+    const isCheckoutPhase =
+        !isCancelled && (booking.status === 'CHECKED_IN' || booking.status === 'CHECKED_OUT');
 
     return (
         <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -706,7 +835,18 @@ export default function BookingDetailScreen({navigation, route}) {
             >
                 <ScreenHeader navigation={navigation} booking={booking} user={user} />
 
-                {isPending ? (
+                {isCancelled ? (
+                    <View style={styles.cancelledCard}>
+                        <Text style={styles.cancelledTitle}>
+                            {booking.status === 'CANCELLED_NO_SHOW' ? 'No-show' : 'Cancelled'}
+                        </Text>
+                        <Text style={styles.cancelledBody}>
+                            This booking cannot be checked in or checked out.
+                        </Text>
+                    </View>
+                ) : null}
+
+                {isCheckInPhase ? (
                     <PendingCheckInView
                         booking={booking}
                         onConfirm={handleConfirmCheckIn}
@@ -740,7 +880,7 @@ export default function BookingDetailScreen({navigation, route}) {
                 onClose={() => setRoomModalVisible(false)}
             />
 
-            <Modal visible={processing && !isPending && !roomModalVisible} transparent animationType="fade">
+            <Modal visible={processing && !isCheckInPhase && !roomModalVisible} transparent animationType="fade">
                 <View style={styles.overlay}>
                     <View style={styles.overlayCard}>
                         <ActivityIndicator size="large" color="#8294FF" />
@@ -779,6 +919,25 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontWeight: '600',
         fontSize: 14,
+    },
+    cancelledCard: {
+        marginTop: 16,
+        padding: 16,
+        borderRadius: 14,
+        backgroundColor: '#fef2f2',
+        borderWidth: 1,
+        borderColor: '#fecaca',
+    },
+    cancelledTitle: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: '#991b1b',
+    },
+    cancelledBody: {
+        marginTop: 6,
+        fontSize: 14,
+        color: '#7f1d1d',
+        lineHeight: 20,
     },
     scrollContent: {
         paddingHorizontal: 20,

@@ -6,6 +6,7 @@ export const AUTH_ROLES = {
     RECEPTIONIST: 'RECEPTIONIST',
     HOUSEKEEPING: 'HOUSEKEEPING',
     SERVICE: 'SERVICE',
+    STAFF: 'STAFF',
 };
 
 export const isSuperAdmin = (role) => role === AUTH_ROLES.SUPER_ADMIN;
@@ -30,11 +31,19 @@ export const staffJobToAuthRole = (jobRole) => {
     }
 };
 
-export const isReceptionistRole = (role) => role === AUTH_ROLES.RECEPTIONIST;
+export const isReceptionistRole = (role) =>
+    role === AUTH_ROLES.RECEPTIONIST || role === AUTH_ROLES.STAFF || role === AUTH_ROLES.MANAGER;
 
 export const isHousekeepingRole = (role) => role === AUTH_ROLES.HOUSEKEEPING;
 
 export const isServiceRole = (role) => role === AUTH_ROLES.SERVICE;
+
+/** Legacy/generic staff bucket → receptionist UI unless profile specifies department. */
+export const isStaffRole = (role) =>
+    role === AUTH_ROLES.RECEPTIONIST ||
+    role === AUTH_ROLES.HOUSEKEEPING ||
+    role === AUTH_ROLES.SERVICE ||
+    role === AUTH_ROLES.STAFF;
 
 export const resolveHomeFlowName = (role) => {
     if (role === AUTH_ROLES.SUPER_ADMIN) return 'BusinessFlow';
@@ -44,5 +53,6 @@ export const resolveHomeFlowName = (role) => {
     if (role === AUTH_ROLES.RECEPTIONIST) return 'StaffFlow';
     if (role === AUTH_ROLES.HOUSEKEEPING) return 'StaffFlow';
     if (role === AUTH_ROLES.SERVICE) return 'StaffFlow';
+    if (role === AUTH_ROLES.STAFF) return 'StaffFlow';
     return '';
 };

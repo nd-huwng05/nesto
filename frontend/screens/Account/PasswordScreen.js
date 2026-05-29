@@ -5,6 +5,7 @@ import { PasswordField } from '../../components/auth/PasswordField';
 import { AuthAlternateButton } from '../../components/auth/AuthAlternateButton';
 import { passwordSchema } from '../../validation/authSchemas';
 import { useAuth } from '../../hooks/account/useAuth';
+import { resetToHomeFlow } from '../../utils/navigation';
 
 export default function PasswordScreen({ navigation, route }) {
     const { email, identifier } = route.params || {};
@@ -25,14 +26,7 @@ export default function PasswordScreen({ navigation, route }) {
     const onSubmit = async ({ password }) => {
         const result = await login(loginIdentifier, password);
         if (result.success) {
-            let root = navigation;
-            while (root.getParent?.()) {
-                root = root.getParent();
-            }
-            root.reset({
-                index: 0,
-                routes: [{ name: 'HomeFlow' }],
-            });
+            resetToHomeFlow(navigation);
             return;
         }
         reset({ password: '' });

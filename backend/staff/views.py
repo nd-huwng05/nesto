@@ -1,7 +1,8 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, viewsets
 
-from accounts.permissions import IsBusinessMember
+from accounts.services.permissions import IsBusinessMember
+from accounts.services.tenant_queryset import TenantQuerysetService
 from staff.models import StaffProfile
 from staff.serializers import StaffProfileSerializer
 
@@ -23,6 +24,7 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = StaffProfile.objects.select_related("user", "branch", "branch__company").order_by("-created_at")
+        qs = TenantQuerysetService.filter_staff_profiles(qs, self.request.user)
 
         business_id = self.request.query_params.get("businessId") or self.request.query_params.get("business_id")
         branch_id = self.request.query_params.get("branchId") or self.request.query_params.get("branch_id")

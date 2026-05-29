@@ -3,7 +3,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from accounts.models import Role, User
-import cloudinary.uploader
+from core.services.serializer_mixins import CloudinaryRepresentationMixin
+from core.services.cloudinary_service import CloudinaryMediaService
 
 User = get_user_model()
 
@@ -16,7 +17,7 @@ class PhoneValidationMixin:
             raise serializers.ValidationError("Phone number must be at least 8 digits.")
         return normalized
 
-class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
+class UserSerializer(PhoneValidationMixin, CloudinaryRepresentationMixin, serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     groups = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
@@ -27,14 +28,13 @@ class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
     preferredLatitude = serializers.FloatField(source="preferred_latitude", required=False, allow_null=True)
     preferredLongitude = serializers.FloatField(source="preferred_longitude", required=False, allow_null=True)
 
+    cloudinary_field_map = {"avatar": "avatar"}
+
     def get_groups(self, obj):
         return [group.name for group in obj.groups.all()]
 
     def get_avatar(self, obj):
-        try:
-            return obj.avatar.url if getattr(obj, "avatar", None) else ""
-        except Exception:
-            return ""
+        return CloudinaryMediaService.resolve_field_url(getattr(obj, "avatar", None))
 
     def get_branchId(self, obj):
         try:

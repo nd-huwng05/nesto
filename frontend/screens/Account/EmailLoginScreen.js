@@ -6,6 +6,7 @@ import { AuthTextField } from '../../components/auth/AuthTextField';
 import { AuthAlternateButton } from '../../components/auth/AuthAlternateButton';
 import { emailSchema } from '../../validation/authSchemas';
 import { useGoogleAuth } from '../../hooks/account/useGoogleAuth';
+import { resetToHomeFlow } from '../../utils/navigation';
 
 const TERMS_FOOTER = (
     <Text className="text-[12px] font-sf text-gray-400 mb-4 text-center w-3/4">
@@ -15,11 +16,8 @@ const TERMS_FOOTER = (
     </Text>
 );
 
-const navigateByRole = (navigation, user) => {
-    navigation.reset({
-        index: 0,
-        routes: [{ name: 'HomeFlow' }],
-    });
+const navigateByRole = (navigation) => {
+    resetToHomeFlow(navigation);
 };
 
 export default function EmailLoginScreen({ navigation }) {

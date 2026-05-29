@@ -1,7 +1,10 @@
 import json
 import urllib.parse
-from channels.generic.websocket import AsyncWebsocketConsumer
+
 from channels.db import database_sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+
+from accounts.services.branch_access_service import BranchAccessService
 
 
 ALLOWED_CHANNELS = {'bookings', 'services', 'rooms', 'customer'}
@@ -49,6 +52,12 @@ class AuthConsumer(AsyncWebsocketConsumer):
         if self.room_name != "customer":
             if not branch_id:
                 await self.close(code=4004)
+                return
+            allowed_branch = await database_sync_to_async(BranchAccessService.can_access_branch)(
+                self.user, str(branch_id)
+            )
+            if not allowed_branch:
+                await self.close(code=4003)
                 return
 
         if self.room_name == "customer":

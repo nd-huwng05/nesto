@@ -1,9 +1,13 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {extractApiErrorMessage} from '../utils/apiError';
+import {
+    getValidAccessToken,
+    onAuthFailure,
+    refreshAccessToken,
+} from '../utils/tokenRefresh';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-const OAUTH_URL = process.env.EXPO_PUBLIC_OAUTH_URL || 'http://localhost:8000/o';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -43,6 +47,7 @@ export const endpoints = {
     'housekeeping-tasks': '/operations/housekeeping-tasks/',
     'housekeeping-task-detail': (taskId) => `/operations/housekeeping-tasks/${taskId}/`,
     'housekeeping-task-complete': (taskId) => `/operations/housekeeping-tasks/${taskId}/complete/`,
+    'housekeeping-task-start': (taskId) => `/operations/housekeeping-tasks/${taskId}/start/`,
     'bookings': '/operations/bookings/',
     'booking-detail': (bookingId) => `/operations/bookings/${bookingId}/`,
     'bookings-for-day': '/operations/bookings/for-day/',
@@ -51,12 +56,20 @@ export const endpoints = {
     'booking-switch-room': (bookingId) => `/operations/bookings/${bookingId}/switch-room/`,
     'booking-checkout': (bookingId) => `/operations/bookings/${bookingId}/checkout/`,
     'booking-add-extra-service': (bookingId) => `/operations/bookings/${bookingId}/add-extra-service/`,
+    'booking-lookup': '/operations/bookings/lookup/',
+    'booking-available-rooms': (bookingId) => `/operations/bookings/${bookingId}/available-rooms/`,
+    'booking-final-bill': (bookingId) => `/operations/bookings/${bookingId}/final-bill/`,
     'customer-bookings': '/operations/customer-bookings/',
     'customer-booking-detail': (bookingId) => `/operations/customer-bookings/${bookingId}/`,
     'customer-booking-check-in': (bookingId) => `/operations/customer-bookings/${bookingId}/check-in/`,
     'customer-booking-add-service': (bookingId) => `/operations/customer-bookings/${bookingId}/add-service/`,
+    'customer-booking-live-bill': (bookingId) => `/operations/customer-bookings/${bookingId}/live-bill/`,
+    'booking-live-bill': (bookingId) => `/operations/bookings/${bookingId}/live-bill/`,
+    'customer-booking-quote': '/operations/customer-bookings/quote/',
     'reviews': '/operations/reviews/',
+    'review-locket-feed': '/operations/reviews/locket-feed/',
     'review-toggle-heart': (reviewId) => `/operations/reviews/${reviewId}/toggle-heart/`,
+    'cloudinary-upload': '/media/cloudinary-upload/',
     'ai-search': '/operations/ai-search/',
     'search-suggestions': '/search/suggestions/',
     'favorites': '/operations/favorites/',
@@ -83,7 +96,7 @@ export const endpoints = {
 };
 
 api.interceptors.request.use(async (config) => {
-    const token = await AsyncStorage.getItem('access_token');
+    const token = await getValidAccessToken();
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
@@ -93,31 +106,23 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
-        if (error.response?.status === 401) {
-            const refreshToken = await AsyncStorage.getItem('refresh_token');
-            if (refreshToken) {
-                try {
-                    const params = new URLSearchParams();
-                    params.append('grant_type', 'refresh_token');
-                    params.append('refresh_token', refreshToken);
-                    params.append('client_id', process.env.EXPO_PUBLIC_CLIENT_ID || '');
-
-                    const res = await axios.post(`${OAUTH_URL}/token/`, params.toString(), {
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    });
-                    await AsyncStorage.setItem('access_token', res.data.access_token);
-                    if (res.data.refresh_token) {
-                        await AsyncStorage.setItem('refresh_token', res.data.refresh_token);
-                    }
-                    error.config.headers.Authorization = `Bearer ${res.data.access_token}`;
-                    return api(error.config);
-                } catch (error) {
-                    await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user']);
-                }
-            }
+        const originalRequest = error.config;
+        if (error.response?.status !== 401 || !originalRequest || originalRequest._retry) {
+            return Promise.reject(error);
         }
-        return Promise.reject(error);
+
+        originalRequest._retry = true;
+        const newToken = await refreshAccessToken();
+        if (!newToken) {
+            return Promise.reject(error);
+        }
+
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return api(originalRequest);
     }
 );
+
+export {onAuthFailure};
 
 export default api;

@@ -1,6 +1,7 @@
 import {useCallback, useState, useEffect} from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     RefreshControl,
     StyleSheet,
@@ -11,13 +12,14 @@ import {
 import {useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
+import EmptyState from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {connectRoomUpdates} from '../../../services/WebSocketService';
 import {listRooms, isRoomGridBlocked} from '../../../services/staffApiService';
 import {UI} from '../../../styles/uiTokens';
-import {AUTH_ROLES} from '../../../constants/authRoles';
+import {isReceptionistRole} from '../../../constants/authRoles';
 
 function formatHourly(amount) {
     return `${Number(amount).toLocaleString('en-US')} VND/h`;
@@ -68,9 +70,11 @@ export default function RoomGridScreen({navigation}) {
             setRooms(data);
             setErrorMessage('');
         } catch (error) {
-            console.error("API Error: ", error.response?.data || error.message);
+            console.error('API Error: ', error.response?.data || error.message);
             setRooms([]);
-            setErrorMessage('Unable to load room grid.');
+            const message = 'Unable to load room grid.';
+            setErrorMessage(message);
+            Alert.alert('Rooms unavailable', message);
         } finally {
             setIsLoading(false);
         }
@@ -123,7 +127,7 @@ export default function RoomGridScreen({navigation}) {
     return (
         <TabScreenLayout backgroundColor={UI.screenBg}>
             <View style={styles.inner}>
-                {![AUTH_ROLES.RECEPTIONIST, AUTH_ROLES.MANAGER].includes(role) ? (
+                {!isReceptionistRole(role) ? (
                     <View style={styles.emptyWrap}>
                         <Text className="font-sf text-gray-500 text-center">You do not have permission for room booking actions.</Text>
                     </View>
@@ -179,7 +183,11 @@ export default function RoomGridScreen({navigation}) {
                             );
                         }}
                         ListEmptyComponent={
-                            <Text className="font-sf text-center text-gray-500 py-12">No rooms found.</Text>
+                            <EmptyState
+                                icon="bed-outline"
+                                title="No rooms found"
+                                subtitle="Rooms for this branch will appear here when configured."
+                            />
                         }
                     />
                 )}

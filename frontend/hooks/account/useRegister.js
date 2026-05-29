@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { sendOTP, verifyOtp, register, getRegisterToken, clearRegisterToken } from '../../services/AuthService';
-import { saveSession } from '../../utils/authStorage';
+import { saveTokens } from '../../utils/authStorage';
 
 export const useRegister = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -58,10 +58,16 @@ export const useRegister = () => {
 
             const response = await register({ email, password, name, phone, role, registerToken });
             const token = response?.access_token;
+            const refreshToken = response?.refresh_token;
             const user = response?.user;
 
             if (token) {
-                await saveSession(token, user);
+                await saveTokens({
+                    accessToken: token,
+                    refreshToken,
+                    user,
+                    role: user?.role,
+                });
                 await clearRegisterToken();
                 return { status: 'success', data: response };
             }

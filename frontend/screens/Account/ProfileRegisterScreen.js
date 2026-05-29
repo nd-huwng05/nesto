@@ -4,6 +4,7 @@ import { QuestionLayout } from '../../layout/QuestionLayout';
 import { AuthTextField } from '../../components/auth/AuthTextField';
 import { useRegister } from '../../hooks/account/useRegister';
 import { nameSchema } from '../../validation/authSchemas';
+import { resetToHomeFlow } from '../../utils/navigation';
 
 export default function ProfileRegisterScreen({ navigation, route }) {
     const { email, password, role, phone } = route.params || {};
@@ -32,10 +33,7 @@ export default function ProfileRegisterScreen({ navigation, route }) {
         });
 
         if (result.status === 'success') {
-            navigation.reset({
-                index: 0,
-                routes: [{ name: 'HomeFlow' }],
-            });
+            resetToHomeFlow(navigation);
         }
     };
 

@@ -1,4 +1,4 @@
-import {ActivityIndicator, Image, LayoutAnimation, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View, useWindowDimensions} from 'react-native';
+import {ActivityIndicator, Alert, Image, LayoutAnimation, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View, useWindowDimensions} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {AntDesign, Ionicons} from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import * as Location from 'expo-location';
 import {connectCustomerUpdates} from '../../../services/WebSocketService';
 
 const BASE_TABS = ['AI ✨', 'ALL'];
+const PRIMARY = '#5b79df';
 const DEFAULT_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
 const DEFAULT_RATING_VALUE = 0;
 
@@ -66,22 +67,22 @@ function HotelCard({item, onPress, cardWidth}) {
 
 function CategoryTabs({tabs, activeTab, onTabPress}) {
     return (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
-            {tabs.map((tab) => {
-                const isActive = tab === activeTab;
+        <View style={styles.categoryBar}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
+                {tabs.map((tab) => {
+                    const isActive = tab === activeTab;
 
-                return (
-                    <TouchableOpacity key={tab} style={styles.categoryItem} onPress={() => onTabPress(tab)} activeOpacity={0.8}>
-                        <Text
-                            style={[styles.tabLabel, isActive ? styles.tabLabelActive : null]}
-                        >
-                            {tab}
-                        </Text>
-                        {isActive ? <View style={styles.activeUnderline}/> : null}
-                    </TouchableOpacity>
-                );
-            })}
-        </ScrollView>
+                    return (
+                        <TouchableOpacity key={tab} style={styles.categoryItem} onPress={() => onTabPress(tab)} activeOpacity={0.8}>
+                            <Text style={[styles.tabLabel, isActive ? styles.tabLabelActive : null]}>
+                                {tab}
+                            </Text>
+                            {isActive ? <View style={styles.activeUnderline} /> : <View style={styles.inactiveUnderline} />}
+                        </TouchableOpacity>
+                    );
+                })}
+            </ScrollView>
+        </View>
     );
 }
 
@@ -259,7 +260,7 @@ export function HomeScreen({navigation}) {
             const runLoad = async () => {
                 try {
                     const session = await getSession();
-                    setAccessToken(String(session?.token?.access_token || session?.token?.accessToken || session?.token || '').trim());
+                    setAccessToken(String(session?.token || '').trim());
                     const avatar = String(session?.user?.avatar || '').trim();
                     const name = String(session?.user?.name || session?.user?.full_name || session?.user?.email || '').trim();
                     const pref = String(session?.user?.preferredLocation || '').trim();
@@ -375,35 +376,24 @@ export function HomeScreen({navigation}) {
 
     return (
         <SafeAreaView style={styles.page}>
-            <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={isRefreshing}
-                        onRefresh={handleRefresh}
-                        colors={['#5b79df']}
-                        tintColor="#5b79df"
-                    />
-                }
-            >
+            <View style={styles.topChrome}>
                 <View style={styles.headerRow}>
                     <View style={styles.locationWrap}>
                         <Text style={styles.locationLabel}>Current Location</Text>
                         <Text style={styles.locationValue} numberOfLines={1}>{locationLabel}</Text>
                     </View>
                     <View style={styles.headerActions}>
-                            <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('CustomerNotificationsScreen')}>
+                        <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('CustomerNotificationsScreen')}>
                             <Ionicons name="notifications" size={20} color="#1f1f1f"/>
-                                {unreadNotificationCount > 0 ? (
-                                    <View style={styles.alertBadge}>
-                                        <Text style={styles.alertBadgeText}>{`+${Math.min(unreadNotificationCount, 99)}`}</Text>
-                                    </View>
-                                ) : null}
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => navigation.navigate('CustomerProfileScreen')}>
-                                <Avatar uri={avatarUrl} name={avatarName} size={44} />
-                            </TouchableOpacity>
+                            {unreadNotificationCount > 0 ? (
+                                <View style={styles.alertBadge}>
+                                    <Text style={styles.alertBadgeText}>{`+${Math.min(unreadNotificationCount, 99)}`}</Text>
+                                </View>
+                            ) : null}
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => navigation.navigate('CustomerProfileScreen')}>
+                            <Avatar uri={avatarUrl} name={avatarName} size={44} />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -425,7 +415,7 @@ export function HomeScreen({navigation}) {
                         }}
                     />
                     {isSearching ? (
-                        <ActivityIndicator size="small" color="#5b79df" />
+                        <ActivityIndicator size="small" color={PRIMARY} />
                     ) : null}
                 </View>
 
@@ -440,7 +430,21 @@ export function HomeScreen({navigation}) {
                         setActiveTab(tab);
                     }}
                 />
+            </View>
 
+            <ScrollView
+                style={styles.listScroll}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        colors={[PRIMARY]}
+                        tintColor={PRIMARY}
+                    />
+                }
+            >
                 {activeTab === 'AI ✨' ? (
                     String(searchText || '').trim() ? (
                     <View style={styles.sectionWrap}>
@@ -522,9 +526,21 @@ const styles = StyleSheet.create({
         lineHeight: 22,
         fontFamily: 'SF-Bold',
     },
-    scrollContent: {
+    topChrome: {
         paddingHorizontal: 16,
         paddingTop: 10,
+        paddingBottom: 4,
+        backgroundColor: '#F5F7FA',
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: '#E5E7EB',
+        zIndex: 2,
+    },
+    listScroll: {
+        flex: 1,
+    },
+    scrollContent: {
+        paddingHorizontal: 16,
+        paddingTop: 12,
         paddingBottom: 112,
     },
     headerRow: {
@@ -619,32 +635,44 @@ const styles = StyleSheet.create({
         includeFontPadding: false,
         textAlignVertical: 'center',
     },
+    categoryBar: {
+        marginTop: 12,
+        marginBottom: 2,
+    },
     categoryRow: {
-        paddingTop: 16,
-        paddingBottom: 2,
-        gap: 20,
+        paddingBottom: 4,
+        paddingRight: 8,
     },
     categoryItem: {
         alignItems: 'center',
-        marginRight: 20,
+        marginRight: 22,
+        paddingBottom: 6,
     },
     tabLabel: {
         fontFamily: 'SF-Regular',
         fontSize: 16,
         lineHeight: 22,
-        color: '#333333',
+        color: '#6B7280',
+        paddingHorizontal: 2,
     },
     tabLabelActive: {
-        fontFamily: 'SF-Black',
-        fontSize: 17,
-        color: '#111111',
+        fontFamily: 'SF-Bold',
+        fontSize: 16,
+        fontWeight: '700',
+        color: PRIMARY,
     },
     activeUnderline: {
-        marginTop: 2,
+        marginTop: 8,
         height: 3,
         width: '100%',
         borderRadius: 999,
-        backgroundColor: '#8294FF',
+        backgroundColor: PRIMARY,
+    },
+    inactiveUnderline: {
+        marginTop: 8,
+        height: 3,
+        width: '100%',
+        backgroundColor: 'transparent',
     },
     sectionWrap: {
         marginTop: 28,

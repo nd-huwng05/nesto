@@ -13,6 +13,7 @@ const STAFF_ROLES = new Set([
     AUTH_ROLES.RECEPTIONIST,
     AUTH_ROLES.HOUSEKEEPING,
     AUTH_ROLES.SERVICE,
+    AUTH_ROLES.STAFF,
 ]);
 
 const resolveSessionKindFromRole = (role) => {
@@ -35,6 +36,7 @@ const normalizeRole = (role) => {
     if (upper === 'RECEPTIONIST') return AUTH_ROLES.RECEPTIONIST;
     if (upper === 'HOUSEKEEPING') return AUTH_ROLES.HOUSEKEEPING;
     if (upper === 'SERVICE') return AUTH_ROLES.SERVICE;
+    if (upper === 'STAFF') return AUTH_ROLES.STAFF;
     if (upper === 'BUSINESS_OWNER' || upper === 'BUSINESS OWNER') return AUTH_ROLES.BUSINESS_OWNER;
     if (upper === 'CUSTOMER') return AUTH_ROLES.CUSTOMER;
     if (upper === 'SUPER_ADMIN') return AUTH_ROLES.SUPER_ADMIN;

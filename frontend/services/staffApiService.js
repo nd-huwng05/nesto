@@ -70,6 +70,16 @@ export const completeHousekeepingTask = async (taskId) => {
     }
 };
 
+export const startHousekeepingTask = async (taskId) => {
+    try {
+        const response = await api.post(endpoints['housekeeping-task-start'](taskId));
+        return {success: true, data: response.data};
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return {success: false, message: error?.response?.data?.detail || error?.message};
+    }
+};
+
 export const listServiceOrders = async (branchId) => {
     try {
         const response = await fetchServiceOrders({ branch_id: branchId });
@@ -115,9 +125,14 @@ export const cancelServiceOrder = async (orderId) => {
     }
 };
 
-export const isRoomGridBlocked = (branchId) => !branchId;
+const WALK_IN_READY = new Set(['AVAILABLE', 'CLEAN']);
+
+export const isRoomGridBlocked = (status) => {
+    const key = String(status || '').trim().toUpperCase();
+    return !WALK_IN_READY.has(key);
+};
 
 export const canBookWalkInRoom = (status) => {
-    const AVAILABLE = ['AVAILABLE', 'available', 'available '].map((s) => s.trim().toUpperCase());
-    return AVAILABLE.includes(String(status || '').trim().toUpperCase());
+    const key = String(status || '').trim().toUpperCase();
+    return WALK_IN_READY.has(key);
 };

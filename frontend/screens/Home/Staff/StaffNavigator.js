@@ -5,7 +5,7 @@ import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {StaffTabBar} from '../../../components/staff/StaffTabBar';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
-import {AUTH_ROLES} from '../../../constants/authRoles';
+import {AUTH_ROLES, isReceptionistRole} from '../../../constants/authRoles';
 import {UI} from '../../../styles/uiTokens';
 import CustomerNavigator from '../Customer/CustomerNavigator';
 
@@ -17,6 +17,7 @@ import StaffAddServiceScreen from './StaffAddServiceScreen';
 import HousekeepingTaskScreen from './HousekeepingTaskScreen';
 import ServiceOrderScreen from './ServiceOrderScreen';
 import StaffProfileScreen from './StaffProfileScreen';
+import ReceptionQrScannerScreen from './ReceptionQrScannerScreen';
 
 const StaffTab = createBottomTabNavigator();
 const StaffStack = createNativeStackNavigator();
@@ -67,6 +68,7 @@ function ReceptionistFlow({bottomInset}) {
             <StaffStack.Screen name="BookingDetailScreen" component={BookingDetailScreen} />
             <StaffStack.Screen name="StaffAddServiceScreen" component={StaffAddServiceScreen} />
             <StaffStack.Screen name="StaffCreateBookingScreen" component={StaffCreateBookingScreen} />
+            <StaffStack.Screen name="ReceptionQrScannerScreen" component={ReceptionQrScannerScreen} />
         </StaffStack.Navigator>
     );
 }
@@ -102,6 +104,9 @@ export default function StaffNavigator() {
         }
         if (isService || role === AUTH_ROLES.SERVICE) {
             return ServiceFlow;
+        }
+        if (isReceptionistRole(role) || role === AUTH_ROLES.RECEPTIONIST || role === AUTH_ROLES.STAFF) {
+            return ReceptionistFlow;
         }
         return ReceptionistFlow;
     }, [isHousekeeping, isService, role]);

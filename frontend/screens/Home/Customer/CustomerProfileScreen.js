@@ -3,6 +3,7 @@ import {Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, Touc
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
 import {getSession, clearSession} from '../../../utils/authStorage';
+import {resetToAccountFlow} from '../../../utils/navigation';
 import {useCustomerProfile} from '../../../hooks/customer/useCustomerProfile';
 
 function SettingsRow({icon, label, value, danger = false, isLast = false, onPress, rightElement}) {
@@ -43,10 +44,7 @@ export function CustomerProfileScreen({navigation}) {
                     onPress: async () => {
                         try {
                             await clearSession();
-                            navigation.reset({
-                                index: 0,
-                                routes: [{name: 'AccountFlow'}],
-                            });
+                            resetToAccountFlow(navigation);
                         } catch (error) {
                             Alert.alert('Error', 'Failed to logout. Please try again.');
                         }

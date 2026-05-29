@@ -41,6 +41,15 @@ export const customerCheckInBooking = async (bookingId) => {
   }
 };
 
+export const fetchCustomerLiveBill = async (bookingId) => {
+  try {
+    const res = await api.get(endpoints['customer-booking-live-bill'](bookingId));
+    return ok(res, res.data);
+  } catch (err) {
+    return fail(err, 'Unable to refresh live bill.');
+  }
+};
+
 export const addServicesToBooking = async (bookingId, serviceIds = []) => {
   try {
     const res = await api.post(endpoints['customer-booking-add-service'](bookingId), {
@@ -49,6 +58,27 @@ export const addServicesToBooking = async (bookingId, serviceIds = []) => {
     return ok(res, res.data);
   } catch (err) {
     return fail(err, 'Unable to add services to this booking.');
+  }
+};
+
+export const quoteBooking = async ({
+  branchId,
+  roomTypeId,
+  checkInAt,
+  expectedCheckOutAt,
+  depositPercentage = 20,
+} = {}) => {
+  try {
+    const res = await api.post(endpoints['customer-booking-quote'], {
+      branch: branchId,
+      room_type_id: roomTypeId,
+      check_in_at: checkInAt,
+      expected_check_out_at: expectedCheckOutAt,
+      deposit_percentage: depositPercentage,
+    });
+    return ok(res, res.data);
+  } catch (err) {
+    return fail(err, 'Unable to calculate booking quote.');
   }
 };
 
@@ -64,6 +94,7 @@ export const createMyBooking = async ({
   checkInAt,
   expectedCheckOutAt,
   serviceIds = [],
+  depositPercentage = 20,
 } = {}) => {
   try {
     const payload = {
@@ -78,6 +109,7 @@ export const createMyBooking = async ({
       check_in_at: checkInAt || null,
       expected_check_out_at: expectedCheckOutAt || null,
       service_ids: Array.isArray(serviceIds) ? serviceIds.filter(Boolean) : [],
+      deposit_percentage: depositPercentage,
     };
     const res = await api.post(endpoints['customer-bookings'], payload);
     return ok(res, res.data);

@@ -4,6 +4,7 @@ import {LoadScreen} from "../components/utils/Load";
 import {Asset} from "expo-asset";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import OnboardingFlow from "../screens/Onboarding/OnboardingNavigator";
+import {ensureSessionOnColdStart} from "../utils/tokenRefresh";
 
 export const GlobalContext = createContext()
 
@@ -35,14 +36,14 @@ export default function Context({children}) {
                 ]
 
                 const cacheImages = images.map(image => Asset.fromModule(image).downloadAsync())
-                const [hasSeen, accessToken, ...rest] = await Promise.all([
+                const [hasSeen, ...rest] = await Promise.all([
                     AsyncStorage.getItem('hasWellcome'),
-                    AsyncStorage.getItem('access_token'),
                     ...cacheImages
                 ]);
+                const session = await ensureSessionOnColdStart();
                 if (hasSeen === null) {
                     setInitialRoute("OnboardingFlow");
-                } else if (accessToken) {
+                } else if (session.hasSession) {
                     setInitialRoute("HomeFlow");
                 } else {
                     setInitialRoute("AccountFlow");

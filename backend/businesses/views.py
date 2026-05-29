@@ -1,22 +1,13 @@
-from datetime import date
-
-from django.db.models import Count, Sum
-from django.db.models.functions import Coalesce, TruncMonth
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-import logging
 
+from accounts.services.permissions import IsBusinessMember
 from businesses.models import Branch, Company, Department
 from businesses.serializers import BranchSerializer, CompanySerializer, DepartmentSerializer
-from accounts.permissions import IsBusinessMember
+from businesses.services.analytics_service import BusinessAnalyticsService
 from staff.models import StaffProfile
-from bookings.models import Booking
-from rooms.models import HousekeepingTask, Room
-
-logger = logging.getLogger(__name__)
 
 
 @extend_schema(tags=["Businesses"])
@@ -107,140 +98,17 @@ class BusinessAnalyticsViewSet(viewsets.GenericViewSet):
     @extend_schema(tags=["Businesses"])
     @action(detail=False, methods=["get"], url_path="dashboard")
     def dashboard(self, request):
-        user = request.user
-        business_id = getattr(request, "query_params", request.GET).get("businessId", "all")
-        branch_id = getattr(request, "query_params", request.GET).get("branchId", "all")
+        qp = getattr(request, "query_params", request.GET)
+        business_id = qp.get("businessId", "all")
+        branch_id = qp.get("branchId", "all")
         try:
-            months = int(getattr(request, "query_params", request.GET).get("months", 6) or 6)
-        except Exception:
+            months = int(qp.get("months", 6) or 6)
+        except (TypeError, ValueError):
             months = 6
-        months = max(1, min(months, 24))
-
-        # Safe defaults - never 500.
-        total_revenue = 0
-        total_bookings = 0
-        occupancy_rate = 0.0
-        task_completion_rate = 0.0
-        monthly_revenue = []
-        business_filters = [{"id": "all", "name": "All Businesses"}]
-        branch_filters = [{"id": "all", "name": "All Branches", "businessId": "all"}]
-
-        end = timezone.now()
-        start = end.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timezone.timedelta(
-            days=31 * (months - 1)
+        payload = BusinessAnalyticsService.build_dashboard(
+            request.user,
+            business_id=business_id,
+            branch_id=branch_id,
+            months=months,
         )
-
-        try:
-            # Owners see companies they manage. Managers/staff may not be managers of a company,
-            # so we also allow companies derived from their StaffProfile branch assignment.
-            companies_qs = Company.objects.filter(manager=user)
-            if not companies_qs.exists():
-                companies_qs = Company.objects.filter(branches__staff_profiles__user=user)
-            companies_qs = companies_qs.distinct()
-            if business_id and business_id != "all":
-                companies_qs = companies_qs.filter(id=business_id)
-
-            try:
-                business_filters = [{"id": "all", "name": "All Businesses"}] + [
-                    {"id": str(cp.id), "name": cp.name} for cp in companies_qs.order_by("name")
-                ]
-            except Exception as exc:
-                logger.exception("Analytics business options failed: %s", exc)
-
-            branches_qs = Branch.objects.filter(company__in=companies_qs)
-            if branch_id and branch_id != "all":
-                branches_qs = branches_qs.filter(id=branch_id)
-
-            try:
-                branch_filters = [{"id": "all", "name": "All Branches", "businessId": "all"}] + [
-                    {"id": str(br.id), "name": br.name, "businessId": str(br.company_id)}
-                    for br in branches_qs.order_by("name")
-                ]
-            except Exception as exc:
-                logger.exception("Analytics branch options failed: %s", exc)
-
-            # These queries are the most likely to fail on schema mismatch.
-            try:
-                rooms_qs = Room.objects.filter(branch__in=branches_qs)
-                total_rooms = rooms_qs.count()
-            except Exception as exc:
-                logger.exception("Analytics rooms query failed: %s", exc)
-                total_rooms = 0
-
-            try:
-                bookings_qs = Booking.objects.filter(branch__in=branches_qs)
-                total_bookings = bookings_qs.count()
-                checked_in = bookings_qs.filter(status="CHECKED_IN").count()
-                occupancy_rate = round((checked_in / total_rooms * 100) if total_rooms else 0, 1)
-            except Exception as exc:
-                logger.exception("Analytics bookings query failed: %s", exc)
-                bookings_qs = None
-                total_bookings = 0
-                occupancy_rate = 0.0
-
-            # Monthly revenue
-            by_month = {}
-            if bookings_qs is not None:
-                try:
-                    revenue_rows = (
-                        bookings_qs.filter(
-                            status="CHECKED_OUT",
-                            check_out_at__isnull=False,
-                            check_out_at__gte=start,
-                        )
-                        .annotate(month=TruncMonth("check_out_at"))
-                        .values("month")
-                        .annotate(revenue=Coalesce(Sum("base_price"), 0), bookings=Count("id"))
-                        .order_by("month")
-                    )
-                    by_month = {
-                        row["month"].date(): int(row["revenue"] or 0)
-                        for row in revenue_rows
-                        if row.get("month")
-                    }
-                except Exception as exc:
-                    logger.exception("Analytics revenue aggregation failed: %s", exc)
-                    by_month = {}
-
-            labels = []
-            cursor = start.date().replace(day=1)
-            for _ in range(months):
-                labels.append(cursor)
-                cursor_year = cursor.year + (cursor.month // 12)
-                cursor_month = (cursor.month % 12) + 1
-                cursor = date(cursor_year, cursor_month, 1)
-
-            for m in labels:
-                label = f"{m.month:02d}/{str(m.year)[-2:]}"
-                monthly_revenue.append({"label": label, "revenue": int(by_month.get(m, 0))})
-            total_revenue = int(sum(item["revenue"] for item in monthly_revenue))
-
-            # Housekeeping completion
-            try:
-                tasks_qs = HousekeepingTask.objects.filter(branch__in=branches_qs)
-                completed_tasks = tasks_qs.filter(status="COMPLETED").count()
-                total_tasks = tasks_qs.exclude(status="CANCELLED").count()
-                task_completion_rate = round((completed_tasks / total_tasks * 5) if total_tasks else 0, 1)
-            except Exception as exc:
-                logger.exception("Analytics housekeeping query failed: %s", exc)
-                task_completion_rate = 0.0
-
-        except Exception as exc:
-            # Absolute safety net: never 500.
-            logger.exception("Analytics dashboard failed: %s", exc)
-
-        return Response(
-            {
-                "businessFilter": business_id or "all",
-                "branchFilter": branch_id or "all",
-                "businessOptions": business_filters,
-                "branchOptions": branch_filters,
-                "totalRevenue": int(total_revenue or 0),
-                "totalBookings": int(total_bookings or 0),
-                "csatScore": float(task_completion_rate or 0),
-                "monthlyRevenue": monthly_revenue,
-                "occupancyRate": float(occupancy_rate or 0),
-                "filterLabel": "Portfolio",
-                "periodLabel": f"Last {months} months",
-            }
-        )
+        return Response(payload)

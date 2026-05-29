@@ -13,10 +13,11 @@ import CustomerBookingScreen from './CustomerBookingScreen';
 import CustomerPaymentScreen from './CustomerPaymentScreen';
 import CustomerBookingsHubScreen from './CustomerBookingsHubScreen';
 import BookingDetailScreen from './BookingDetailScreen';
-import CustomerLocketScreen from './CustomerLocketScreen';
+import WatchlistScreen from './WatchlistScreen';
 import CustomerServiceScreen from './CustomerServiceScreen';
 import ServiceSelectionScreen from './ServiceSelectionScreen';
 import CustomerAddPostScreen from './CustomerAddPostScreen';
+import CreateWatchlistModal from '../../../components/customer/CreateWatchlistModal';
 import CustomerReviewScreen from './CustomerReviewScreen';
 import CustomerNotificationsScreen from './CustomerNotificationsScreen';
 
@@ -65,7 +66,7 @@ function CustomerTabs() {
             />
             <CustomerTab.Screen
                 name="WatchlistTab"
-                component={CustomerLocketScreen}
+                component={WatchlistScreen}
                 options={{
                     title: 'Watchlist',
                     tabBarIcon: ({color, size}) => <Ionicons name="heart-outline" size={size ?? 22} color={color} />,
@@ -94,6 +95,17 @@ export default function CustomerNavigator() {
                 <CustomerStack.Screen name="CustomerEditProfileScreen" component={CustomerEditProfileScreen} />
                 <CustomerStack.Screen name="BookingDetailScreen" component={BookingDetailScreen} />
                 <CustomerStack.Screen name="CustomerAddPostScreen" component={CustomerAddPostScreen} />
+                <CustomerStack.Screen
+                    name="CreateWatchlistModal"
+                    component={CreateWatchlistModal}
+                    options={{
+                        animation: 'slide_from_bottom',
+                        presentation: 'fullScreenModal',
+                        headerShown: false,
+                        contentStyle: {backgroundColor: '#000000'},
+                        statusBarStyle: 'light',
+                    }}
+                />
                 <CustomerStack.Screen name="CustomerBookingScreen" component={CustomerBookingScreen} />
                 <CustomerStack.Screen name="CustomerPaymentScreen" component={CustomerPaymentScreen} />
                 <CustomerStack.Screen name="CustomerServiceScreen" component={CustomerServiceScreen} />

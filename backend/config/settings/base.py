@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'oauth2_provider',
     'drf_spectacular',
     'channels',
+    'cloudinary',
     'core',
     'accounts',
     'businesses',
@@ -127,18 +128,31 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Redis Configuration
-REDIS_URL = os.getenv('REDIS_URL', '')
+# Redis Configuration (Channels layer requires Redis in production-like setups)
+REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
+
+def _channel_layer_hosts(redis_url: str):
+    """Parse REDIS_URL for channels_redis (supports redis://host:port/db)."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(redis_url)
+    if parsed.scheme in {'redis', 'rediss'} and parsed.hostname:
+        port = parsed.port or 6379
+        db = int((parsed.path or '/0').lstrip('/') or 0)
+        return [(parsed.hostname, port, db)]
+    return [redis_url]
+
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": _channel_layer_hosts(REDIS_URL),
+        },
+    },
+}
 
 if REDIS_URL:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [REDIS_URL],
-            },
-        },
-    }
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
@@ -147,11 +161,6 @@ if REDIS_URL:
     }
     SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 else:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels.layers.InMemoryChannelLayer",
-        },
-    }
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -165,7 +174,7 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@nesto.local')
 AUTH_USER_MODEL = 'accounts.User'
 
 AUTHENTICATION_BACKENDS = [
-    'accounts.backends.EmailBackend',
+    'accounts.services.oauth_backend.EmailBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
@@ -188,7 +197,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
-    'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
+    'EXCEPTION_HANDLER': 'core.services.exception_handlers.custom_exception_handler',
 }
 
 # OAuth2 Provider Settings
@@ -206,7 +215,7 @@ OAUTH2_PROVIDER = {
         'google',
     ),
     'ALLOWED_GRANT_TYPES': ['password', 'refresh_token', 'google'],
-    'OAUTH2_VALIDATOR_CLASS': 'accounts.backends.CustomOAuth2Validator',
+    'OAUTH2_VALIDATOR_CLASS': 'accounts.services.oauth_backend.CustomOAuth2Validator',
 }
 
 # CORS Settings

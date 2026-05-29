@@ -5,6 +5,7 @@ import {Ionicons} from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import {getSession} from '../../../utils/authStorage';
 import {createReview} from '../../../services/ReviewService';
+import {uploadCloudinaryImage} from '../../../services/MediaService';
 import {fetchMyBookings} from '../../../services/CustomerBookingService';
 
 
@@ -175,13 +176,19 @@ export default function CustomerAddPostScreen({navigation}) {
         }
 
         try {
+            const uploadRes = await uploadCloudinaryImage(draftImageUri, {folder: 'nesto/lockets'});
+            if (uploadRes.status !== 'success' || !uploadRes.url) {
+                Alert.alert('Upload failed', uploadRes.message || 'Could not upload your photo.');
+                return;
+            }
             const res = await createReview({
                 bookingId: normalizeBookingId(matchedBooking.bookingId),
                 hotelName: matchedBooking.hotelName,
                 roomName: matchedBooking.roomName,
                 content,
                 rating: draftRating,
-                imageUrl: draftImageUri,
+                imageUrl: uploadRes.url,
+                branchId: matchedBooking.branchId,
             });
             if (res.status !== 'success') {
                 Alert.alert('Unable to post', res.message || 'Please try again.');

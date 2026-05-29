@@ -1,23 +1,11 @@
 from rest_framework import serializers
 
 from businesses.models import Branch, Company, Department
-import cloudinary.uploader
+from core.services.serializer_mixins import CloudinaryRepresentationMixin
+from core.services.cloudinary_service import CloudinaryMediaService
 
 
-def _is_http_url(value: str) -> bool:
-    return bool(value) and isinstance(value, str) and value.lower().startswith(("http://", "https://"))
-
-
-def _upload_to_cloudinary(url: str, folder: str) -> dict | None:
-    if not _is_http_url(url):
-        return None
-    try:
-        return cloudinary.uploader.upload(url, folder=folder)
-    except Exception:
-        return None
-
-
-class CompanySerializer(serializers.ModelSerializer):
+class CompanySerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
     legalName = serializers.CharField(source="legal_name", required=False, allow_blank=True)
     taxCode = serializers.CharField(source="tax_code", required=False, allow_blank=True)
     businessType = serializers.CharField(source="business_type", required=False, allow_blank=True)
@@ -25,6 +13,8 @@ class CompanySerializer(serializers.ModelSerializer):
     lodgingType = serializers.CharField(source="lodging_type", required=False, allow_blank=True)
     contact = serializers.SerializerMethodField()
     logo = serializers.SerializerMethodField()
+
+    cloudinary_field_map = {"logo": "logo"}
 
     class Meta:
         model = Company
@@ -51,19 +41,16 @@ class CompanySerializer(serializers.ModelSerializer):
         }
 
     def get_logo(self, obj):
-        try:
-            return obj.logo.url if getattr(obj, "logo", None) else ""
-        except Exception:
-            return ""
+        return CloudinaryMediaService.resolve_field_url(getattr(obj, "logo", None))
 
     def create(self, validated_data):
         contact = self.initial_data.get("contact", {}) or {}
         payload = self.initial_data if isinstance(self.initial_data, dict) else {}
         logo_url = payload.get("logo")
-        if isinstance(logo_url, str) and _is_http_url(logo_url):
-            uploaded = _upload_to_cloudinary(logo_url, folder="nesto/company_logos")
-            if uploaded and uploaded.get("public_id"):
-                validated_data["logo"] = uploaded["public_id"]
+        if isinstance(logo_url, str) and CloudinaryMediaService.is_http_url(logo_url):
+            public_id = CloudinaryMediaService.ingest_url(logo_url, folder="nesto/company_logos")
+            if public_id:
+                validated_data["logo"] = public_id
         instance = Company.objects.create(
             manager=self.context["request"].user if self.context.get("request") else None,
             contact_email=contact.get("email", ""),
@@ -77,10 +64,10 @@ class CompanySerializer(serializers.ModelSerializer):
         contact = self.initial_data.get("contact", None)
         payload = self.initial_data if isinstance(self.initial_data, dict) else {}
         logo_url = payload.get("logo")
-        if isinstance(logo_url, str) and _is_http_url(logo_url):
-            uploaded = _upload_to_cloudinary(logo_url, folder="nesto/company_logos")
-            if uploaded and uploaded.get("public_id"):
-                validated_data["logo"] = uploaded["public_id"]
+        if isinstance(logo_url, str) and CloudinaryMediaService.is_http_url(logo_url):
+            public_id = CloudinaryMediaService.ingest_url(logo_url, folder="nesto/company_logos")
+            if public_id:
+                validated_data["logo"] = public_id
         for key, value in validated_data.items():
             setattr(instance, key, value)
         if isinstance(contact, dict):
@@ -93,7 +80,7 @@ class CompanySerializer(serializers.ModelSerializer):
         return instance
 
 
-class BranchSerializer(serializers.ModelSerializer):
+class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
     businessId = serializers.UUIDField(source="company_id", read_only=True)
     company = serializers.PrimaryKeyRelatedField(queryset=Company.objects.none(), required=False, allow_null=True)
     lodgingType = serializers.CharField(source="lodging_type", required=False, allow_blank=True)
@@ -103,6 +90,9 @@ class BranchSerializer(serializers.ModelSerializer):
     contact = serializers.SerializerMethodField()
     billing = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
+
+    cloudinary_field_map = {"image": "image"}
+    cloudinary_gallery_fields = ("images",)
 
     class Meta:
         model = Branch
@@ -141,10 +131,7 @@ class BranchSerializer(serializers.ModelSerializer):
         return {"bankName": obj.bank_name, "accountNumber": obj.bank_account_number}
 
     def get_image(self, obj):
-        try:
-            return obj.image.url if getattr(obj, "image", None) else ""
-        except Exception:
-            return ""
+        return CloudinaryMediaService.resolve_field_url(getattr(obj, "image", None))
 
     def create(self, validated_data):
         request = self.context.get("request") if isinstance(self.context, dict) else None
@@ -156,7 +143,6 @@ class BranchSerializer(serializers.ModelSerializer):
         billing = payload.get("billing", {}) if isinstance(payload, dict) else {}
         company_id = payload.get("businessId") or payload.get("company")
         if company_id:
-            # Prevent assigning branches to other managers' companies.
             if user and Company.objects.filter(id=company_id, manager=user).exists() is False:
                 raise serializers.ValidationError({"businessId": "Invalid businessId."})
             validated_data["company_id"] = company_id
@@ -167,19 +153,18 @@ class BranchSerializer(serializers.ModelSerializer):
             validated_data["bank_name"] = billing.get("bankName", "")
             validated_data["bank_account_number"] = billing.get("accountNumber", "")
 
-        # Upload cover image + gallery images (if provided as URLs).
         image_url = payload.get("image") if isinstance(payload, dict) else None
-        if isinstance(image_url, str) and _is_http_url(image_url):
-            uploaded = _upload_to_cloudinary(image_url, folder="nesto/branch_images")
-            if uploaded and uploaded.get("public_id"):
-                validated_data["image"] = uploaded["public_id"]
+        if isinstance(image_url, str) and CloudinaryMediaService.is_http_url(image_url):
+            public_id = CloudinaryMediaService.ingest_url(image_url, folder="nesto/branch_images")
+            if public_id:
+                validated_data["image"] = public_id
         images = payload.get("images") if isinstance(payload, dict) else None
         if isinstance(images, list):
             normalized = []
             for item in images:
-                if isinstance(item, str) and _is_http_url(item):
-                    up = _upload_to_cloudinary(item, folder="nesto/branch_gallery")
-                    normalized.append(up.get("secure_url") if up else item)
+                if isinstance(item, str) and CloudinaryMediaService.is_http_url(item):
+                    uploaded = CloudinaryMediaService.upload_remote_url(item, folder="nesto/branch_gallery")
+                    normalized.append(uploaded.get("secure_url") if uploaded else item)
                 else:
                     normalized.append(item)
             validated_data["images"] = normalized
@@ -191,17 +176,17 @@ class BranchSerializer(serializers.ModelSerializer):
         billing = payload.get("billing", {}) if isinstance(payload, dict) else None
 
         image_url = payload.get("image") if isinstance(payload, dict) else None
-        if isinstance(image_url, str) and _is_http_url(image_url):
-            uploaded = _upload_to_cloudinary(image_url, folder="nesto/branch_images")
-            if uploaded and uploaded.get("public_id"):
-                validated_data["image"] = uploaded["public_id"]
+        if isinstance(image_url, str) and CloudinaryMediaService.is_http_url(image_url):
+            public_id = CloudinaryMediaService.ingest_url(image_url, folder="nesto/branch_images")
+            if public_id:
+                validated_data["image"] = public_id
         images = payload.get("images") if isinstance(payload, dict) else None
         if isinstance(images, list):
             normalized = []
             for item in images:
-                if isinstance(item, str) and _is_http_url(item):
-                    up = _upload_to_cloudinary(item, folder="nesto/branch_gallery")
-                    normalized.append(up.get("secure_url") if up else item)
+                if isinstance(item, str) and CloudinaryMediaService.is_http_url(item):
+                    uploaded = CloudinaryMediaService.upload_remote_url(item, folder="nesto/branch_gallery")
+                    normalized.append(uploaded.get("secure_url") if uploaded else item)
                 else:
                     normalized.append(item)
             validated_data["images"] = normalized
@@ -221,4 +206,3 @@ class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
         fields = ["id", "code", "label", "created_at", "updated_at"]
-

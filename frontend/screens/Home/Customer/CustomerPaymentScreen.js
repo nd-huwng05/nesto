@@ -2,12 +2,15 @@ import React, {useMemo, useState} from 'react';
 import {ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
 import {getSession} from '../../../utils/authStorage';
-import {normalizeBookingId} from '../../../utils/bookingId';
+import {displayBookingId, normalizeBookingId} from '../../../utils/bookingId';
 import {pushCustomerNotification} from '../../../services/NotificationService';
+import {createMyBooking} from '../../../services/CustomerBookingService';
 import {initiateMomoPayment, initiateZaloPayPayment} from '../../../services/PaymentService';
+import BookingQrCode from '../../../components/booking/BookingQrCode';
+import {formatPricingTierLabel} from '../../../utils/roomPricing';
 import ScreenHeader from '../../../components/common/ScreenHeader';
 import {formatVnd} from '../../../utils/formatCurrency';
 
@@ -47,6 +50,7 @@ const toUpcomingDateLabel = (value) => {
 };
 
 export default function CustomerPaymentScreen({navigation, route}) {
+    const insets = useSafeAreaInsets();
     const {
         heroImage = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
         hotelName = '',
@@ -70,6 +74,9 @@ export default function CustomerPaymentScreen({navigation, route}) {
         selectedServices = [],
         bookingId = null,
         backendBookingId = null,
+        bookingDraft = null,
+        roomTypeId = null,
+        pricingTier = '',
         branchId = null,
         rating = 0,
         reviews = 0,
@@ -85,6 +92,8 @@ export default function CustomerPaymentScreen({navigation, route}) {
     const [paidAmount, setPaidAmount] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isPaying, setIsPaying] = useState(false);
+    const [createdBookingUuid, setCreatedBookingUuid] = useState(String(backendBookingId || '').trim());
+    const [createdBookingCode, setCreatedBookingCode] = useState(String(bookingId || '').trim());
 
     const paymentRows = useMemo(
         () => [
@@ -156,7 +165,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
         orderInfo: `Nesto ${hotelName} - ${roomName}`,
     });
 
-    const handleProcessPayment = async (amountToPay) => {
+    const handleProcessPayment = async (amountToPay, bookingUuid, bookingCode) => {
         try {
             const session = await getSession();
             const sessionUser = session?.user || {};
@@ -164,8 +173,8 @@ export default function CustomerPaymentScreen({navigation, route}) {
             const customerEmail = String(sessionUser?.email || email || '').trim().toLowerCase();
             const customerPhone = String(sessionUser?.phone || phone || 'N/A').trim() || 'N/A';
             const paidAt = new Date().toISOString();
-            const normalizedBookingId = normalizeBookingId(bookingId);
-            const safeBookingId = normalizedBookingId || String(backendBookingId || '').trim();
+            const normalizedBookingId = normalizeBookingId(bookingCode || bookingId);
+            const safeBookingId = normalizedBookingId || String(bookingUuid || backendBookingId || '').trim();
             const upcomingCheckIn = resolveUpcomingDateLabel(checkInDateIso, checkIn);
             const upcomingCheckOut = resolveUpcomingDateLabel(checkOutDateIso, checkOut);
             const remainingAmount = Math.max(0, resolvedSubtotal - amountToPay);
@@ -279,10 +288,45 @@ export default function CustomerPaymentScreen({navigation, route}) {
             Alert.alert('Payment', 'Deposit amount is invalid. Go back and review your booking.');
             return;
         }
+        if (!bookingDraft && !createdBookingUuid) {
+            Alert.alert('Payment', 'Booking details are missing. Go back and try again.');
+            return;
+        }
 
         setIsPaying(true);
         try {
+            let bookingUuid = createdBookingUuid;
+            let bookingCode = createdBookingCode;
+
+            if (!bookingUuid && bookingDraft) {
+                const created = await createMyBooking({
+                    branchId: bookingDraft.branchId,
+                    hotelName: bookingDraft.hotelName,
+                    hotelAddress: bookingDraft.hotelAddress,
+                    roomType: bookingDraft.roomType,
+                    roomTypeId: bookingDraft.roomTypeId,
+                    guestName: bookingDraft.guestName,
+                    email: bookingDraft.email,
+                    phone: bookingDraft.phone,
+                    checkInAt: bookingDraft.checkInAt,
+                    expectedCheckOutAt: bookingDraft.expectedCheckOutAt,
+                    serviceIds: bookingDraft.serviceIds || [],
+                    depositPercentage: bookingDraft.depositPercentage || depositPercent,
+                });
+                if (created.status !== 'success' || !created.data?.id) {
+                    Alert.alert('Booking', created.message || 'Unable to create your booking.');
+                    return;
+                }
+                bookingUuid = String(created.data.id);
+                bookingCode = String(created.data.bookingCode || created.data.booking_code || '');
+                setCreatedBookingUuid(bookingUuid);
+                setCreatedBookingCode(bookingCode);
+            }
+
             const payload = buildPaymentPayload(amountToPay);
+            payload.bookingId = normalizeBookingId(bookingCode) || bookingUuid;
+            payload.bookingData.booking_id = bookingUuid;
+
             const gatewayResult = paymentMethod === 'zalo'
                 ? await initiateZaloPayPayment(payload)
                 : await initiateMomoPayment(payload);
@@ -294,18 +338,27 @@ export default function CustomerPaymentScreen({navigation, route}) {
 
             const browserResult = await WebBrowser.openBrowserAsync(gatewayResult.data.payUrl);
             if (browserResult.type === 'cancel') {
-                Alert.alert('Payment cancelled', 'You closed the payment page before completing checkout.');
+                Alert.alert(
+                    'Payment cancelled',
+                    'Your booking is saved as PENDING. Complete payment later from Upcoming bookings.'
+                );
+                navigation.navigate('MainTabs', {screen: 'BookingTab'});
                 return;
             }
 
             setPaidAmount(amountToPay);
-            await handleProcessPayment(amountToPay);
+            await handleProcessPayment(amountToPay, bookingUuid, bookingCode);
             setShowSuccessModal(true);
         } catch {
             Alert.alert('Payment', 'Unable to process payment right now. Please try again.');
         } finally {
             setIsPaying(false);
         }
+    };
+
+    const handleGoBookings = () => {
+        setShowSuccessModal(false);
+        navigation.navigate('MainTabs', {screen: 'BookingTab'});
     };
 
     const handleGoHome = () => {
@@ -323,7 +376,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
     };
 
     return (
-        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
             <ScreenHeader onBack={() => navigation.goBack()} title="Payment" />
             <ScrollView
                 style={styles.scroll}
@@ -367,6 +420,12 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     <View style={styles.row}><Text style={styles.label}>Check-out:</Text><Text style={styles.value}>{checkOut}</Text></View>
                     <View style={styles.divider}/>
                     {stayTimeLabel ? <View style={styles.row}><Text style={styles.label}>Stay:</Text><Text style={styles.value}>{stayTimeLabel}</Text></View> : null}
+                    {pricingTier ? (
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Pricing tier:</Text>
+                            <Text style={styles.value}>{formatPricingTierLabel(pricingTier)}</Text>
+                        </View>
+                    ) : null}
                     <View style={styles.row}><Text style={styles.label}>Room total:</Text><Text style={styles.value}>{formatVnd(roomTotal)}</Text></View>
                     <View style={styles.row}><Text style={styles.label}>Services total:</Text><Text style={styles.value}>{formatVnd(servicesTotal)}</Text></View>
                     <View style={styles.divider}/>
@@ -411,13 +470,15 @@ export default function CustomerPaymentScreen({navigation, route}) {
                 </View>
             </ScrollView>
 
-            <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirmPayment} disabled={isPaying}>
-                {isPaying ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <Text style={styles.confirmBtnText}>Confirm payment · {formatVnd(resolvedDepositAmount)}</Text>
-                )}
-            </TouchableOpacity>
+            <View style={[styles.bottomBar, {paddingBottom: Math.max(insets.bottom, 12)}]}>
+                <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirmPayment} disabled={isPaying}>
+                    {isPaying ? (
+                        <ActivityIndicator color="#fff" />
+                    ) : (
+                        <Text style={styles.confirmBtnText}>Confirm payment · {formatVnd(resolvedDepositAmount)}</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
 
             <Modal
                 visible={showSuccessModal}
@@ -425,7 +486,8 @@ export default function CustomerPaymentScreen({navigation, route}) {
                 animationType="fade"
                 onRequestClose={() => setShowSuccessModal(false)}
             >
-                <View style={styles.modalOverlay}>
+                <SafeAreaView style={styles.modalOverlaySafe} edges={['top', 'bottom', 'left', 'right']}>
+                    <View style={styles.modalOverlay}>
                     <View style={styles.modalCard}>
                         <TouchableOpacity
                             style={styles.modalCloseBtn}
@@ -437,17 +499,29 @@ export default function CustomerPaymentScreen({navigation, route}) {
                         <View style={styles.modalIconWrap}>
                             <Ionicons name="checkmark" size={34} color="#fff"/>
                         </View>
-                        <Text style={styles.modalTitle}>Payment successful</Text>
+                        <Text style={styles.modalTitle}>Booking confirmed</Text>
                         <Text style={styles.modalHint}>
-                            Your payment of {formatVnd(paidAmount)} with {paymentMethod === 'momo' ? 'MoMo' : 'ZaloPay'} has been completed.
+                            Deposit {formatVnd(paidAmount)} paid via {paymentMethod === 'momo' ? 'MoMo' : 'ZaloPay'}.
+                            Show this QR at reception for check-in.
                         </Text>
 
-                        <TouchableOpacity style={styles.homeBtn} onPress={handleGoHome} activeOpacity={0.88}>
-                            <Ionicons name="home" size={18} color="#fff"/>
-                            <Text style={styles.homeBtnText}>Back to Home</Text>
+                        <BookingQrCode
+                            bookingId={createdBookingUuid || backendBookingId}
+                            size={156}
+                            label={`Booking ${displayBookingId(createdBookingCode || bookingId)}`}
+                        />
+
+                        <TouchableOpacity style={styles.homeBtn} onPress={handleGoBookings} activeOpacity={0.88}>
+                            <Ionicons name="calendar" size={18} color="#fff"/>
+                            <Text style={styles.homeBtnText}>View Upcoming bookings</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.secondaryBtn} onPress={handleGoHome} activeOpacity={0.88}>
+                            <Text style={styles.secondaryBtnText}>Back to Home</Text>
                         </TouchableOpacity>
                     </View>
-                </View>
+                    </View>
+                </SafeAreaView>
             </Modal>
         </SafeAreaView>
     );
@@ -456,7 +530,14 @@ export default function CustomerPaymentScreen({navigation, route}) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: '#FFFFFF',
+    },
+    bottomBar: {
+        backgroundColor: '#FFFFFF',
+        paddingTop: 12,
+        paddingHorizontal: 16,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: '#E5E7EB',
     },
     scroll: {
         flex: 1,
@@ -631,10 +712,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     confirmBtn: {
-        position: 'absolute',
-        left: 16,
-        right: 16,
-        bottom: 16,
         backgroundColor: '#8294FF',
         borderRadius: 999,
         paddingVertical: 14,
@@ -649,9 +726,13 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '800',
     },
-    modalOverlay: {
+    modalOverlaySafe: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.35)',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'transparent',
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: 20,
@@ -768,5 +849,15 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 15,
         fontWeight: '700',
+    },
+    secondaryBtn: {
+        marginTop: 10,
+        paddingVertical: 10,
+    },
+    secondaryBtnText: {
+        color: '#5b79df',
+        fontSize: 14,
+        fontWeight: '600',
+        textAlign: 'center',
     },
 });

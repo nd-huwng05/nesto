@@ -1,17 +1,20 @@
 import {StyleSheet, Text, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 
-export default function EmptyState({icon = 'heart-dislike-outline', title, subtitle}) {
+export default function EmptyState({icon = 'heart-dislike-outline', title, subtitle, description}) {
+  const body = subtitle || description;
   return (
     <View style={styles.wrap}>
       <View style={styles.iconWrap}>
         <Ionicons name={icon} size={28} color="#111827" />
       </View>
       {title ? <Text style={styles.title}>{title}</Text> : null}
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      {body ? <Text style={styles.subtitle}>{body}</Text> : null}
     </View>
   );
 }
+
+export {EmptyState};
 
 const styles = StyleSheet.create({
   wrap: {paddingVertical: 44, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center'},

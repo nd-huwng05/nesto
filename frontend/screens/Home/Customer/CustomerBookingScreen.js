@@ -12,12 +12,21 @@ import {
   Modal,
   RefreshControl,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Ionicons, Feather} from '@expo/vector-icons';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {getSession} from '../../../utils/authStorage';
 import {formatVnd} from '../../../utils/formatCurrency';
-import {createMyBooking} from '../../../services/CustomerBookingService';
+import BookingDateTimePicker from '../../../components/booking/BookingDateTimePicker';
+import TierPricingSummary from '../../../components/booking/TierPricingSummary';
+import {
+  calculateDepositAmount,
+  calculateHoldMinutes,
+  calculateTieredRoomPrice,
+  formatDateTimeLabel,
+  normalizeTierRates,
+} from '../../../utils/roomPricing';
 
 const DEPOSIT_OPTIONS = [20, 50, 100];
 
@@ -41,9 +50,18 @@ const getToday = () => {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 };
 
+const applyDefaultStayTime = (date, isCheckOut = false) => {
+  const next = new Date(date);
+  if (next.getHours() === 0 && next.getMinutes() === 0) {
+    next.setHours(isCheckOut ? 12 : 14, 0, 0, 0);
+  }
+  return next;
+};
+
 const CustomerBookingScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
   const {
     hotelName = '',
     roomName: routeRoomName = '',
@@ -55,6 +73,9 @@ const CustomerBookingScreen = () => {
     startDate,
     endDate,
     roomPrice,
+    pricePerHour: routePricePerHour,
+    pricePerHalfDay: routePricePerHalfDay,
+    pricePerDay: routePricePerDay,
     roomId,
     branchId,
     hotelAddress,
@@ -117,19 +138,25 @@ const CustomerBookingScreen = () => {
   const parsedStartIso = parseIsoDate(startDateIso);
   const parsedEndIso = parseIsoDate(endDateIso);
 
-  const safeStartDate = parsedStartIso
-    ? parsedStartIso
-    : Number.isFinite(startDate)
-    ? new Date(new Date().getFullYear(), new Date().getMonth(), startDate)
-    : parseDateFromLabel(initialCheckIn, getToday());
-  const safeEndDateCandidate = parsedEndIso
-    ? parsedEndIso
-    : Number.isFinite(endDate)
-    ? new Date(new Date().getFullYear(), new Date().getMonth(), endDate)
-    : parseDateFromLabel(initialCheckOut, new Date(safeStartDate.getFullYear(), safeStartDate.getMonth(), safeStartDate.getDate() + 1));
+  const safeStartDate = applyDefaultStayTime(
+    parsedStartIso
+      ? parsedStartIso
+      : Number.isFinite(startDate)
+      ? new Date(new Date().getFullYear(), new Date().getMonth(), startDate)
+      : parseDateFromLabel(initialCheckIn, getToday()),
+    false
+  );
+  const safeEndDateCandidate = applyDefaultStayTime(
+    parsedEndIso
+      ? parsedEndIso
+      : Number.isFinite(endDate)
+      ? new Date(new Date().getFullYear(), new Date().getMonth(), endDate)
+      : parseDateFromLabel(initialCheckOut, new Date(safeStartDate.getFullYear(), safeStartDate.getMonth(), safeStartDate.getDate() + 1)),
+    true
+  );
   const safeEndDate = safeEndDateCandidate > safeStartDate
     ? safeEndDateCandidate
-    : new Date(safeStartDate.getFullYear(), safeStartDate.getMonth(), safeStartDate.getDate() + 1);
+    : applyDefaultStayTime(new Date(safeStartDate.getTime() + 2 * 60 * 60 * 1000), true);
 
   const [selectedStartDate, setSelectedStartDate] = useState(safeStartDate);
   const [selectedEndDate, setSelectedEndDate] = useState(safeEndDate);
@@ -157,35 +184,29 @@ const CustomerBookingScreen = () => {
     setViewDate(new Date(syncedStart.getFullYear(), syncedStart.getMonth(), 1));
   }, [startDateIso, endDateIso, startDate, endDate, initialCheckIn, initialCheckOut, syncToken]);
 
-  const formatBookingDate = (date) => {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = MONTH_NAMES[date.getMonth()];
-    const year = date.getFullYear();
-    return `${day} ${month} ${year}`;
-  };
+  const tierRates = useMemo(
+    () =>
+      normalizeTierRates({
+        pricePerHour: routePricePerHour,
+        pricePerHalfDay: routePricePerHalfDay,
+        pricePerDay: routePricePerDay ?? roomPrice,
+        basePrice: roomPrice,
+      }),
+    [routePricePerHour, routePricePerHalfDay, routePricePerDay, roomPrice]
+  );
 
-  const checkIn = formatBookingDate(selectedStartDate);
-  const checkOut = formatBookingDate(selectedEndDate);
+  const pricingQuote = useMemo(
+    () => calculateTieredRoomPrice(tierRates, selectedStartDate, selectedEndDate),
+    [tierRates, selectedStartDate, selectedEndDate]
+  );
 
-  const stayHours = useMemo(() => {
-    const diffMs = selectedEndDate.getTime() - selectedStartDate.getTime();
-    if (diffMs > 0) {
-      return Math.round(diffMs / (1000 * 60 * 60));
-    }
-    return 24;
-  }, [selectedStartDate, selectedEndDate]);
+  const checkIn = formatDateTimeLabel(selectedStartDate);
+  const checkOut = formatDateTimeLabel(selectedEndDate);
 
-  const stayDays = useMemo(() => {
-    return Math.max(1, Math.round(stayHours / 24));
-  }, [stayHours]);
-
-  const nightlyPrice = useMemo(() => {
-    if (Number.isFinite(roomPrice) && roomPrice > 0) return roomPrice;
-    if (Number.isFinite(legacyPricePerHour) && legacyPricePerHour > 0) return legacyPricePerHour * 24;
-    return 0;
-  }, [roomPrice, legacyPricePerHour]);
-
-  const roomTotal = useMemo(() => nightlyPrice * stayDays, [nightlyPrice, stayDays]);
+  const stayHours = useMemo(() => pricingQuote.durationHours || 0, [pricingQuote.durationHours]);
+  const stayDays = useMemo(() => Math.max(1, Math.ceil((stayHours || 1) / 24)), [stayHours]);
+  const roomTotal = useMemo(() => pricingQuote.roomTotal || 0, [pricingQuote.roomTotal]);
+  const nightlyPrice = tierRates.pricePerDay;
 
   const [selectedServices, setSelectedServices] = useState(() => {
     const fromRoute = normalizeSelectedServices(routeSelectedServices);
@@ -215,19 +236,18 @@ const CustomerBookingScreen = () => {
   const subtotalAmount = roomTotal + servicesTotal;
   const [depositPercent, setDepositPercent] = useState(20);
   const depositAmount = useMemo(
-    () => Math.round(subtotalAmount * (depositPercent / 100)),
-    [subtotalAmount, depositPercent]
+    () => calculateDepositAmount(roomTotal, depositPercent),
+    [roomTotal, depositPercent]
   );
-  const stayMinutes = useMemo(() => Math.max(1, Math.round(stayHours * 60)), [stayHours]);
+  const stayMinutes = useMemo(() => pricingQuote.durationMinutes || Math.max(1, Math.round(stayHours * 60)), [pricingQuote.durationMinutes, stayHours]);
   const holdMinutes = useMemo(
-    () => Math.max(1, Math.round(stayMinutes * (depositPercent / 100))),
+    () => calculateHoldMinutes(stayMinutes, depositPercent),
     [stayMinutes, depositPercent]
   );
-  const stayTimeLabel = `${stayDays} night${stayDays === 1 ? '' : 's'} · ${stayMinutes} min`;
+  const stayTimeLabel = `${pricingQuote.pricingTier || 'stay'} · ${stayMinutes} min`;
   const [bookingError, setBookingError] = useState('');
   const [accountLoaded, setAccountLoaded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [account, setAccount] = useState({
     name: '',
@@ -335,7 +355,7 @@ const CustomerBookingScreen = () => {
     return `${day}/${month}/${year}`;
   };
 
-  const handleBookNow = async () => {
+  const handleBookNow = () => {
     if (!branchId) {
       setBookingError('Missing branch for booking');
       Alert.alert('Booking', 'This property is missing branch information. Go back and choose a room again.');
@@ -345,15 +365,44 @@ const CustomerBookingScreen = () => {
       Alert.alert('Booking', 'Please choose a room type before booking.');
       return;
     }
-    if (nightlyPrice <= 0) {
-      Alert.alert('Booking', 'Room price is unavailable for this stay. Go back and select a room again.');
+    if (roomTotal <= 0) {
+      Alert.alert('Booking', 'Room price is unavailable for this stay. Adjust your dates and try again.');
+      return;
+    }
+    if (selectedEndDate <= selectedStartDate) {
+      Alert.alert('Booking', 'Check-out must be after check-in.');
       return;
     }
 
-    setIsSubmitting(true);
     setBookingError('');
-    try {
-      const created = await createMyBooking({
+    navigation.navigate('CustomerPaymentScreen', {
+      heroImage,
+      hotelName,
+      roomName,
+      branchId,
+      roomTypeId,
+      checkIn,
+      checkOut,
+      checkInDateIso: selectedStartDate.toISOString(),
+      checkOutDateIso: selectedEndDate.toISOString(),
+      name: displayName,
+      email: account.email,
+      phone: account.phone,
+      subtotalAmount,
+      totalAmount: subtotalAmount,
+      depositAmount,
+      depositPercent,
+      holdMinutes,
+      stayMinutes,
+      roomTotal,
+      servicesTotal,
+      nightlyPrice,
+      stayDays,
+      stayTimeLabel,
+      pricingTier: pricingQuote.pricingTier,
+      selectedServices,
+      serviceIds: selectedServiceIds,
+      bookingDraft: {
         branchId,
         hotelName,
         hotelAddress: hotelAddress || '',
@@ -365,47 +414,9 @@ const CustomerBookingScreen = () => {
         checkInAt: selectedStartDate.toISOString(),
         expectedCheckOutAt: selectedEndDate.toISOString(),
         serviceIds: selectedServiceIds,
-      });
-      if (created.status !== 'success') {
-        setBookingError(created.message || 'Unable to create booking');
-        Alert.alert('Booking', String(created.message || 'Unable to create booking. Please try again.'));
-        return;
-      }
-      const bookingCode = created?.data?.bookingCode || created?.data?.booking_code || created?.data?.bookingId || '';
-
-      navigation.navigate('CustomerPaymentScreen', {
-        bookingId: bookingCode,
-        backendBookingId: created?.data?.id || null,
-        heroImage,
-        hotelName,
-        roomName,
-        branchId,
-        checkIn,
-        checkOut,
-        checkInDateIso: selectedStartDate.toISOString(),
-        checkOutDateIso: selectedEndDate.toISOString(),
-        name: displayName,
-        email: account.email,
-        phone: account.phone,
-        subtotalAmount,
-        totalAmount: subtotalAmount,
-        depositAmount,
-        depositPercent,
-        holdMinutes,
-        stayMinutes,
-        roomTotal,
-        servicesTotal,
-        nightlyPrice,
-        stayDays,
-        stayTimeLabel,
-        selectedServices,
-      });
-    } catch {
-      setBookingError('Unable to create booking');
-      Alert.alert('Booking', 'Unable to create booking right now. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
+        depositPercentage: depositPercent,
+      },
+    });
   };
 
   const handleOpenServiceSelection = () => {
@@ -425,7 +436,7 @@ const CustomerBookingScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.checkoutHeader}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} activeOpacity={0.85}>
           <Ionicons name="arrow-back" size={22} color="#000000" />
@@ -504,7 +515,9 @@ const CustomerBookingScreen = () => {
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Check-out</Text><Text style={styles.summaryValue}>{checkOut}</Text></View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Room ({formatVnd(nightlyPrice)} × {stayDays})</Text>
+            <Text style={styles.summaryLabel}>
+              Room ({pricingQuote.pricingTier || 'tier'} · {stayMinutes} min)
+            </Text>
             <Text style={styles.summaryValue}>{formatVnd(roomTotal)}</Text>
           </View>
           {selectedServices.length ? (
@@ -523,7 +536,17 @@ const CustomerBookingScreen = () => {
             <Text style={styles.summaryLabelBold}>Subtotal</Text>
             <Text style={styles.summaryValueBold}>{formatVnd(subtotalAmount)}</Text>
           </View>
+        </View>
 
+        <TierPricingSummary
+          tierRates={tierRates}
+          pricingQuote={pricingQuote}
+          roomTotal={roomTotal}
+          servicesTotal={servicesTotal}
+          subtotalAmount={subtotalAmount}
+        />
+
+        <View style={styles.summaryBox}>
           <Text style={styles.depositSectionTitle}>Deposit amount</Text>
           <View style={styles.depositOptionsRow}>
             {DEPOSIT_OPTIONS.map((option) => {
@@ -542,136 +565,31 @@ const CustomerBookingScreen = () => {
               );
             })}
           </View>
-          <Text style={styles.holdNote}>Required deposit: {formatVnd(depositAmount)}</Text>
+          <Text style={styles.holdNote}>Required deposit (room only): {formatVnd(depositAmount)}</Text>
           <Text style={styles.holdNote}>
-            Room will be held for {holdMinutes} minutes if you arrive late.
+            Late hold: {holdMinutes} minutes ({depositPercent}% of stay). After this, booking becomes no-show.
           </Text>
           {bookingError ? <Text style={styles.bookingError}>{bookingError}</Text> : null}
         </View>
       </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.bookBtn, isSubmitting ? styles.bookBtnDisabled : null]}
-        onPress={handleBookNow}
-        disabled={isSubmitting}
-      >
-        {isSubmitting ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.bookBtnText}>Book now · {formatVnd(subtotalAmount)}</Text>
-        )}
-      </TouchableOpacity>
+      <View style={[styles.bottomBar, {paddingBottom: Math.max(insets.bottom, 12)}]}>
+        <TouchableOpacity style={styles.bookBtn} onPress={handleBookNow} activeOpacity={0.9}>
+          <Text style={styles.bookBtnText}>Continue to payment · {formatVnd(depositAmount)} deposit</Text>
+        </TouchableOpacity>
+      </View>
 
-      <Modal
+      <BookingDateTimePicker
         visible={showDatePicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDatePicker(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Date Range</Text>
-              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                <Ionicons name="close" size={28} color="#2d2d2d"/>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.modalHint}>Check-out must be after check-in</Text>
-
-            <View style={styles.monthNavRow}>
-              <TouchableOpacity style={styles.monthNavBtn} onPress={() => handleChangeMonth(-1)}>
-                <Ionicons name="chevron-back" size={18} color="#4d4d4d"/>
-              </TouchableOpacity>
-              <Text style={styles.monthNavTitle}>{MONTH_NAMES[viewDate.getMonth()]} {viewDate.getFullYear()}</Text>
-              <TouchableOpacity style={styles.monthNavBtn} onPress={() => handleChangeMonth(1)}>
-                <Ionicons name="chevron-forward" size={18} color="#4d4d4d"/>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.datePreviewRow}>
-              <TouchableOpacity
-                style={[
-                  styles.datePreviewCard,
-                  activeDateField === 'start' ? styles.datePreviewCardActive : null,
-                ]}
-                onPress={() => setActiveDateField('start')}
-              >
-                <Text style={styles.datePreviewLabel}>Check-in</Text>
-                <Text style={styles.datePreviewValue}>{MONTH_NAMES[selectedStartDate.getMonth()]} {String(selectedStartDate.getDate()).padStart(2, '0')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.datePreviewCard,
-                  activeDateField === 'end' ? styles.datePreviewCardActive : null,
-                ]}
-                onPress={() => setActiveDateField('end')}
-              >
-                <Text style={styles.datePreviewLabel}>Check-out</Text>
-                <Text style={styles.datePreviewValue}>{MONTH_NAMES[selectedEndDate.getMonth()]} {String(selectedEndDate.getDate()).padStart(2, '0')}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.dayGrid}>
-              {(() => {
-                const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
-                const firstWeekday = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
-                const dayCells = [
-                  ...Array.from({length: firstWeekday}, (_, index) => ({
-                    key: `empty-${index}`,
-                    isEmpty: true,
-                  })),
-                  ...Array.from({length: daysInMonth}, (_, index) => ({
-                    key: `day-${index + 1}`,
-                    day: index + 1,
-                    isEmpty: false,
-                  })),
-                ];
-
-                return dayCells.map((cell) => {
-                  if (cell.isEmpty) {
-                    return <View key={cell.key} style={styles.dayCellEmpty}/>;
-                  }
-
-                  const day = cell.day;
-                  const candidateDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-                  const today = getToday();
-                  const isPastDate = candidateDate < today;
-                  const isDisabled = isPastDate || (activeDateField === 'end' && candidateDate <= selectedStartDate);
-                  const isSelected = activeDateField === 'start'
-                    ? isSameDate(candidateDate, selectedStartDate)
-                    : isSameDate(candidateDate, selectedEndDate);
-
-                  return (
-                    <TouchableOpacity
-                      key={cell.key}
-                      style={[
-                        styles.dayCell,
-                        isSelected ? styles.dayCellActive : null,
-                        isDisabled ? styles.dayCellDisabled : null,
-                      ]}
-                      onPress={() => handleSelectDate(day)}
-                      disabled={isDisabled}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[
-                        styles.dayCellText,
-                        isSelected ? styles.dayCellTextActive : null,
-                        isDisabled ? styles.dayCellTextDisabled : null,
-                      ]}>
-                        {day}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                });
-              })()}
-            </View>
-
-            <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setShowDatePicker(false)}>
-              <Text style={styles.modalDoneText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        checkInDate={selectedStartDate}
+        checkOutDate={selectedEndDate}
+        onCancel={() => setShowDatePicker(false)}
+        onConfirm={({checkIn, checkOut}) => {
+          setSelectedStartDate(checkIn);
+          setSelectedEndDate(checkOut);
+          setShowDatePicker(false);
+        }}
+      />
     </SafeAreaView>
   );
 };
@@ -679,7 +597,14 @@ const CustomerBookingScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4F6FB',
+    backgroundColor: '#FFFFFF',
+  },
+  bottomBar: {
+    backgroundColor: '#FFFFFF',
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E7EB',
   },
   scroll: {
     flex: 1,
@@ -689,7 +614,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#F4F6FB',
+    backgroundColor: '#FFFFFF',
   },
   backButton: {
     width: 40,
@@ -1058,7 +983,6 @@ const styles = StyleSheet.create({
   },
   bookBtn: {
     backgroundColor: '#8EA6FF',
-    margin: 16,
     borderRadius: 999,
     paddingVertical: 14,
     alignItems: 'center',

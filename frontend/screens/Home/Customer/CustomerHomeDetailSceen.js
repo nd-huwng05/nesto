@@ -1,28 +1,60 @@
-import {useEffect, useMemo, useState} from 'react';
-import {ActivityIndicator, Alert, Image, RefreshControl, ScrollView, Text, TouchableOpacity, View, Modal} from 'react-native';
+import {useCallback, useEffect, useMemo, useState} from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Image,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
 import {
     GalleryStrip,
+    GuestMemoriesFeed,
     RatingRow,
-    WatchlistCard,
 } from '../../../components/customer/CustomerHotelDetailSections';
+import BookingDateTimePicker from '../../../components/booking/BookingDateTimePicker';
 import {fetchReviews} from '../../../services/ReviewService';
+import {mapReviewsToLocketList} from '../../../utils/locketFeed';
 import api, {endpoints} from '../../../configuration/Apis';
 import ScreenHeader from '../../../components/common/ScreenHeader';
 import {formatVnd} from '../../../utils/formatCurrency';
+import {calculateTieredRoomPrice, formatDateTimeLabel, normalizeTierRates} from '../../../utils/roomPricing';
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const PRIMARY = '#5b79df';
+const PRICE_ACCENT = '#059669';
+const SCREEN_BG = '#F5F7FA';
 
-const getToday = () => {
+const buildDefaultCheckIn = () => {
     const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0, 0, 0);
 };
 
-const getTomorrow = () => {
-    const today = getToday();
-    return new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+const buildDefaultCheckOut = (checkIn) => {
+    const base = checkIn || buildDefaultCheckIn();
+    const next = new Date(base);
+    next.setDate(next.getDate() + 1);
+    next.setHours(12, 0, 0, 0);
+    return next;
 };
+
+const cardShadow = Platform.select({
+    ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+    },
+    android: {
+        elevation: 2,
+    },
+    default: {},
+});
 
 export function CustomerHomeDetailSceen({navigation, route}) {
     const params = route?.params ?? {};
@@ -31,7 +63,6 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const heroImage = params.heroImage ?? room.image ?? 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
     const rating = Number.isFinite(params.rating) ? params.rating : 0;
     const reviews = Number.isFinite(params.reviews) ? params.reviews : 0;
-    const watchlist = params.watchlist ?? null;
 
     const detailGallery = useMemo(() => {
         const raw = Array.isArray(params.gallery) ? params.gallery : [];
@@ -48,44 +79,42 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
     const hotelName = routeHotelName || room?.hotelName || 'Hotel';
     const branchId = params.branchId ?? room?.branchId ?? '';
-    const hotelId = params.hotelId ?? room?.hotelId ?? null;
     const hotelAddress = params.hotelAddress
         ?? params.location
         ?? room?.hotelAddress
         ?? '';
 
-    useEffect(() => {
-        let mounted = true;
-        (async () => {
-            const safeBranchId = String(branchId || '').trim();
-            if (!safeBranchId) {
+    const loadGuestMemories = useCallback(async () => {
+        const safeBranchId = String(branchId || '').trim();
+        if (!safeBranchId) {
+            setReviewsList([]);
+            return;
+        }
+        setIsReviewsLoading(true);
+        try {
+            const res = await fetchReviews({
+                branchId: safeBranchId,
+                hotelName: String(hotelName || '').trim() || undefined,
+            });
+            if (res?.status !== 'success') {
                 setReviewsList([]);
                 return;
             }
-            setIsReviewsLoading(true);
-            try {
-                const res = await fetchReviews({branchId: safeBranchId});
-                if (!mounted) return;
-                if (res?.status !== 'success') {
-                    setReviewsList([]);
-                    Alert.alert('Reviews', String(res?.message || 'Unable to load reviews.'));
-                    return;
-                }
-                const rows = Array.isArray(res?.data) ? res.data : [];
-                setReviewsList(rows);
-            } catch (error) {
-                if (mounted) {
-                    setReviewsList([]);
-                    Alert.alert('Reviews', 'Unable to load reviews right now. Please try again.');
-                }
-            } finally {
-                if (mounted) setIsReviewsLoading(false);
-            }
-        })();
-        return () => {
-            mounted = false;
-        };
+            const rows = Array.isArray(res?.data) ? res.data : [];
+            setReviewsList(mapReviewsToLocketList(rows));
+        } catch {
+            setReviewsList([]);
+        } finally {
+            setIsReviewsLoading(false);
+        }
     }, [branchId]);
+
+    useEffect(() => {
+        loadGuestMemories();
+    }, [loadGuestMemories]);
+
+    const locketData = useMemo(() => reviewsList, [reviewsList]);
+
     const [isDescriptionExpanded, setDescriptionExpanded] = useState(false);
     const DESCRIPTION_PREVIEW_LENGTH = 130;
     const hasLongDescription = detailDescription.length > DESCRIPTION_PREVIEW_LENGTH;
@@ -94,398 +123,443 @@ export function CustomerHomeDetailSceen({navigation, route}) {
         : detailDescription;
     const [roomTypes, setRoomTypes] = useState([]);
     const [isRoomTypesLoading, setIsRoomTypesLoading] = useState(false);
-    const [startDate, setStartDate] = useState(() => getToday());
-    const [endDate, setEndDate] = useState(() => getTomorrow());
+    const [startDate, setStartDate] = useState(() => buildDefaultCheckIn());
+    const [endDate, setEndDate] = useState(() => buildDefaultCheckOut(buildDefaultCheckIn()));
     const [showDatePicker, setShowDatePicker] = useState(false);
-    const [tempStartDate, setTempStartDate] = useState(() => getToday());
-    const [tempEndDate, setTempEndDate] = useState(() => getTomorrow());
-    const [activeDateField, setActiveDateField] = useState('start');
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [viewDate, setViewDate] = useState(() => {
-        const today = getToday();
-        return new Date(today.getFullYear(), today.getMonth(), 1);
-    });
+
+    const loadRoomTypes = async () => {
+        const safeBranchId = String(branchId || '').trim();
+        if (!safeBranchId) {
+            setRoomTypes([]);
+            return;
+        }
+        setIsRoomTypesLoading(true);
+        try {
+            const res = await api.get(endpoints['branch-room-types'], {params: {branch_id: safeBranchId}});
+            const rows = res?.data?.results || res?.data || [];
+            setRoomTypes(Array.isArray(rows) ? rows : []);
+        } catch {
+            setRoomTypes([]);
+            Alert.alert('Rooms', 'Unable to load room types right now. Please try again.');
+        } finally {
+            setIsRoomTypesLoading(false);
+        }
+    };
 
     useEffect(() => {
-        let mounted = true;
-        (async () => {
-            const safeBranchId = String(branchId || '').trim();
-            if (!safeBranchId) {
-                setRoomTypes([]);
-                return;
-            }
-            setIsRoomTypesLoading(true);
-            try {
-                const res = await api.get(endpoints['branch-room-types'], {params: {branch_id: safeBranchId}});
-                const rows = res?.data?.results || res?.data || [];
-                if (!mounted) return;
-                setRoomTypes(Array.isArray(rows) ? rows : []);
-            } catch (error) {
-                if (mounted) {
-                    setRoomTypes([]);
-                    Alert.alert('Rooms', 'Unable to load room types right now. Please try again.');
-                }
-            } finally {
-                if (mounted) setIsRoomTypesLoading(false);
-            }
-        })();
-        return () => {
-            mounted = false;
-        };
+        loadRoomTypes();
     }, [branchId]);
 
-    const handleCycleDateRange = () => {
-        setTempStartDate(startDate);
-        setTempEndDate(endDate);
-        setActiveDateField('start');
-        setViewDate(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
-        setShowDatePicker(true);
-    };
-
-    const handleConfirmDateRange = () => {
-        setStartDate(tempStartDate);
-        setEndDate(tempEndDate);
-        setShowDatePicker(false);
-    };
-
-    const handleCancelDatePicker = () => {
-        setShowDatePicker(false);
-    };
-
     const formatDateLabel = () => {
-        const formatDay = (date) => String(date.getDate()).padStart(2, '0');
-        return `${MONTH_NAMES[startDate.getMonth()]} ${formatDay(startDate)} - ${MONTH_NAMES[endDate.getMonth()]} ${formatDay(endDate)}`;
+        const inLabel = formatDateTimeLabel(startDate);
+        const outLabel = formatDateTimeLabel(endDate);
+        return `${inLabel} → ${outLabel}`;
     };
 
-    const isSameDate = (left, right) => {
-        return left.getFullYear() === right.getFullYear()
-            && left.getMonth() === right.getMonth()
-            && left.getDate() === right.getDate();
-    };
+    const bookingCheckIn = formatDateTimeLabel(startDate);
+    const bookingCheckOut = formatDateTimeLabel(endDate);
 
-    const handleChangeMonth = (delta) => {
-        setViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
-    };
-
-    const handleSelectDate = (day) => {
-        const pickedDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-        const today = getToday();
-
-        if (pickedDate < today) {
-            return;
-        }
-
-        if (activeDateField === 'start') {
-            setTempStartDate(pickedDate);
-            if (pickedDate >= tempEndDate) {
-                setTempEndDate(new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate() + 1));
-            }
-            setActiveDateField('end');
-            const nextDay = new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate() + 1);
-            setViewDate(new Date(nextDay.getFullYear(), nextDay.getMonth(), 1));
-            return;
-        }
-
-        if (pickedDate > tempStartDate) {
-            setTempEndDate(pickedDate);
-        }
-    };
-
-    const formatBookingDate = (date) => {
-        const formattedDay = String(date.getDate()).padStart(2, '0');
-        const month = MONTH_NAMES[date.getMonth()];
-        const year = date.getFullYear();
-        return `9h00' ${formattedDay} ${month} ${year}`;
-    };
-
-    const bookingCheckIn = formatBookingDate(startDate);
-    const bookingCheckOut = formatBookingDate(endDate);
-
-    const handleRefresh = () => {
+    const handleRefresh = async () => {
         setIsRefreshing(true);
-        setIsRefreshing(false);
+        try {
+            await Promise.all([loadRoomTypes(), loadGuestMemories()]);
+        } finally {
+            setIsRefreshing(false);
+        }
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-[#ececec]">
+        <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
             <ScreenHeader onBack={() => navigation.goBack()} icon="chevron-back" />
             <ScrollView
                 showsVerticalScrollIndicator={false}
-                className="flex-1 bg-[#ececec]"
-                contentContainerStyle={{paddingBottom: 98}}
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshing}
                         onRefresh={handleRefresh}
-                        colors={['#5b79df']}
-                        tintColor="#5b79df"
+                        colors={[PRIMARY]}
+                        tintColor={PRIMARY}
                     />
                 }
             >
-                <View className="mx-3 mt-2 rounded-[26px] overflow-hidden bg-[#ececec]">
-                    <View className="relative">
-                        <Image source={{uri: heroImage}} className="w-full h-[220px]" resizeMode="cover"/>
-                    </View>
+                <Image source={{uri: heroImage}} style={styles.heroImage} resizeMode="cover" />
 
-                    <View className="bg-[#ececec] rounded-t-[34px] -mt-8 px-5 pt-6 pb-5">
-                        <View className="flex-row items-start justify-between">
-                            <View className="flex-1 pr-4">
-                                <Text className="font-sf-bold text-[24px] leading-[28px] text-black">{hotelName}</Text>
-                                <View className="flex-row items-center mt-1">
-                                    <Feather name="map-pin" size={15} color="#9a9a9a"/>
-                                    <Text className="font-sf text-[16px] leading-[22px] text-[#8b8b8b] ml-1.5" numberOfLines={1}>
-                                        {hotelAddress}
-                                    </Text>
-                                </View>
+                <View style={[styles.sectionCard, styles.heroInfoCard]}>
+                    <View style={styles.heroTitleRow}>
+                        <View style={styles.heroTitleWrap}>
+                            <Text style={styles.hotelTitle}>{hotelName}</Text>
+                            <View style={styles.addressRow}>
+                                <Feather name="map-pin" size={15} color="#9CA3AF" />
+                                <Text style={styles.hotelAddress} numberOfLines={2}>
+                                    {hotelAddress || 'Address unavailable'}
+                                </Text>
                             </View>
-                            <TouchableOpacity className="w-12 h-12 rounded-full border-[3px] border-[#d2d2d2] bg-[#efefef] items-center justify-center mt-0.5">
-                                <MaterialCommunityIcons name="map-marker-radius-outline" size={24} color="#a4a4a4"/>
-                            </TouchableOpacity>
                         </View>
+                        <TouchableOpacity style={styles.mapBtn} activeOpacity={0.85}>
+                            <MaterialCommunityIcons name="map-marker-radius-outline" size={22} color={PRIMARY} />
+                        </TouchableOpacity>
+                    </View>
+                    <RatingRow rating={rating} reviews={reviews} />
+                </View>
 
-                        <RatingRow rating={rating} reviews={reviews}/>
-
-                        <Text className="font-sf-semi text-[18px] leading-[22px] mt-4 text-black">Description</Text>
-                        <Text className="font-sf text-[16px] leading-[24px] text-extra mt-1">
+                {detailDescription ? (
+                    <View style={styles.sectionCard}>
+                        <Text style={styles.sectionTitle}>Description</Text>
+                        <Text style={styles.sectionBody}>
                             {isDescriptionExpanded ? detailDescription : previewDescription}
                         </Text>
                         {hasLongDescription ? (
                             <TouchableOpacity onPress={() => setDescriptionExpanded((prev) => !prev)} activeOpacity={0.8}>
-                                <Text className="text-[#1897ff] font-sf-semi mt-0.5">
+                                <Text style={styles.readMore}>
                                     {isDescriptionExpanded ? 'Read less' : 'Read more'}
                                 </Text>
                             </TouchableOpacity>
                         ) : null}
-
-                        <GalleryStrip gallery={detailGallery}/>
-                    </View>
-                </View>
-
-                <View className="mt-3 px-3">
-                    <View className="rounded-[24px] bg-[#e9e9e9] px-3.5 pt-4 pb-3">
-                        <Text className="font-sf-semi text-[18px] leading-[22px] text-black">Room types</Text>
-                        <Text className="font-sf text-[16px] leading-[22px] text-extra mt-1">
-                            Choose a room type and book instantly. If a type is sold out, we will disable it.
-                        </Text>
-
-                        <View className="mt-4 mb-2">
-                            <TouchableOpacity
-                                className="rounded-full bg-[#eef0ff] px-4 py-2.5 flex-row items-center w-fit border border-primary"
-                                onPress={handleCycleDateRange}
-                                activeOpacity={0.7}
-                            >
-                                <Feather name="calendar" size={16} color="#5b5bff"/>
-                                <Text className="ml-2 font-sf-semi text-[15px] text-primary">{formatDateLabel()}</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        {isRoomTypesLoading ? (
-                            <View className="py-8 items-center justify-center">
-                                <ActivityIndicator size="small" color="#5b79df" />
+                        {detailGallery.length ? (
+                            <View style={styles.galleryWrap}>
+                                <GalleryStrip gallery={detailGallery} />
                             </View>
-                        ) : roomTypes.length ? (
-                            <View className="mt-2" style={{gap: 12}}>
-                                {roomTypes.map((type) => {
-                                    const typeId = String(type?.id || '').trim();
-                                    const typeName = String(type?.name || '').trim() || 'Room type';
-                                    const price = Number(type?.basePrice || 0);
-                                    const available = Number(type?.available_count ?? type?.availableCount ?? 0);
-                                    const soldOut = !(available > 0);
-                                    const desc = String(type?.description || '').trim();
-                                    const amenities = Array.isArray(type?.roomAmenities)
-                                        ? type.roomAmenities.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 3).join(' • ')
-                                        : '';
-                                    const image = (Array.isArray(type?.images) && type.images.length ? String(type.images[0] || '').trim() : '') || heroImage;
+                        ) : null}
+                    </View>
+                ) : detailGallery.length ? (
+                    <View style={styles.sectionCard}>
+                        <Text style={styles.sectionTitle}>Gallery</Text>
+                        <GalleryStrip gallery={detailGallery} />
+                    </View>
+                ) : null}
 
-                                    return (
-                                        <View key={typeId || typeName} className="rounded-[18px] bg-white border border-[#e7e9f2] px-4 py-4" style={{opacity: soldOut ? 0.55 : 1}}>
-                                            <View className="flex-row items-start justify-between">
-                                                <View className="flex-1 pr-3">
-                                                    <Text className="font-sf-bold text-[18px] leading-[22px] text-black">{typeName}</Text>
-                                                    <Text className="font-sf-semi text-[16px] leading-[22px] text-primary mt-1">{formatVnd(price || 0)}</Text>
-                                                    {amenities ? (
-                                                        <Text className="font-sf text-[15px] leading-[22px] text-[#333333] mt-2" numberOfLines={1}>{amenities}</Text>
-                                                    ) : null}
-                                                    {desc ? (
-                                                        <Text className="font-sf text-[15px] leading-[22px] text-[#333333] mt-1" numberOfLines={2}>{desc}</Text>
-                                                    ) : null}
-                                                    <Text className="font-sf-semi text-[15px] leading-[22px] mt-2 text-[#333333]">
-                                                        {soldOut ? 'Sold out' : `${available} rooms left`}
-                                                    </Text>
-                                                </View>
+                <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>Room types</Text>
+                    <Text style={styles.sectionSubtitle}>
+                        Choose a room type for your stay. Prices update based on your schedule.
+                    </Text>
+
+                    <TouchableOpacity style={styles.dateChip} onPress={() => setShowDatePicker(true)} activeOpacity={0.85}>
+                        <Feather name="calendar" size={16} color={PRIMARY} />
+                        <Text style={styles.dateChipText}>{formatDateLabel()}</Text>
+                        <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+                    </TouchableOpacity>
+
+                    {isRoomTypesLoading ? (
+                        <View style={styles.loadingWrap}>
+                            <ActivityIndicator size="small" color={PRIMARY} />
+                        </View>
+                    ) : roomTypes.length ? (
+                        <View style={styles.roomTypeList}>
+                            {roomTypes.map((type) => {
+                                const typeId = String(type?.id || '').trim();
+                                const typeName = String(type?.name || '').trim() || 'Room type';
+                                const tier = normalizeTierRates({
+                                    pricePerHour: type?.pricePerHour,
+                                    pricePerHalfDay: type?.pricePerHalfDay,
+                                    pricePerDay: type?.pricePerDay || type?.basePrice,
+                                });
+                                const pricePerHour = tier.pricePerHour;
+                                const pricePerHalfDay = tier.pricePerHalfDay;
+                                const pricePerDay = tier.pricePerDay;
+                                const previewQuote = calculateTieredRoomPrice(tier, startDate, endDate);
+                                const available = Number(type?.available_count ?? type?.availableCount ?? 0);
+                                const soldOut = !(available > 0);
+                                const desc = String(type?.description || '').trim();
+                                const amenities = Array.isArray(type?.roomAmenities)
+                                    ? type.roomAmenities.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 3).join(' • ')
+                                    : '';
+                                const image = (Array.isArray(type?.images) && type.images.length
+                                    ? String(type.images[0] || '').trim()
+                                    : '') || heroImage;
+
+                                return (
+                                    <View
+                                        key={typeId || typeName}
+                                        style={[styles.roomTypeCard, soldOut ? styles.roomTypeCardSoldOut : null]}
+                                    >
+                                        {image ? (
+                                            <Image source={{uri: image}} style={styles.roomTypeImage} resizeMode="cover" />
+                                        ) : null}
+                                        <View style={styles.roomTypeBody}>
+                                            <View style={styles.roomTypeHeader}>
+                                                <Text style={styles.roomTypeName}>{typeName}</Text>
+                                                <Text style={styles.roomTypePrice}>
+                                                    {formatVnd(previewQuote.roomTotal || pricePerDay)}
+                                                </Text>
+                                            </View>
+                                            <Text style={styles.roomTypeTier}>
+                                                {formatVnd(pricePerHour)}/hr · {formatVnd(pricePerHalfDay)}/12h · {formatVnd(pricePerDay)}/day
+                                            </Text>
+                                            {amenities ? (
+                                                <Text style={styles.roomTypeMeta} numberOfLines={1}>{amenities}</Text>
+                                            ) : null}
+                                            {desc ? (
+                                                <Text style={styles.roomTypeDesc} numberOfLines={2}>{desc}</Text>
+                                            ) : null}
+                                            <View style={styles.roomTypeFooter}>
+                                                <Text style={[styles.availabilityText, soldOut ? styles.availabilitySoldOut : null]}>
+                                                    {soldOut ? 'Sold out' : `${available} rooms available`}
+                                                </Text>
                                                 <TouchableOpacity
                                                     disabled={soldOut || !typeId}
-                                                    activeOpacity={0.85}
-                                                    className={`rounded-full px-4 py-2 mt-0.5 ${soldOut ? 'bg-[#d7d7d7]' : 'bg-primary'}`}
-                                                    onPress={() => navigation.navigate('CustomerBookingScreen', {
-                                                        syncToken: Date.now(),
-                                                        branchId,
-                                                        roomTypeId: typeId,
-                                                        hotelName,
-                                                        hotelAddress,
-                                                        roomName: typeName,
-                                                        heroImage: image,
-                                                        startDateIso: startDate.toISOString(),
-                                                        endDateIso: endDate.toISOString(),
-                                                        roomPrice: price,
-                                                        checkIn: bookingCheckIn,
-                                                        checkOut: bookingCheckOut,
-                                                        reviews,
-                                                        rating,
-                                                    })}
+                                                    activeOpacity={0.88}
+                                                    style={[styles.bookBtn, soldOut ? styles.bookBtnDisabled : null]}
+                                                    onPress={() =>
+                                                        navigation.navigate('CustomerBookingScreen', {
+                                                            syncToken: Date.now(),
+                                                            branchId,
+                                                            roomTypeId: typeId,
+                                                            hotelName,
+                                                            hotelAddress,
+                                                            roomName: typeName,
+                                                            heroImage: image,
+                                                            startDateIso: startDate.toISOString(),
+                                                            endDateIso: endDate.toISOString(),
+                                                            roomPrice: pricePerDay,
+                                                            pricePerHour,
+                                                            pricePerHalfDay,
+                                                            pricePerDay,
+                                                            checkIn: bookingCheckIn,
+                                                            checkOut: bookingCheckOut,
+                                                            reviews,
+                                                            rating,
+                                                        })
+                                                    }
                                                 >
-                                                    <Text className="text-white font-sf-semi text-[15px] leading-[20px]">{soldOut ? 'Sold out' : 'Book now'}</Text>
+                                                    <Text style={styles.bookBtnText}>
+                                                        {soldOut ? 'Unavailable' : 'Book now'}
+                                                    </Text>
                                                 </TouchableOpacity>
                                             </View>
                                         </View>
-                                    );
-                                })}
-                            </View>
-                        ) : (
-                            <Text className="font-sf text-[15px] leading-[22px] text-[#333333] py-8 text-center">
-                                No room types available for this branch yet.
-                            </Text>
-                        )}
-                    </View>
-
-                    <WatchlistCard watchlist={watchlist} reviews={reviewsList}/>
+                                    </View>
+                                );
+                            })}
+                        </View>
+                    ) : (
+                        <Text style={styles.emptyRooms}>No room types available for this branch yet.</Text>
+                    )}
                 </View>
+
+                {!isReviewsLoading && (locketData?.length ?? 0) > 0 ? (
+                    <GuestMemoriesFeed memories={locketData} />
+                ) : null}
             </ScrollView>
 
-            
-
-            <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={handleCancelDatePicker}>
-                <View className="flex-1 bg-black/50 justify-end">
-                    <View className="bg-white rounded-t-3xl px-4 pt-6 pb-6">
-                        <View className="flex-row justify-between items-center mb-2">
-                            <Text className="font-sf-bold text-[24px] text-black">Select Date Range</Text>
-                            <TouchableOpacity onPress={handleCancelDatePicker}>
-                                <Ionicons name="close" size={28} color="#2d2d2d"/>
-                            </TouchableOpacity>
-                        </View>
-                        <Text className="font-sf text-[14px] text-[#8b8b8b] mb-4">Choose check-in and check-out date</Text>
-
-                        <View className="flex-row items-center justify-between mb-3">
-                            <TouchableOpacity
-                                className="w-8 h-8 rounded-full border border-[#e2e2e2] items-center justify-center bg-[#f8f8f8]"
-                                onPress={() => handleChangeMonth(-1)}
-                                activeOpacity={0.8}
-                            >
-                                <Ionicons name="chevron-back" size={18} color="#4d4d4d"/>
-                            </TouchableOpacity>
-                            <Text className="font-sf-bold text-[16px] text-[#2d2d2d]">
-                                {MONTH_NAMES[viewDate.getMonth()]} {viewDate.getFullYear()}
-                            </Text>
-                            <TouchableOpacity
-                                className="w-8 h-8 rounded-full border border-[#e2e2e2] items-center justify-center bg-[#f8f8f8]"
-                                onPress={() => handleChangeMonth(1)}
-                                activeOpacity={0.8}
-                            >
-                                <Ionicons name="chevron-forward" size={18} color="#4d4d4d"/>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View className="flex-row gap-3 mb-5">
-                            <TouchableOpacity
-                                className={`flex-1 rounded-2xl p-3 border ${activeDateField === 'start' ? 'border-primary bg-[#eef0ff]' : 'border-[#e3e3e3] bg-[#f7f7f7]'}`}
-                                onPress={() => setActiveDateField('start')}
-                                activeOpacity={0.8}
-                            >
-                                <Text className="font-sf text-[12px] text-[#8b8b8b]">Check-in</Text>
-                                <Text className="font-sf-bold text-[18px] text-black mt-1">
-                                    {MONTH_NAMES[tempStartDate.getMonth()]} {String(tempStartDate.getDate()).padStart(2, '0')}
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                className={`flex-1 rounded-2xl p-3 border ${activeDateField === 'end' ? 'border-primary bg-[#eef0ff]' : 'border-[#e3e3e3] bg-[#f7f7f7]'}`}
-                                onPress={() => setActiveDateField('end')}
-                                activeOpacity={0.8}
-                            >
-                                <Text className="font-sf text-[12px] text-[#8b8b8b]">Check-out</Text>
-                                <Text className="font-sf-bold text-[18px] text-black mt-1">
-                                    {MONTH_NAMES[tempEndDate.getMonth()]} {String(tempEndDate.getDate()).padStart(2, '0')}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View className="rounded-2xl bg-[#f9f9f9] p-3 mb-6">
-                            <Text className="font-sf-semi text-[14px] text-[#8b8b8b] mb-3">
-                                {activeDateField === 'start' ? 'Pick your check-in date' : 'Pick your check-out date'}
-                            </Text>
-                            <View className="flex-row flex-wrap gap-2">
-                                {(() => {
-                                    const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
-                                    const firstWeekday = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
-                                    const dayCells = [
-                                        ...Array.from({length: firstWeekday}, (_, index) => ({
-                                            key: `empty-${index}`,
-                                            isEmpty: true,
-                                        })),
-                                        ...Array.from({length: daysInMonth}, (_, index) => ({
-                                            key: `day-${index + 1}`,
-                                            day: index + 1,
-                                            isEmpty: false,
-                                        })),
-                                    ];
-
-                                    return dayCells.map((cell) => {
-                                        if (cell.isEmpty) {
-                                            return <View key={cell.key} className="w-[14%] py-2"/>;
-                                        }
-
-                                        const day = cell.day;
-                                        const candidateDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-                                        const today = getToday();
-                                        const isPastDate = candidateDate < today;
-                                        const isDisabled = isPastDate || (activeDateField === 'end' && candidateDate <= tempStartDate);
-                                        const isSelected = activeDateField === 'start'
-                                            ? isSameDate(candidateDate, tempStartDate)
-                                            : isSameDate(candidateDate, tempEndDate);
-
-                                        return (
-                                            <TouchableOpacity
-                                                key={cell.key}
-                                                className={`w-[14%] py-2 rounded-xl border ${
-                                                    isSelected
-                                                        ? 'bg-primary border-primary'
-                                                        : isDisabled
-                                                            ? 'bg-[#f2f2f2] border-[#ececec]'
-                                                            : 'bg-white border-[#e2e2e2]'
-                                                }`}
-                                                onPress={() => handleSelectDate(day)}
-                                                disabled={isDisabled}
-                                                activeOpacity={0.8}
-                                            >
-                                                <Text className={`text-center font-sf-semi text-[13px] ${
-                                                    isSelected ? 'text-white' : isDisabled ? 'text-[#cccccc]' : 'text-[#666]'
-                                                }`}>
-                                                    {day}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        );
-                                    });
-                                })()}
-                            </View>
-                        </View>
-
-                        <View className="flex-row gap-3">
-                            <TouchableOpacity
-                                className="flex-1 bg-[#f0f0f0] rounded-full py-3"
-                                onPress={handleCancelDatePicker}
-                            >
-                                <Text className="text-center font-sf-semi text-[16px] text-[#8b8b8b]">Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                className="flex-1 bg-primary rounded-full py-3"
-                                onPress={handleConfirmDateRange}
-                            >
-                                <Text className="text-center font-sf-semi text-[16px] text-white">Confirm</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            <BookingDateTimePicker
+                visible={showDatePicker}
+                checkInDate={startDate}
+                checkOutDate={endDate}
+                onCancel={() => setShowDatePicker(false)}
+                onConfirm={({checkIn, checkOut}) => {
+                    setStartDate(checkIn);
+                    setEndDate(checkOut);
+                    setShowDatePicker(false);
+                }}
+            />
         </SafeAreaView>
     );
 }
+
+const styles = StyleSheet.create({
+    screen: {
+        flex: 1,
+        backgroundColor: SCREEN_BG,
+    },
+    scroll: {
+        flex: 1,
+        backgroundColor: SCREEN_BG,
+    },
+    scrollContent: {
+        paddingBottom: 100,
+    },
+    heroImage: {
+        width: '100%',
+        height: 240,
+        backgroundColor: '#E5E7EB',
+    },
+    sectionCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 16,
+        marginHorizontal: 16,
+        marginTop: 16,
+        ...cardShadow,
+    },
+    heroInfoCard: {
+        marginTop: -28,
+    },
+    heroTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+    },
+    heroTitleWrap: {
+        flex: 1,
+        paddingRight: 12,
+    },
+    hotelTitle: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: '#111827',
+        letterSpacing: -0.3,
+    },
+    addressRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: 6,
+        gap: 6,
+    },
+    hotelAddress: {
+        flex: 1,
+        fontSize: 14,
+        lineHeight: 20,
+        color: '#6B7280',
+    },
+    mapBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#EEF2FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#111827',
+        marginBottom: 8,
+    },
+    sectionSubtitle: {
+        fontSize: 14,
+        lineHeight: 20,
+        color: '#6B7280',
+        marginBottom: 12,
+    },
+    sectionBody: {
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#374151',
+    },
+    readMore: {
+        marginTop: 8,
+        fontSize: 14,
+        fontWeight: '600',
+        color: PRIMARY,
+    },
+    galleryWrap: {
+        marginTop: 14,
+    },
+    dateChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F9FAFB',
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 11,
+        marginBottom: 14,
+        gap: 8,
+    },
+    dateChipText: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#111827',
+    },
+    loadingWrap: {
+        paddingVertical: 24,
+        alignItems: 'center',
+    },
+    roomTypeList: {
+        gap: 12,
+    },
+    roomTypeCard: {
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        backgroundColor: '#FFFFFF',
+        overflow: 'hidden',
+    },
+    roomTypeCardSoldOut: {
+        opacity: 0.55,
+        backgroundColor: '#F9FAFB',
+    },
+    roomTypeImage: {
+        width: '100%',
+        height: 120,
+        backgroundColor: '#E5E7EB',
+    },
+    roomTypeBody: {
+        padding: 14,
+    },
+    roomTypeHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 10,
+    },
+    roomTypeName: {
+        flex: 1,
+        fontSize: 17,
+        fontWeight: '700',
+        color: '#111827',
+    },
+    roomTypePrice: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: PRICE_ACCENT,
+    },
+    roomTypeTier: {
+        marginTop: 4,
+        fontSize: 12,
+        color: '#6B7280',
+    },
+    roomTypeMeta: {
+        marginTop: 8,
+        fontSize: 13,
+        color: '#4B5563',
+    },
+    roomTypeDesc: {
+        marginTop: 4,
+        fontSize: 13,
+        lineHeight: 18,
+        color: '#6B7280',
+    },
+    roomTypeFooter: {
+        marginTop: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+    },
+    availabilityText: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '600',
+        color: PRICE_ACCENT,
+    },
+    availabilitySoldOut: {
+        color: '#9CA3AF',
+    },
+    bookBtn: {
+        backgroundColor: PRIMARY,
+        borderRadius: 999,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+    },
+    bookBtnDisabled: {
+        backgroundColor: '#D1D5DB',
+    },
+    bookBtnText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    emptyRooms: {
+        textAlign: 'center',
+        paddingVertical: 20,
+        fontSize: 14,
+        color: '#6B7280',
+    },
+});

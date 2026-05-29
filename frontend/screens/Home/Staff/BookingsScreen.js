@@ -1,6 +1,7 @@
 import {useCallback, useMemo, useState, useEffect} from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     RefreshControl,
     ScrollView,
@@ -11,8 +12,9 @@ import {
     View,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
-import {Calendar, ChevronLeft, ChevronRight, Search} from 'lucide-react-native';
+import {Calendar, ChevronLeft, ChevronRight, QrCode, Search} from 'lucide-react-native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
+import EmptyState from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
@@ -69,7 +71,9 @@ export default function BookingsScreen({navigation}) {
             setErrorMessage('');
         } else {
             setBookings([]);
-            setErrorMessage(result.message || 'Unable to load bookings.');
+            const message = result.message || 'Unable to load bookings.';
+            setErrorMessage(message);
+            Alert.alert('Bookings unavailable', message);
         }
         setIsLoading(false);
     }, [branchId, selectedDateKey]);
@@ -85,15 +89,24 @@ export default function BookingsScreen({navigation}) {
         let unsubscribe = () => {};
         if (!branchId) return;
         (async () => {
-            const token = await AsyncStorage.getItem('access_token');
-            unsubscribe = await connectBookingUpdates(branchId, {
-                token,
-                onMessage: (data) => {
-                    if (data.type === 'booking' || data.type === 'booking_update') {
-                        loadBookings();
-                    }
-                },
-            });
+            try {
+                const token = await AsyncStorage.getItem('access_token');
+                if (!token) return;
+                unsubscribe = await connectBookingUpdates(branchId, {
+                    token,
+                    onMessage: (data) => {
+                        if (
+                            data.type === 'booking' ||
+                            data.type === 'booking_update' ||
+                            data.type === 'update_booking'
+                        ) {
+                            loadBookings();
+                        }
+                    },
+                });
+            } catch (error) {
+                console.error('Booking updates unavailable:', error?.message || error);
+            }
         })();
         return () => unsubscribe();
     }, [branchId, loadBookings]);
@@ -131,10 +144,21 @@ export default function BookingsScreen({navigation}) {
                         branchName={branch.name}
                         branchAddress={branch.address}
                     />
-                    <Text className="font-sf-bold text-2xl text-slate-800">Bookings</Text>
-                    <Text className="font-sf text-sm text-gray-500 mt-1 mb-2">
-                        Filter by day · see room readiness before guests arrive.
-                    </Text>
+                    <View style={styles.titleRow}>
+                        <View style={styles.titleBlock}>
+                            <Text className="font-sf-bold text-2xl text-slate-800">Bookings</Text>
+                            <Text className="font-sf text-sm text-gray-500 mt-1">
+                                Filter by day · see room readiness before guests arrive.
+                            </Text>
+                        </View>
+                        <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => navigation.navigate('ReceptionQrScannerScreen')}
+                            style={styles.scanBtn}
+                        >
+                            <QrCode size={22} color="#ffffff" />
+                        </TouchableOpacity>
+                    </View>
 
                     <View style={styles.dateNavRow}>
                         <TouchableOpacity
@@ -214,7 +238,7 @@ export default function BookingsScreen({navigation}) {
                 ) : (
                     <FlatList
                         data={filteredBookings}
-                        keyExtractor={(item) => item.id}
+                        keyExtractor={(item, index) => String(item?.id ?? `booking-${index}`)}
                         contentContainerStyle={styles.listContent}
                         refreshControl={
                             <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />
@@ -248,11 +272,19 @@ export default function BookingsScreen({navigation}) {
                             </TouchableOpacity>
                         )}
                         ListEmptyComponent={
-                            <Text className="font-sf text-center text-gray-500 py-12">
-                                {searchQuery.trim()
-                                    ? 'No bookings match your search.'
-                                    : 'No bookings for this day.'}
-                            </Text>
+                            <EmptyState
+                                icon="calendar-outline"
+                                title={
+                                    searchQuery.trim()
+                                        ? 'No matching bookings'
+                                        : 'No bookings for this day'
+                                }
+                                subtitle={
+                                    searchQuery.trim()
+                                        ? 'Try another guest name or phone number.'
+                                        : 'Walk-ins and check-ins for this date will appear here.'
+                                }
+                            />
                         }
                     />
                 )}
@@ -267,6 +299,25 @@ export default function BookingsScreen({navigation}) {
 const styles = StyleSheet.create({
     inner: {flex: 1},
     headerPad: {paddingHorizontal: 20, paddingTop: 8},
+    titleRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+        gap: 12,
+    },
+    titleBlock: {
+        flex: 1,
+    },
+    scanBtn: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        backgroundColor: '#8294FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 4,
+    },
     dateNavRow: {
         flexDirection: 'row',
         alignItems: 'center',

@@ -1,5 +1,6 @@
 import uuid
 
+from cloudinary.models import CloudinaryField
 from django.db import models
 from django.utils import timezone
 
@@ -11,6 +12,7 @@ class Booking(models.Model):
         CHECKED_IN = "CHECKED_IN", "Checked in"
         CHECKED_OUT = "CHECKED_OUT", "Checked out"
         CANCELLED = "CANCELLED", "Cancelled"
+        CANCELLED_NO_SHOW = "CANCELLED_NO_SHOW", "Cancelled no-show"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -35,7 +37,12 @@ class Booking(models.Model):
     room_change_note = models.TextField(blank=True, default="")
 
     hourly_rate = models.IntegerField(default=0)
+    room_price = models.IntegerField(default=0)
     base_price = models.IntegerField(default=0)
+    deposit_percentage = models.PositiveSmallIntegerField(default=20)
+    deposit_amount = models.IntegerField(default=0)
+    hold_minutes = models.PositiveIntegerField(default=0)
+    late_hold_deadline_at = models.DateTimeField(null=True, blank=True)
     discount = models.IntegerField(default=0)
     payment_method = models.CharField(max_length=32, blank=True, default="")
 
@@ -106,6 +113,13 @@ class ReviewForumPost(models.Model):
         blank=True,
         related_name="reviews",
     )
+    branch = models.ForeignKey(
+        "businesses.Branch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="locket_posts",
+    )
     booking_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     hotel_name = models.CharField(max_length=255)
     room_name = models.CharField(max_length=255)
@@ -113,6 +127,7 @@ class ReviewForumPost(models.Model):
 
     rating = models.PositiveSmallIntegerField(default=0)
     content = models.TextField()
+    image = CloudinaryField("image", blank=True, null=True)
     image_url = models.URLField(blank=True, default="")
 
     liked_by = models.ManyToManyField(
@@ -127,6 +142,7 @@ class ReviewForumPost(models.Model):
             models.Index(fields=["scope_key", "created_at"]),
             models.Index(fields=["hotel_name", "room_name"]),
             models.Index(fields=["booking_id"]),
+            models.Index(fields=["branch", "created_at"]),
         ]
 
     def save(self, *args, **kwargs):

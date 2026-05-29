@@ -81,18 +81,19 @@ export function calculateOvertimeCharge(booking, asOf = new Date()) {
     return {hours: overtimeHours, amount, hoursLabel};
 }
 
-/** Recompute checkout totals including overtime (mirrors mock store bill math). */
 export function computeCheckoutTotals({
     roomSubtotal,
     serviceTotal = 0,
     overtimeAmount = 0,
-    depositRate = 0.2,
+    depositPaid = 0,
 }) {
-    const subtotal = roomSubtotal + serviceTotal + overtimeAmount;
-    const vat = Math.round(subtotal * 0.1);
-    const totalPrice = subtotal + vat;
-    const deposit = Math.round(totalPrice * depositRate);
-    const finalPayment = Math.max(0, totalPrice - deposit);
+    const grossTotal = roomSubtotal + serviceTotal + overtimeAmount;
+    const finalPayment = Math.max(0, grossTotal - depositPaid);
 
-    return {subtotal, vat, totalPrice, deposit, finalPayment};
+    return {
+        subtotal: grossTotal,
+        grossTotal,
+        depositPaid,
+        finalPayment,
+    };
 }

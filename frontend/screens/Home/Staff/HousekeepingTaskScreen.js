@@ -20,8 +20,8 @@ import {EmptyState} from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
-import {connectRoomUpdates} from '../../../services/WebSocketService';
-import {completeHousekeepingTask, listHousekeepingTasks} from '../../../services/staffApiService';
+import {connectBranchTasks, connectRoomUpdates} from '../../../services/WebSocketService';
+import {completeHousekeepingTask, listHousekeepingTasks, startHousekeepingTask} from '../../../services/staffApiService';
 
 const normalizeStatus = (status) => String(status || '').toLowerCase();
 
@@ -76,13 +76,23 @@ export default function HousekeepingTaskScreen() {
         }, [loadTasks])
     );
 
+    const mapWsTaskToRow = (task) => ({
+        id: String(task?.id || ''),
+        roomNumber: String(task?.roomNumber || task?.room_number || ''),
+        status: String(task?.status || 'PENDING'),
+        note: String(task?.note || ''),
+    });
+
     useEffect(() => {
-        let unsubscribe;
+        let unsubscribeRooms = () => {};
+        let unsubscribeTasks = () => {};
+
         (async () => {
             if (!branchId) return;
             const token = await AsyncStorage.getItem('access_token');
             if (!token) return;
-            unsubscribe = await connectRoomUpdates(branchId, {
+
+            unsubscribeRooms = await connectRoomUpdates(branchId, {
                 token,
                 onMessage: (data) => {
                     if (data?.type === 'room_status' || data?.type === 'room_dirty') {
@@ -90,11 +100,42 @@ export default function HousekeepingTaskScreen() {
                     }
                 },
             });
+
+            unsubscribeTasks = await connectBranchTasks(branchId, {
+                token,
+                onMessage: (data) => {
+                    if (data?.type !== 'task_created' && data?.type !== 'task_updated') return;
+                    const task = data?.task;
+                    if (!task?.id) return;
+
+                    const mapped = mapWsTaskToRow(task);
+                    const status = String(mapped.status || '').toUpperCase();
+                    if (status !== 'PENDING' && status !== 'IN_PROGRESS') return;
+
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setTasks((prev) => {
+                        const list = Array.isArray(prev) ? [...prev] : [];
+                        const existingIndex = list.findIndex((row) => String(row.id) === mapped.id);
+                        if (existingIndex >= 0) {
+                            list[existingIndex] = {...list[existingIndex], ...mapped};
+                            return list.sort((a, b) => Number(a.roomNumber) - Number(b.roomNumber));
+                        }
+                        return [mapped, ...list].sort((a, b) => Number(a.roomNumber) - Number(b.roomNumber));
+                    });
+
+                    if (data.type === 'task_created') {
+                        const roomLabel = mapped.roomNumber ? `Room ${mapped.roomNumber}` : 'New task';
+                        Alert.alert('New task', `${roomLabel} requires attention.`);
+                    }
+                },
+            });
         })().catch((error) => {
-            console.error("API Error: ", error.response?.data || error.message);
+            console.error('WebSocket error:', error?.message || error);
         });
+
         return () => {
-            if (unsubscribe) unsubscribe();
+            unsubscribeRooms?.();
+            unsubscribeTasks?.();
         };
     }, [branchId, loadTasks]);
 
@@ -114,6 +155,25 @@ export default function HousekeepingTaskScreen() {
             ],
             {cancelable: true}
         );
+    };
+
+    const handleStart = async (taskId) => {
+        setMarkingId(taskId);
+        try {
+            const result = await startHousekeepingTask(taskId);
+            if (!result.success) {
+                Alert.alert('Unable to start', result.message || 'Please try again.');
+                return;
+            }
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setTasks((prev) =>
+                (prev || []).map((row) =>
+                    row.id === taskId ? {...row, status: 'IN_PROGRESS'} : row
+                )
+            );
+        } finally {
+            setMarkingId(null);
+        }
     };
 
     const handleComplete = async (taskId) => {
@@ -172,15 +232,29 @@ export default function HousekeepingTaskScreen() {
                                     <TouchableOpacity
                                         activeOpacity={0.9}
                                         disabled={markingId === item.id}
-                                        onPress={() => confirmComplete(item)}
-                                        style={[styles.cleanBtn, markingId === item.id && styles.cleanBtnDisabled]}
+                                        onPress={() =>
+                                            String(item.status || '').toUpperCase() === 'PENDING'
+                                                ? handleStart(item.id)
+                                                : confirmComplete(item)
+                                        }
+                                        style={[
+                                            styles.cleanBtn,
+                                            String(item.status || '').toUpperCase() === 'PENDING'
+                                                ? styles.startBtn
+                                                : null,
+                                            markingId === item.id && styles.cleanBtnDisabled,
+                                        ]}
                                     >
                                         {markingId === item.id ? (
                                             <ActivityIndicator color="#fff" />
                                         ) : (
                                             <View style={styles.cleanBtnInner}>
                                                 <CheckCircle size={18} color="#fff" strokeWidth={2.5} />
-                                                <Text style={styles.cleanBtnText}>Complete Task</Text>
+                                                <Text style={styles.cleanBtnText}>
+                                                    {String(item.status || '').toUpperCase() === 'PENDING'
+                                                        ? 'Start Task'
+                                                        : 'Complete Task'}
+                                                </Text>
                                             </View>
                                         )}
                                     </TouchableOpacity>
@@ -264,6 +338,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 16,
     },
+    startBtn: {backgroundColor: '#2563EB'},
     cleanBtnDisabled: {opacity: 0.75},
     cleanBtnInner: {flexDirection: 'row', alignItems: 'center', gap: 8},
     cleanBtnText: {

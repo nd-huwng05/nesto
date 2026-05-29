@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import api, { endpoints } from '../configuration/Apis';
-import { saveTokens } from '../utils/authStorage';
+import { saveTokens, clearSession } from '../utils/authStorage';
 import {extractApiErrorMessage} from '../utils/apiError';
 
 const REGISTER_TOKEN_KEY = 'register_token';
@@ -39,9 +39,23 @@ export const login = async (identifier, password) => {
 
     // Prefer injected payload from /o/token (CustomTokenView).
     let profile = tokenData?.user || null;
+
+    await saveTokens({
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        user: profile,
+        role: profile?.role || tokenData?.role,
+    });
+
     try {
         const profileResponse = await api.get(endpoints['current-user']);
         profile = profileResponse.data || profile;
+        await saveTokens({
+            accessToken: tokenData.access_token,
+            refreshToken: tokenData.refresh_token,
+            user: profile,
+            role: profile?.role || tokenData?.role,
+        });
     } catch (error) {
         console.error("API Error: ", error.response?.data || error.message);
         if (!profile) {
@@ -51,6 +65,12 @@ export const login = async (identifier, password) => {
                 name: '',
                 groups: Array.isArray(tokenData?.user?.groups) ? tokenData.user.groups : [],
             };
+            await saveTokens({
+                accessToken: tokenData.access_token,
+                refreshToken: tokenData.refresh_token,
+                user: profile,
+                role: profile?.role || tokenData?.role,
+            });
         }
     }
 
@@ -58,18 +78,11 @@ export const login = async (identifier, password) => {
         profile.role = tokenData.role;
     }
 
-    await saveTokens({
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        user: profile,
-        role: profile?.role || tokenData?.role,
-    });
-
     return { success: true, user: profile, token: tokenData.access_token };
 };
 
 export const logout = async () => {
-    await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user', 'role']);
+    await clearSession();
 };
 
 export const getCurrentUser = async () => {

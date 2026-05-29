@@ -3,8 +3,6 @@ import {getSession} from '../../utils/authStorage';
 import {AUTH_ROLES, isHousekeepingRole, isReceptionistRole, isServiceRole} from '../../constants/authRoles';
 import api, {endpoints} from '../../configuration/Apis';
 
-const DEFAULT_ROLE = AUTH_ROLES.RECEPTIONIST;
-
 export function useStaffSession() {
     const [user, setUser] = useState(null);
     const [role, setRole] = useState(null);
@@ -24,14 +22,14 @@ export function useStaffSession() {
                 console.error('API Error: ', error.response?.data || error.message);
             }
             const resolvedSessionKind = String(session?.sessionKind || '').trim().toLowerCase();
-            const resolvedRole = session?.role || currentUser?.role || DEFAULT_ROLE;
+            const resolvedRole = String(session?.role || currentUser?.role || '').trim().toUpperCase();
 
-            setRole(resolvedRole);
+            setRole(resolvedRole || null);
             setSessionKind(resolvedSessionKind);
             setUser(currentUser || session.user || {role: resolvedRole});
             setGroups(Array.isArray((currentUser || session.user)?.groups) ? (currentUser || session.user).groups : []);
         } catch {
-            setRole(DEFAULT_ROLE);
+            setRole(null);
             setSessionKind('');
             setUser(null);
             setGroups([]);
@@ -47,14 +45,14 @@ export function useStaffSession() {
     return {
         user,
         groups,
-        role: role || DEFAULT_ROLE,
+        role: role || '',
         sessionKind,
-        branchId: user?.branchId || '',
+        branchId: user?.branchId || user?.branch_id || '',
         isLoading,
         reload: loadSession,
-        isCustomer: (role || DEFAULT_ROLE) === AUTH_ROLES.CUSTOMER || sessionKind === 'customer',
-        isReceptionist: isReceptionistRole(role || DEFAULT_ROLE),
-        isHousekeeping: isHousekeepingRole(role || DEFAULT_ROLE),
-        isService: isServiceRole(role || DEFAULT_ROLE),
+        isCustomer: role === AUTH_ROLES.CUSTOMER || sessionKind === 'customer',
+        isReceptionist: isReceptionistRole(role),
+        isHousekeeping: isHousekeepingRole(role),
+        isService: isServiceRole(role),
     };
 }

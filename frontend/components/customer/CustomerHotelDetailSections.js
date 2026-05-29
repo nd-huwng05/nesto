@@ -1,6 +1,12 @@
-import {useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, FlatList, PanResponder} from 'react-native';
+import {LinearGradient} from 'expo-linear-gradient';
 import {Ionicons, MaterialIcons} from '@expo/vector-icons';
+import Avatar from '../common/Avatar';
+
+const LOCKET_CARD_WIDTH = 220;
+const LOCKET_CARD_HEIGHT = 280;
+const LOCKET_CARD_GAP = 16;
 
 const DEFAULT_WATCHLIST_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80';
 const DEFAULT_REVIEWER_AVATAR = 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=500&q=80';
@@ -203,6 +209,80 @@ export function FeaturedTag({label, onRemove}) {
     );
 }
 
+function GuestMemoryCard({item}) {
+    const imageUri = String(item?.image || item?.imageUrl || '').trim() || DEFAULT_WATCHLIST_IMAGE;
+    const note = String(item?.description || item?.review || '').trim();
+    const userName = String(item?.userName || item?.reviewer || 'Guest').trim() || 'Guest';
+    const userAvatar = String(item?.userAvatar || item?.avatar || '').trim();
+
+    return (
+        <View style={styles.locketCard}>
+            <Image source={{uri: imageUri}} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+            <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.75)']}
+                style={styles.locketGradient}
+            />
+            <View style={styles.locketAvatarWrap}>
+                <Avatar uri={userAvatar} name={userName} size={36} />
+            </View>
+            {note ? (
+                <Text style={styles.locketNote} numberOfLines={3}>
+                    {note}
+                </Text>
+            ) : null}
+        </View>
+    );
+}
+
+export function GuestMemoriesFeed({memories = []}) {
+    const data = useMemo(() => {
+        if (!Array.isArray(memories) || memories.length === 0) return [];
+        return memories.filter((row) => String(row?.image || row?.imageUrl || '').trim());
+    }, [memories]);
+
+    const renderItem = useCallback(
+        ({item}) => <GuestMemoryCard item={item} />,
+        []
+    );
+
+    const keyExtractor = useCallback((item, index) => String(item?.id || `memory-${index}`), []);
+
+    const getItemLayout = useCallback(
+        (_, index) => ({
+            length: LOCKET_CARD_WIDTH + LOCKET_CARD_GAP,
+            offset: (LOCKET_CARD_WIDTH + LOCKET_CARD_GAP) * index,
+            index,
+        }),
+        []
+    );
+
+    if (!data.length) {
+        return null;
+    }
+
+    return (
+        <View style={styles.memoriesSection}>
+            <Text style={styles.memoriesTitle}>Guest Memories</Text>
+            <FlatList
+                data={data}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={keyExtractor}
+                renderItem={renderItem}
+                getItemLayout={getItemLayout}
+                initialNumToRender={4}
+                maxToRenderPerBatch={6}
+                windowSize={5}
+                removeClippedSubviews
+                decelerationRate="fast"
+                snapToInterval={LOCKET_CARD_WIDTH + LOCKET_CARD_GAP}
+                snapToAlignment="start"
+                contentContainerStyle={styles.memoriesListContent}
+            />
+        </View>
+    );
+}
+
 export function WatchlistCard({watchlist, reviews = []}) {
     const reviewList = Array.isArray(reviews) && reviews.length > 0 ? reviews : (watchlist ? [watchlist] : []);
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -386,5 +466,53 @@ const styles = StyleSheet.create({
     },
     starIcon: {
         marginRight: 1,
+    },
+    memoriesSection: {
+        marginHorizontal: 16,
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    memoriesTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#111827',
+        marginBottom: 12,
+    },
+    memoriesListContent: {
+        paddingRight: 16,
+    },
+    locketCard: {
+        width: LOCKET_CARD_WIDTH,
+        height: LOCKET_CARD_HEIGHT,
+        borderRadius: 20,
+        overflow: 'hidden',
+        marginRight: LOCKET_CARD_GAP,
+        backgroundColor: '#111827',
+    },
+    locketGradient: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: '60%',
+    },
+    locketAvatarWrap: {
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        borderWidth: 2,
+        borderColor: 'rgba(255,255,255,0.85)',
+        borderRadius: 20,
+        overflow: 'hidden',
+    },
+    locketNote: {
+        position: 'absolute',
+        left: 12,
+        right: 12,
+        bottom: 14,
+        color: '#FFFFFF',
+        fontSize: 14,
+        lineHeight: 19,
+        fontWeight: '600',
     },
 });

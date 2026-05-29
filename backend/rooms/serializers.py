@@ -1,11 +1,17 @@
 from rest_framework import serializers
 
+from core.services.serializer_mixins import CloudinaryRepresentationMixin
 from rooms.models import BranchTheme, HousekeepingTask, MaintenanceIssue, Room, RoomCategory, RoomTheme
 
 
-class RoomCategorySerializer(serializers.ModelSerializer):
+class RoomCategorySerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
     basePrice = serializers.IntegerField(source="base_price")
+    pricePerHour = serializers.IntegerField(source="price_per_hour", required=False)
+    pricePerHalfDay = serializers.IntegerField(source="price_per_half_day", required=False)
+    pricePerDay = serializers.IntegerField(source="price_per_day", required=False)
     roomAmenities = serializers.ListField(source="room_amenities", child=serializers.CharField(), required=False)
+
+    cloudinary_gallery_fields = ("images",)
 
     class Meta:
         model = RoomCategory
@@ -14,6 +20,9 @@ class RoomCategorySerializer(serializers.ModelSerializer):
             "branch",
             "name",
             "basePrice",
+            "pricePerHour",
+            "pricePerHalfDay",
+            "pricePerDay",
             "capacity",
             "description",
             "roomAmenities",

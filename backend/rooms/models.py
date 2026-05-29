@@ -40,11 +40,23 @@ class RoomCategory(BaseAuditedModel):
 
     name = models.CharField(max_length=255)
     base_price = models.IntegerField(default=0)
+    price_per_hour = models.IntegerField(default=0)
+    price_per_half_day = models.IntegerField(default=0)
+    price_per_day = models.IntegerField(default=0)
     capacity = models.IntegerField(default=1)
     description = models.TextField(blank=True, default="")
 
     room_amenities = models.JSONField(default=list, blank=True)
     images = models.JSONField(default=list, blank=True)
+
+    def save(self, *args, **kwargs):
+        if int(self.price_per_day or 0) <= 0 and int(self.base_price or 0) > 0:
+            self.price_per_day = int(self.base_price)
+        if int(self.price_per_hour or 0) <= 0 and int(self.price_per_day or 0) > 0:
+            self.price_per_hour = max(1, int(self.price_per_day / 24))
+        if int(self.price_per_half_day or 0) <= 0 and int(self.price_per_day or 0) > 0:
+            self.price_per_half_day = max(self.price_per_hour * 12, int(self.price_per_day * 0.55))
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.name

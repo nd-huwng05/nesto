@@ -1,5 +1,5 @@
 from django.contrib import admin
-from accounts.oauth2_views import CustomTokenView
+from accounts.views.oauth_views import CustomTokenView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from django.urls import include, path
 
