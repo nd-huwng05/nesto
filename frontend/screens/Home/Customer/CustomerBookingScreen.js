@@ -1,5 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {useFocusEffect} from '@react-navigation/native';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,12 +10,14 @@ import {
   Image,
   Modal,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Ionicons, Feather} from '@expo/vector-icons';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {getSession} from '../../../utils/authStorage';
+import {quoteBooking} from '../../../services/CustomerBookingService';
 import {formatVnd} from '../../../utils/formatCurrency';
 import BookingDateTimePicker from '../../../components/booking/BookingDateTimePicker';
 import TierPricingSummary from '../../../components/booking/TierPricingSummary';
@@ -27,37 +28,28 @@ import {
   formatDateTimeLabel,
   normalizeTierRates,
 } from '../../../utils/roomPricing';
+import {
+  buildBookingContextPayload,
+  buildPaymentNavigationParams,
+  getToday,
+  normalizeSelectedServices,
+  readSessionSelectedServices,
+  resolveBookingSession,
+  resolveRoomDisplayName,
+  resolveStayDates,
+  servicesEqual,
+  writeBookingSession,
+} from '../../../utils/bookingCheckout';
 
 const DEPOSIT_OPTIONS = [20, 50, 100];
 
-const normalizeSelectedServices = (items) => {
-  if (!Array.isArray(items)) return [];
-  return items
-    .filter((item) => item && item.id)
-    .map((item) => ({
-      id: String(item.id),
-      name: String(item.name || 'Service'),
-      price: Number(item.price || 0),
-      icon: String(item.icon || ''),
-      category: String(item.category || ''),
-      description: String(item.description || ''),
-    }));
-};
-
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const getToday = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-};
-
-const applyDefaultStayTime = (date, isCheckOut = false) => {
-  const next = new Date(date);
-  if (next.getHours() === 0 && next.getMinutes() === 0) {
-    next.setHours(isCheckOut ? 12 : 14, 0, 0, 0);
-  }
-  return next;
-};
-
+/**
+ * CustomerBookingScreen — man CHECKOUT (buoc 3 trong luong dat phong).
+ *
+ * - Hien thi gia phong, ngay o, deposit %
+ * - Nut "Add services" -> ServiceSelectionScreen
+ * - Nut "Continue to payment" -> goi API quote -> chuyen Payment (bookingDraft, chua tao DB)
+ */
 const CustomerBookingScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -76,14 +68,8 @@ const CustomerBookingScreen = () => {
     pricePerHour: routePricePerHour,
     pricePerHalfDay: routePricePerHalfDay,
     pricePerDay: routePricePerDay,
-    roomId,
     branchId,
     hotelAddress,
-    price: legacyPricePerHour,
-    discount: legacyDiscountPerHour,
-    vat: legacyVat,
-    total: legacyTotal,
-    deposit: legacyDeposit,
     syncToken,
     serviceSyncToken,
     selectedService: routeSelectedService = null,
@@ -93,106 +79,101 @@ const CustomerBookingScreen = () => {
     heroImage = '',
   } = route.params || {};
 
-  const resolveRoomName = (...values) => {
-    for (const raw of values) {
-      if (raw === null || raw === undefined) continue;
-      const value = String(raw).trim();
-      if (!value) continue;
-      const numericOnly = /^\d+$/.test(value);
-      return numericOnly ? `Room ${value}` : value;
-    }
-    return 'Room';
-  };
+  const session = useMemo(
+    () => resolveBookingSession(route.params),
+    [
+      syncToken,
+      serviceSyncToken,
+      branchId,
+      hotelName,
+      roomTypeId,
+      startDateIso,
+      endDateIso,
+      heroImage,
+      roomPrice,
+      routePricePerHour,
+      routePricePerHalfDay,
+      routePricePerDay,
+      initialCheckIn,
+      initialCheckOut,
+      reviews,
+      rating,
+      routeRoomName,
+    ]
+  );
 
-  const roomName = resolveRoomName(
-    routeRoomName,
+  const roomName = resolveRoomDisplayName(
+    routeRoomName || session.roomName,
     route.params?.room?.name,
     route.params?.room?.roomName,
     route.params?.roomName,
     route.params?.roomNumber,
     route.params?.room?.roomNumber,
-    route.params?.room?.number,
-    route.params?.selectedService?.roomName,
-    route.params?.selectedServices?.[0]?.roomName
+    route.params?.room?.number
   );
 
-  const parseDateFromLabel = (label, fallbackDate) => {
-    const text = String(label || '').trim();
-    const match = text.match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/);
-    if (!match) return fallbackDate;
+  const hotelNameResolved = hotelName || session.hotelName || '';
+  const branchIdResolved = branchId || session.branchId || '';
+  const roomTypeIdResolved = roomTypeId || session.roomTypeId || '';
+  const hotelAddressResolved = hotelAddress || session.hotelAddress || '';
+  const heroImageResolved = heroImage || session.heroImage || '';
+  const roomPriceResolved = roomPrice ?? session.roomPrice;
+  const pricePerHourResolved = routePricePerHour ?? session.pricePerHour;
+  const pricePerHalfDayResolved = routePricePerHalfDay ?? session.pricePerHalfDay;
+  const pricePerDayResolved = routePricePerDay ?? session.pricePerDay;
+  const reviewsResolved = reviews || session.reviews || 0;
+  const ratingResolved = rating || session.rating || 0;
+  const checkInLabelResolved = initialCheckIn || session.checkIn || '';
+  const checkOutLabelResolved = initialCheckOut || session.checkOut || '';
 
-    const day = Number.parseInt(match[1], 10);
-    const month = MONTH_NAMES.findIndex((name) => name.toLowerCase() === match[2].toLowerCase());
-    const year = Number.parseInt(match[3], 10);
+  const bootDates = resolveStayDates({
+    startDateIso: startDateIso || session.startDateIso,
+    endDateIso: endDateIso || session.endDateIso,
+    startDate,
+    endDate,
+    initialCheckIn: checkInLabelResolved,
+    initialCheckOut: checkOutLabelResolved,
+  });
 
-    if (!Number.isFinite(day) || !Number.isFinite(year) || month < 0) return fallbackDate;
-    return new Date(year, month, day);
-  };
-
-  const parseIsoDate = (value) => {
-    if (typeof value !== 'string') return null;
-    const parsed = new Date(value);
-    return Number.isFinite(parsed.getTime()) ? parsed : null;
-  };
-
-  const parsedStartIso = parseIsoDate(startDateIso);
-  const parsedEndIso = parseIsoDate(endDateIso);
-
-  const safeStartDate = applyDefaultStayTime(
-    parsedStartIso
-      ? parsedStartIso
-      : Number.isFinite(startDate)
-      ? new Date(new Date().getFullYear(), new Date().getMonth(), startDate)
-      : parseDateFromLabel(initialCheckIn, getToday()),
-    false
-  );
-  const safeEndDateCandidate = applyDefaultStayTime(
-    parsedEndIso
-      ? parsedEndIso
-      : Number.isFinite(endDate)
-      ? new Date(new Date().getFullYear(), new Date().getMonth(), endDate)
-      : parseDateFromLabel(initialCheckOut, new Date(safeStartDate.getFullYear(), safeStartDate.getMonth(), safeStartDate.getDate() + 1)),
-    true
-  );
-  const safeEndDate = safeEndDateCandidate > safeStartDate
-    ? safeEndDateCandidate
-    : applyDefaultStayTime(new Date(safeStartDate.getTime() + 2 * 60 * 60 * 1000), true);
-
-  const [selectedStartDate, setSelectedStartDate] = useState(safeStartDate);
-  const [selectedEndDate, setSelectedEndDate] = useState(safeEndDate);
+  const [selectedStartDate, setSelectedStartDate] = useState(bootDates.start);
+  const [selectedEndDate, setSelectedEndDate] = useState(bootDates.end);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [activeDateField, setActiveDateField] = useState('start');
-  const [viewDate, setViewDate] = useState(new Date(safeStartDate.getFullYear(), safeStartDate.getMonth(), 1));
+  const [viewDate, setViewDate] = useState(
+    () => new Date(bootDates.start.getFullYear(), bootDates.start.getMonth(), 1)
+  );
+
+  const routeDatesKey = `${syncToken || ''}|${startDateIso || ''}|${endDateIso || ''}`;
 
   useEffect(() => {
-    const syncedStart = parsedStartIso
-      ? parsedStartIso
-      : Number.isFinite(startDate)
-      ? new Date(new Date().getFullYear(), new Date().getMonth(), startDate)
-      : parseDateFromLabel(initialCheckIn, getToday());
-    const syncedEndCandidate = parsedEndIso
-      ? parsedEndIso
-      : Number.isFinite(endDate)
-      ? new Date(new Date().getFullYear(), new Date().getMonth(), endDate)
-      : parseDateFromLabel(initialCheckOut, new Date(syncedStart.getFullYear(), syncedStart.getMonth(), syncedStart.getDate() + 1));
-    const syncedEnd = syncedEndCandidate > syncedStart
-      ? syncedEndCandidate
-      : new Date(syncedStart.getFullYear(), syncedStart.getMonth(), syncedStart.getDate() + 1);
-
-    setSelectedStartDate(syncedStart);
-    setSelectedEndDate(syncedEnd);
-    setViewDate(new Date(syncedStart.getFullYear(), syncedStart.getMonth(), 1));
-  }, [startDateIso, endDateIso, startDate, endDate, initialCheckIn, initialCheckOut, syncToken]);
+    if (!startDateIso && !endDateIso && !syncToken) {
+      return;
+    }
+    const nextDates = resolveStayDates({
+      startDateIso: startDateIso || session.startDateIso,
+      endDateIso: endDateIso || session.endDateIso,
+      startDate,
+      endDate,
+      initialCheckIn: checkInLabelResolved,
+      initialCheckOut: checkOutLabelResolved,
+    });
+    setSelectedStartDate((prev) => (prev.getTime() === nextDates.start.getTime() ? prev : nextDates.start));
+    setSelectedEndDate((prev) => (prev.getTime() === nextDates.end.getTime() ? prev : nextDates.end));
+    setViewDate((prev) => {
+      const next = new Date(nextDates.start.getFullYear(), nextDates.start.getMonth(), 1);
+      return prev.getTime() === next.getTime() ? prev : next;
+    });
+  }, [routeDatesKey]);
 
   const tierRates = useMemo(
     () =>
       normalizeTierRates({
-        pricePerHour: routePricePerHour,
-        pricePerHalfDay: routePricePerHalfDay,
-        pricePerDay: routePricePerDay ?? roomPrice,
-        basePrice: roomPrice,
+        pricePerHour: pricePerHourResolved,
+        pricePerHalfDay: pricePerHalfDayResolved,
+        pricePerDay: pricePerDayResolved ?? roomPriceResolved,
+        basePrice: roomPriceResolved,
       }),
-    [routePricePerHour, routePricePerHalfDay, routePricePerDay, roomPrice]
+    [pricePerHourResolved, pricePerHalfDayResolved, pricePerDayResolved, roomPriceResolved]
   );
 
   const pricingQuote = useMemo(
@@ -212,16 +193,35 @@ const CustomerBookingScreen = () => {
     const fromRoute = normalizeSelectedServices(routeSelectedServices);
     if (fromRoute.length) return fromRoute;
     if (routeSelectedService?.id) return normalizeSelectedServices([routeSelectedService]);
-    return [];
+    return readSessionSelectedServices();
   });
+
+  const lastSyncTokenRef = useRef(String(syncToken || ''));
+
+  useEffect(() => {
+    const token = String(syncToken || '');
+    if (!token || token === lastSyncTokenRef.current) return;
+    lastSyncTokenRef.current = token;
+    setSelectedServices([]);
+    writeBookingSession({selectedServices: []});
+  }, [syncToken]);
 
   useFocusEffect(
     useCallback(() => {
-      if (Array.isArray(route.params?.selectedServices)) {
-        setSelectedServices(normalizeSelectedServices(route.params.selectedServices));
-      }
-    }, [route.params?.selectedServices, route.params?.serviceSyncToken, serviceSyncToken])
+      const cached = readSessionSelectedServices();
+      if (!cached.length) return;
+      setSelectedServices((prev) => (servicesEqual(prev, cached) ? prev : cached));
+    }, [])
   );
+
+  useEffect(() => {
+    if (!serviceSyncToken) return;
+    const services = route.params?.selectedServices;
+    if (!Array.isArray(services)) return;
+    const next = normalizeSelectedServices(services);
+    writeBookingSession({selectedServices: next});
+    setSelectedServices((prev) => (servicesEqual(prev, next) ? prev : next));
+  }, [serviceSyncToken]);
 
   const selectedServiceIds = useMemo(
     () => selectedServices.map((service) => service.id),
@@ -248,12 +248,24 @@ const CustomerBookingScreen = () => {
   const [bookingError, setBookingError] = useState('');
   const [accountLoaded, setAccountLoaded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isQuoting, setIsQuoting] = useState(false);
+
+  const sanitizeEmail = (value) => {
+    const text = String(value || '').trim();
+    return text && text !== 'N/A' ? text : '';
+  };
+
+  const sanitizePhone = (value) => {
+    const text = String(value || '').trim();
+    return text && text !== 'N/A' ? text : '';
+  };
 
   const [account, setAccount] = useState({
     name: '',
     email: '',
-    phone: 'N/A',
+    phone: '',
   });
+  const [specialRequests, setSpecialRequests] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -267,8 +279,8 @@ const CustomerBookingScreen = () => {
         if (mounted) {
           setAccount({
             name: rawName,
-            email: String(user?.email || '').trim() || 'N/A',
-            phone: String(user?.phone || '').trim() || 'N/A',
+            email: sanitizeEmail(user?.email),
+            phone: sanitizePhone(user?.phone),
           });
         }
       } catch {
@@ -299,12 +311,12 @@ const CustomerBookingScreen = () => {
 
   useEffect(() => {
     if (!accountLoaded) return;
-    if (!branchId) {
+    if (!branchIdResolved) {
       setBookingError('Missing branch for booking');
     } else {
       setBookingError('');
     }
-  }, [accountLoaded, branchId]);
+  }, [accountLoaded, branchIdResolved]);
 
   const handleOpenDatePicker = (field) => {
     setActiveDateField(field);
@@ -355,18 +367,20 @@ const CustomerBookingScreen = () => {
     return `${day}/${month}/${year}`;
   };
 
-  const handleBookNow = () => {
-    if (!branchId) {
+  /** Buoc cuoi checkout: quote API -> sang Payment (chua tao booking tren server). */
+  const handleBookNow = async () => {
+    if (!branchIdResolved) {
       setBookingError('Missing branch for booking');
       Alert.alert('Booking', 'This property is missing branch information. Go back and choose a room again.');
       return;
     }
-    if (!roomTypeId && !roomName) {
+    if (!roomTypeIdResolved) {
       Alert.alert('Booking', 'Please choose a room type before booking.');
       return;
     }
-    if (roomTotal <= 0) {
-      Alert.alert('Booking', 'Room price is unavailable for this stay. Adjust your dates and try again.');
+    const email = sanitizeEmail(account.email);
+    if (!email) {
+      Alert.alert('Booking', 'Please add your email in Profile before booking.');
       return;
     }
     if (selectedEndDate <= selectedStartDate) {
@@ -375,64 +389,142 @@ const CustomerBookingScreen = () => {
     }
 
     setBookingError('');
-    navigation.navigate('CustomerPaymentScreen', {
-      heroImage,
-      hotelName,
-      roomName,
-      branchId,
-      roomTypeId,
-      checkIn,
-      checkOut,
-      checkInDateIso: selectedStartDate.toISOString(),
-      checkOutDateIso: selectedEndDate.toISOString(),
-      name: displayName,
-      email: account.email,
-      phone: account.phone,
-      subtotalAmount,
-      totalAmount: subtotalAmount,
-      depositAmount,
-      depositPercent,
-      holdMinutes,
-      stayMinutes,
-      roomTotal,
-      servicesTotal,
-      nightlyPrice,
-      stayDays,
-      stayTimeLabel,
-      pricingTier: pricingQuote.pricingTier,
-      selectedServices,
-      serviceIds: selectedServiceIds,
-      bookingDraft: {
-        branchId,
-        hotelName,
-        hotelAddress: hotelAddress || '',
-        roomType: roomName,
-        roomTypeId,
-        guestName: displayName,
-        email: account.email,
-        phone: account.phone,
+    setIsQuoting(true);
+    try {
+      const quoteRes = await quoteBooking({
+        branchId: branchIdResolved,
+        roomTypeId: roomTypeIdResolved,
         checkInAt: selectedStartDate.toISOString(),
         expectedCheckOutAt: selectedEndDate.toISOString(),
-        serviceIds: selectedServiceIds,
         depositPercentage: depositPercent,
-      },
-    });
+      });
+      if (quoteRes.status !== 'success' || !quoteRes.data) {
+        Alert.alert('Booking', quoteRes.message || 'Unable to calculate booking price. Try again.');
+        return;
+      }
+
+      const q = quoteRes.data;
+      const serverRoomTotal = Number(q.roomTotal || q.room_total || 0);
+      const serverDeposit = Number(q.depositAmount || q.deposit_amount || depositAmount);
+      const serverHoldMinutes = Number(q.holdMinutes || q.hold_minutes || holdMinutes);
+      const serverStayMinutes = Number(q.durationMinutes || q.duration_minutes || stayMinutes);
+
+      if (serverRoomTotal <= 0) {
+        Alert.alert('Booking', 'Room price is unavailable for this stay. Adjust your dates and try again.');
+        return;
+      }
+
+      writeBookingSession({
+        selectedServices,
+        hotelName: hotelNameResolved,
+        roomName,
+        branchId: branchIdResolved,
+        roomTypeId: roomTypeIdResolved,
+      });
+
+      navigation.navigate(
+        'CustomerPaymentScreen',
+        buildPaymentNavigationParams({
+          heroImage: heroImageResolved,
+          hotelName: hotelNameResolved,
+          roomName,
+          branchId: branchIdResolved,
+          roomTypeId: roomTypeIdResolved,
+          checkIn,
+          checkOut,
+          checkInDateIso: selectedStartDate.toISOString(),
+          checkOutDateIso: selectedEndDate.toISOString(),
+          name: displayName,
+          email,
+          phone: account.phone || '',
+          subtotalAmount: serverRoomTotal + servicesTotal,
+          totalAmount: serverRoomTotal + servicesTotal,
+          depositAmount: serverDeposit,
+          depositPercent,
+          holdMinutes: serverHoldMinutes,
+          stayMinutes: serverStayMinutes,
+          roomTotal: serverRoomTotal,
+          servicesTotal,
+          nightlyPrice,
+          stayDays,
+          stayTimeLabel: `${q.pricingTier || pricingQuote.pricingTier || 'stay'} · ${serverStayMinutes} min`,
+          pricingTier: q.pricingTier || pricingQuote.pricingTier,
+          selectedServices,
+          serviceIds: selectedServiceIds,
+          bookingDraft: {
+            branchId: branchIdResolved,
+            hotelName: hotelNameResolved,
+            hotelAddress: hotelAddressResolved || '',
+            roomType: roomName,
+            roomTypeId: roomTypeIdResolved,
+            guestName: displayName,
+            email,
+            phone: account.phone || '',
+            checkInAt: selectedStartDate.toISOString(),
+            expectedCheckOutAt: selectedEndDate.toISOString(),
+            serviceIds: selectedServiceIds,
+            depositPercentage: depositPercent,
+            specialRequests: String(specialRequests || '').trim(),
+          },
+          rating: ratingResolved,
+          reviews: reviewsResolved,
+        })
+      );
+    } finally {
+      setIsQuoting(false);
+    }
   };
 
+  const buildBookingContext = () =>
+    writeBookingSession(
+      buildBookingContextPayload({
+        routeSyncToken: syncToken,
+        cachedSyncToken: session.syncToken,
+        hotelName: hotelNameResolved,
+        roomName,
+        roomTypeId: roomTypeIdResolved,
+        branchId: branchIdResolved,
+        hotelAddress: hotelAddressResolved,
+        heroImage: heroImageResolved,
+        roomPrice: roomPriceResolved,
+        tierRates,
+        selectedStartDate,
+        selectedEndDate,
+        checkIn,
+        checkOut,
+        reviews: reviewsResolved,
+        rating: ratingResolved,
+      })
+    );
+
   const handleOpenServiceSelection = () => {
-    if (!branchId) {
+    if (!branchIdResolved) {
       Alert.alert('Services', 'Branch information is missing for this booking.');
       return;
     }
+    const context = buildBookingContext();
+    writeBookingSession({...context, selectedServices});
     navigation.navigate('ServiceSelectionScreen', {
-      branchId,
+      mode: 'checkout',
+      branchId: branchIdResolved,
       selectedServices,
+      bookingContext: context,
     });
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setIsRefreshing(false);
+    try {
+      const session = await getSession();
+      const user = session?.user ?? {};
+      setAccount({
+        name: String(user?.name || user?.full_name || '').trim(),
+        email: sanitizeEmail(user?.email),
+        phone: sanitizePhone(user?.phone),
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   return (
@@ -443,7 +535,7 @@ const CustomerBookingScreen = () => {
         </TouchableOpacity>
         <View style={styles.checkoutHeaderText}>
           <Text style={styles.checkoutRoomTitle} numberOfLines={1}>{roomName}</Text>
-          <Text style={styles.checkoutHotelTitle} numberOfLines={1}>{hotelName}</Text>
+          <Text style={styles.checkoutHotelTitle} numberOfLines={1}>{hotelNameResolved}</Text>
         </View>
       </View>
       <ScrollView
@@ -459,13 +551,13 @@ const CustomerBookingScreen = () => {
         }
       >
         <View style={styles.heroWrap}>
-          <Image source={{ uri: heroImage }} style={styles.heroImage} resizeMode="cover" />
+          <Image source={{ uri: heroImageResolved }} style={styles.heroImage} resizeMode="cover" />
         </View>
         <View style={styles.roomInfoBox}>
           <View style={styles.ratingRow}>
             <Ionicons name="star" size={16} color="#FFD700" />
-            <Text style={styles.ratingText}>{rating}</Text>
-            <Text style={styles.reviewText}>- {reviews} Reviews</Text>
+            <Text style={styles.ratingText}>{ratingResolved}</Text>
+            <Text style={styles.reviewText}>- {reviewsResolved} Reviews</Text>
           </View>
         </View>
         {/* Check-in/out */}
@@ -501,6 +593,19 @@ const CustomerBookingScreen = () => {
           </Text>
         </TouchableOpacity>
 
+        <View style={styles.specialRequestsBox}>
+          <Text style={styles.summaryTitle}>Special requests (optional)</Text>
+          <TextInput
+            style={styles.specialRequestsInput}
+            placeholder="Early check-in, extra pillows, dietary needs..."
+            placeholderTextColor="#9ca3af"
+            value={specialRequests}
+            onChangeText={setSpecialRequests}
+            multiline
+            maxLength={500}
+          />
+        </View>
+
         <View style={styles.summaryBox}>
           <Text style={styles.summaryTitle}>Checkout summary</Text>
           <Text style={styles.summaryNote}>Review your stay before confirming</Text>
@@ -508,7 +613,7 @@ const CustomerBookingScreen = () => {
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Email</Text><Text style={styles.summaryValue}>{account.email}</Text></View>
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Phone</Text><Text style={styles.summaryValue}>{account.phone}</Text></View>
           <View style={styles.summaryDivider} />
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Hotel</Text><Text style={styles.summaryValue}>{hotelName}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Hotel</Text><Text style={styles.summaryValue}>{hotelNameResolved}</Text></View>
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Room</Text><Text style={styles.summaryValue}>{roomName}</Text></View>
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Stay</Text><Text style={styles.summaryValue}>{stayTimeLabel}</Text></View>
           <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Check-in</Text><Text style={styles.summaryValue}>{checkIn}</Text></View>
@@ -574,8 +679,12 @@ const CustomerBookingScreen = () => {
       </ScrollView>
 
       <View style={[styles.bottomBar, {paddingBottom: Math.max(insets.bottom, 12)}]}>
-        <TouchableOpacity style={styles.bookBtn} onPress={handleBookNow} activeOpacity={0.9}>
-          <Text style={styles.bookBtnText}>Continue to payment · {formatVnd(depositAmount)} deposit</Text>
+        <TouchableOpacity style={styles.bookBtn} onPress={handleBookNow} activeOpacity={0.9} disabled={isQuoting}>
+          {isQuoting ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.bookBtnText}>Continue to payment · {formatVnd(depositAmount)} deposit</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -709,7 +818,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
     marginBottom: 10,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FFFFFF',
   },
   serviceRowSelected: {
     borderColor: '#5b79df',
@@ -770,7 +879,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 10,
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
   },
   depositOptionActive: {
     borderColor: '#5b79df',
@@ -799,7 +908,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: 24,
     overflow: 'hidden',
-    backgroundColor: '#d9d9d9',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   heroImage: {
     width: '100%',
@@ -858,7 +969,9 @@ const styles = StyleSheet.create({
   checkInput: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFEFEF',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -889,7 +1002,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   depositValue: {
-    backgroundColor: '#EFEFEF',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -908,7 +1023,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   lateValue: {
-    backgroundColor: '#EFEFEF',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -918,6 +1035,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#222',
     fontWeight: 'bold',
+  },
+  specialRequestsBox: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    padding: 16,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  specialRequestsInput: {
+    marginTop: 8,
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#222',
+    textAlignVertical: 'top',
   },
   summaryBox: {
     backgroundColor: '#fff',

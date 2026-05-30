@@ -1,5 +1,7 @@
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from 'react';
 import api, {endpoints} from './Apis';
+import { resolveMediaUrl } from '../utils/mediaUrl';
+import {getSession} from '../utils/authStorage';
 
 export const ManagerProfileContext = createContext(null);
 
@@ -15,13 +17,7 @@ export function ManagerProfileProvider({children}) {
     });
     const [isLoading, setIsLoading] = useState(true);
 
-    const normalizeAvatarUri = useCallback((value) => {
-        const raw = String(value || '').trim();
-        if (!raw) return '';
-        if (/^https?:\/\//i.test(raw)) return raw;
-        const base = String(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
-        return base ? `${base}${raw.startsWith('/') ? raw : `/${raw}`}` : raw;
-    }, []);
+    const normalizeAvatarUri = useCallback((value) => resolveMediaUrl(value), []);
 
     const mapUserToProfile = useCallback((user) => {
         const roleValue = user?.role_display || user?.role || '';
@@ -30,7 +26,7 @@ export function ManagerProfileProvider({children}) {
             email: String(user?.email || '').trim(),
             phone: String(user?.phone || '').trim(),
             role: String(roleValue).trim(),
-            rawRole: String(user?.role || '').trim(),
+            rawRole: String(user?.role || '').trim().toUpperCase(),
             groups: Array.isArray(user?.groups) ? user.groups : [],
             avatar: normalizeAvatarUri(user?.avatar),
         };
@@ -49,8 +45,25 @@ export function ManagerProfileProvider({children}) {
     }, [mapUserToProfile]);
 
     useEffect(() => {
-        reloadProfile();
-    }, [reloadProfile]);
+        let mounted = true;
+
+        (async () => {
+            try {
+                const session = await getSession();
+                if (mounted && session?.user) {
+                    setProfile(mapUserToProfile(session.user));
+                }
+            } catch {
+            }
+            if (mounted) {
+                await reloadProfile();
+            }
+        })();
+
+        return () => {
+            mounted = false;
+        };
+    }, [mapUserToProfile, reloadProfile]);
 
     const updateProfile = (updates) => {
         setProfile((prev) => ({...prev, ...updates}));

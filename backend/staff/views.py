@@ -1,7 +1,7 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, viewsets
 
-from accounts.services.permissions import IsBusinessMember
+from accounts.permissions import IsBusinessMember
 from accounts.services.tenant_queryset import TenantQuerysetService
 from staff.models import StaffProfile
 from staff.serializers import StaffProfileSerializer
@@ -18,7 +18,7 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if getattr(user, "role", None) in {"SUPER_ADMIN", "BUSINESS_OWNER"}:
             return [permissions.IsAuthenticated(), IsBusinessMember()]
-        if user.groups.filter(name__in=["Manager_Group", "Admin_Group", "Business_Group"]).exists():
+        if user.groups.filter(name__in=["Admin_Group", "Business_Group"]).exists():
             return [permissions.IsAuthenticated(), IsBusinessMember()]
         return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
 

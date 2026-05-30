@@ -12,7 +12,8 @@ import {FormScreenLayout} from '../../../components/common/FormScreenLayout';
 import {DetailScreenHeader} from '../../../components/business/DetailScreenHeader';
 import {MultiImagePicker} from '../../../components/business/MultiImagePicker';
 import {useRoomTypes} from '../../../hooks/business/useRoomTypes';
-import {fetchRoomAmenityOptions, fetchRoomTypes} from '../../../services/BranchService';
+import {fetchRoomAmenityOptions, fetchRoomTypeDetail} from '../../../services/BranchService';
+import {resolveMediaListForApi} from '../../../utils/mediaUrl';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
 
 const amenityWrapStyle = StyleSheet.create({
@@ -75,10 +76,9 @@ export default function RoomTypeFormScreen({navigation, route}) {
         let mounted = true;
         (async () => {
             try {
-                const res = await fetchRoomTypes(branchId);
-                const list = Array.isArray(res?.data) ? res.data : [];
-                const found = list.find((r) => r?.id === roomTypeId);
+                const res = await fetchRoomTypeDetail(roomTypeId);
                 if (!mounted) return;
+                const found = res?.status === 'success' ? res.data : null;
                 if (found) {
                     setName(typeof found?.name === 'string' ? found.name : '');
                     setBasePrice(found?.basePrice != null ? String(found.basePrice) : '');
@@ -129,6 +129,12 @@ export default function RoomTypeFormScreen({navigation, route}) {
             return;
         }
 
+        const uploadedImages = await resolveMediaListForApi(images, 'nesto/room-types');
+        if (uploadedImages.length === 0) {
+            Alert.alert('Validation', 'Could not upload room photos. Check your connection.');
+            return;
+        }
+
         const res = await save(
             {
                 name: name.trim(),
@@ -136,7 +142,7 @@ export default function RoomTypeFormScreen({navigation, route}) {
                 capacity: Number(capacity),
                 description: description.trim(),
                 roomAmenities,
-                images,
+                images: uploadedImages,
             },
             roomTypeId
         );

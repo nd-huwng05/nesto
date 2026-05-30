@@ -1,7 +1,6 @@
 import {useCallback, useState} from 'react';
 import {Alert} from 'react-native';
 import {
-    MANAGER_ID,
     createBusiness,
     deleteBusiness,
     fetchBusinessDetail,
@@ -11,7 +10,7 @@ import {
 } from '../../services/BranchService';
 import {getErrorMessage} from '../../utils/authErrors';
 
-export function useBusinessCRUD(managerId = MANAGER_ID) {
+export function useBusinessCRUD() {
     const [businesses, setBusinesses] = useState([]);
     const [businessDetail, setBusinessDetail] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -20,7 +19,7 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
     const loadList = useCallback(async () => {
         setIsLoading(true);
         try {
-            const res = await fetchBusinessList(managerId);
+            const res = await fetchBusinessList();
             if (res.status === 'success') {
                 const baseList = Array.isArray(res.data) ? res.data : [];
 
@@ -49,13 +48,13 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
         } finally {
             setIsLoading(false);
         }
-    }, [managerId]);
+    }, []);
 
     const loadDetail = useCallback(
         async (businessId) => {
             setIsLoading(true);
             try {
-                const res = await fetchBusinessDetail(businessId, managerId);
+                const res = await fetchBusinessDetail(businessId);
                 if (res.status === 'success') {
                     setBusinessDetail(res.data);
                     return res.data;
@@ -69,14 +68,14 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
                 setIsLoading(false);
             }
         },
-        [managerId]
+        [],
     );
 
     const create = useCallback(
         async (payload) => {
             setIsSaving(true);
             try {
-                const res = await createBusiness(payload, managerId);
+                const res = await createBusiness(payload);
                 if (res.status === 'success') return res;
                 Alert.alert('Error', res.message || 'Failed to create business.');
                 return null;
@@ -87,14 +86,14 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [managerId]
+        [],
     );
 
     const update = useCallback(
         async (businessId, updates) => {
             setIsSaving(true);
             try {
-                const res = await updateBusiness(businessId, updates, managerId);
+                const res = await updateBusiness(businessId, updates);
                 if (res.status === 'success') {
                     setBusinessDetail(res.data);
                     return res;
@@ -108,7 +107,7 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [managerId]
+        [],
     );
 
     const remove = useCallback(
@@ -125,7 +124,7 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
                             onPress: async () => {
                                 setIsSaving(true);
                                 try {
-                                    const res = await deleteBusiness(businessId, managerId);
+                                    const res = await deleteBusiness(businessId);
                                     if (res.status === 'success') {
                                         Alert.alert('Deleted', 'Business removed successfully.');
                                         resolve(true);
@@ -145,7 +144,7 @@ export function useBusinessCRUD(managerId = MANAGER_ID) {
                 );
             });
         },
-        [managerId]
+        [],
     );
 
     return {

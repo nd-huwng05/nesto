@@ -22,9 +22,11 @@ import BookingDateTimePicker from '../../../components/booking/BookingDateTimePi
 import {fetchReviews} from '../../../services/ReviewService';
 import {mapReviewsToLocketList} from '../../../utils/locketFeed';
 import api, {endpoints} from '../../../configuration/Apis';
+import RemoteImage from '../../../components/common/RemoteImage';
 import ScreenHeader from '../../../components/common/ScreenHeader';
 import {formatVnd} from '../../../utils/formatCurrency';
 import {calculateTieredRoomPrice, formatDateTimeLabel, normalizeTierRates} from '../../../utils/roomPricing';
+import {useFavorites} from '../../../hooks/customer/useFavorites';
 
 const PRIMARY = '#5b79df';
 const PRICE_ACCENT = '#059669';
@@ -60,7 +62,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const params = route?.params ?? {};
     const room = params.room ?? {};
     const routeHotelName = params.hotelName ?? '';
-    const heroImage = params.heroImage ?? room.image ?? 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
+    const heroImage = String(params.heroImage ?? room.image ?? '').trim();
     const rating = Number.isFinite(params.rating) ? params.rating : 0;
     const reviews = Number.isFinite(params.reviews) ? params.reviews : 0;
 
@@ -79,6 +81,8 @@ export function CustomerHomeDetailSceen({navigation, route}) {
 
     const hotelName = routeHotelName || room?.hotelName || 'Hotel';
     const branchId = params.branchId ?? room?.branchId ?? '';
+    const {isFavorite, toggleFavorite} = useFavorites();
+    const favorited = isFavorite(branchId);
     const hotelAddress = params.hotelAddress
         ?? params.location
         ?? room?.hotelAddress
@@ -185,7 +189,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                     />
                 }
             >
-                <Image source={{uri: heroImage}} style={styles.heroImage} resizeMode="cover" />
+                <RemoteImage uri={heroImage} style={styles.heroImage} resizeMode="cover" />
 
                 <View style={[styles.sectionCard, styles.heroInfoCard]}>
                     <View style={styles.heroTitleRow}>
@@ -198,8 +202,21 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                                 </Text>
                             </View>
                         </View>
-                        <TouchableOpacity style={styles.mapBtn} activeOpacity={0.85}>
-                            <MaterialCommunityIcons name="map-marker-radius-outline" size={22} color={PRIMARY} />
+                        <TouchableOpacity
+                            style={styles.mapBtn}
+                            activeOpacity={0.85}
+                            onPress={async () => {
+                                const result = await toggleFavorite({branchId});
+                                if (!result?.success && result?.error) {
+                                    Alert.alert('Favorite', result.error);
+                                }
+                            }}
+                        >
+                            <Ionicons
+                                name={favorited ? 'heart' : 'heart-outline'}
+                                size={22}
+                                color={favorited ? '#ef4444' : PRIMARY}
+                            />
                         </TouchableOpacity>
                     </View>
                     <RatingRow rating={rating} reviews={reviews} />
@@ -304,13 +321,12 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                                                     activeOpacity={0.88}
                                                     style={[styles.bookBtn, soldOut ? styles.bookBtnDisabled : null]}
                                                     onPress={() =>
-                                                        navigation.navigate('CustomerBookingScreen', {
-                                                            syncToken: Date.now(),
+                                                        navigation.navigate('CustomerRoomDetailScreen', {
                                                             branchId,
                                                             roomTypeId: typeId,
+                                                            hotelId: branchId,
                                                             hotelName,
                                                             hotelAddress,
-                                                            roomName: typeName,
                                                             heroImage: image,
                                                             startDateIso: startDate.toISOString(),
                                                             endDateIso: endDate.toISOString(),
@@ -318,15 +334,24 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                                                             pricePerHour,
                                                             pricePerHalfDay,
                                                             pricePerDay,
-                                                            checkIn: bookingCheckIn,
-                                                            checkOut: bookingCheckOut,
                                                             reviews,
                                                             rating,
+                                                            room: {
+                                                                id: typeId,
+                                                                roomTypeId: typeId,
+                                                                branchId,
+                                                                name: typeName,
+                                                                description: desc,
+                                                                image,
+                                                                pricePerHour,
+                                                                pricePerHalfDay,
+                                                                pricePerDay,
+                                                            },
                                                         })
                                                     }
                                                 >
                                                     <Text style={styles.bookBtnText}>
-                                                        {soldOut ? 'Unavailable' : 'Book now'}
+                                                        {soldOut ? 'Unavailable' : 'View & book'}
                                                     </Text>
                                                 </TouchableOpacity>
                                             </View>

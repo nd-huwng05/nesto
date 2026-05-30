@@ -14,19 +14,19 @@ import CustomerPaymentScreen from './CustomerPaymentScreen';
 import CustomerBookingsHubScreen from './CustomerBookingsHubScreen';
 import BookingDetailScreen from './BookingDetailScreen';
 import WatchlistScreen from './WatchlistScreen';
-import CustomerServiceScreen from './CustomerServiceScreen';
 import ServiceSelectionScreen from './ServiceSelectionScreen';
 import CustomerAddPostScreen from './CustomerAddPostScreen';
 import CreateWatchlistModal from '../../../components/customer/CreateWatchlistModal';
 import CustomerReviewScreen from './CustomerReviewScreen';
 import CustomerNotificationsScreen from './CustomerNotificationsScreen';
+import ChangePasswordScreen from '../../Account/ChangePasswordScreen';
 
 const CustomerStack = createNativeStackNavigator();
 const CustomerTab = createBottomTabNavigator();
 
 function CustomerTabs() {
     const insets = useSafeAreaInsets();
-    const bottomPad = Math.max(insets.bottom, 25);
+    const bottomPad = Math.max(insets.bottom, 6);
     return (
         <CustomerTab.Navigator
             screenOptions={{
@@ -34,16 +34,15 @@ function CustomerTabs() {
                 unmountOnBlur: false,
                 tabBarHideOnKeyboard: true,
                 tabBarStyle: {
-                    height: 85 + bottomPad,
                     paddingBottom: bottomPad,
-                    paddingTop: 10,
+                    paddingTop: 6,
                     borderTopWidth: 1,
                     borderTopColor: '#e5e7eb',
                     backgroundColor: '#ffffff',
                 },
                 tabBarActiveTintColor: '#8294FF',
                 tabBarInactiveTintColor: '#8f8f8f',
-                tabBarLabelStyle: {fontSize: 12, fontFamily: 'SF-Regular', marginTop: 4},
+                tabBarLabelStyle: {fontSize: 11, fontFamily: 'SF-Regular', marginTop: 2, marginBottom: 2},
             }}
         >
             <CustomerTab.Screen
@@ -108,10 +107,10 @@ export default function CustomerNavigator() {
                 />
                 <CustomerStack.Screen name="CustomerBookingScreen" component={CustomerBookingScreen} />
                 <CustomerStack.Screen name="CustomerPaymentScreen" component={CustomerPaymentScreen} />
-                <CustomerStack.Screen name="CustomerServiceScreen" component={CustomerServiceScreen} />
                 <CustomerStack.Screen name="ServiceSelectionScreen" component={ServiceSelectionScreen} />
                 <CustomerStack.Screen name="CustomerReviewScreen" component={CustomerReviewScreen} />
                 <CustomerStack.Screen name="CustomerNotificationsScreen" component={CustomerNotificationsScreen} />
+                <CustomerStack.Screen name="ChangePasswordScreen" component={ChangePasswordScreen} />
             </CustomerStack.Navigator>
         </View>
     );

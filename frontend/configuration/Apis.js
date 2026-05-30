@@ -1,16 +1,17 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {extractApiErrorMessage} from '../utils/apiError';
+import {API_BASE_URL, assertApiConfigured} from '../utils/apiConfig';
 import {
     getValidAccessToken,
     onAuthFailure,
     refreshAccessToken,
 } from '../utils/tokenRefresh';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+assertApiConfigured();
 
 const api = axios.create({
-    baseURL: API_URL,
+    baseURL: API_BASE_URL,
     timeout: 30000,
 });
 
@@ -28,6 +29,9 @@ export const endpoints = {
     'forgot-password': '/accounts/auth/forgot_password/',
     'reset-password': '/accounts/auth/reset_password/',
     'change-password': '/accounts/auth/change_password/',
+    'notifications': '/accounts/notifications/',
+    'notifications-mark-all-read': '/accounts/notifications/mark-all-read/',
+    'notification-mark-read': (notificationId) => `/accounts/notifications/${notificationId}/mark-read/`,
     'companies': '/businesses/companies/',
     'company-detail': (companyId) => `/businesses/companies/${companyId}/`,
     'business-metadata': '/businesses/metadata/options/',
@@ -54,14 +58,18 @@ export const endpoints = {
     'booking-checkin': (bookingId) => `/operations/bookings/${bookingId}/confirm-checkin/`,
     'booking-assign-checkin': (bookingId) => `/operations/bookings/${bookingId}/assign-room-and-checkin/`,
     'booking-switch-room': (bookingId) => `/operations/bookings/${bookingId}/switch-room/`,
+    'booking-reassign-room': (bookingId) => `/operations/bookings/${bookingId}/reassign-room/`,
     'booking-checkout': (bookingId) => `/operations/bookings/${bookingId}/checkout/`,
     'booking-add-extra-service': (bookingId) => `/operations/bookings/${bookingId}/add-extra-service/`,
+    'booking-cancel': (bookingId) => `/operations/bookings/${bookingId}/cancel/`,
     'booking-lookup': '/operations/bookings/lookup/',
     'booking-available-rooms': (bookingId) => `/operations/bookings/${bookingId}/available-rooms/`,
     'booking-final-bill': (bookingId) => `/operations/bookings/${bookingId}/final-bill/`,
     'customer-bookings': '/operations/customer-bookings/',
     'customer-booking-detail': (bookingId) => `/operations/customer-bookings/${bookingId}/`,
     'customer-booking-check-in': (bookingId) => `/operations/customer-bookings/${bookingId}/check-in/`,
+    'customer-booking-pay-deposit': (bookingId) => `/operations/customer-bookings/${bookingId}/pay-deposit/`,
+    'customer-booking-cancel': (bookingId) => `/operations/customer-bookings/${bookingId}/cancel/`,
     'customer-booking-add-service': (bookingId) => `/operations/customer-bookings/${bookingId}/add-service/`,
     'customer-booking-live-bill': (bookingId) => `/operations/customer-bookings/${bookingId}/live-bill/`,
     'booking-live-bill': (bookingId) => `/operations/bookings/${bookingId}/live-bill/`,
@@ -79,6 +87,7 @@ export const endpoints = {
     'service-orders': '/operations/service-orders/',
     'service-order-detail': (orderId) => `/operations/service-orders/${orderId}/`,
     'service-order-accept': (orderId) => `/operations/service-orders/${orderId}/accept/`,
+    'service-order-start': (orderId) => `/operations/service-orders/${orderId}/start/`,
     'service-order-complete': (orderId) => `/operations/service-orders/${orderId}/complete/`,
     'service-order-cancel': (orderId) => `/operations/service-orders/${orderId}/cancel/`,
     'extra-services': '/operations/extra-services/',
@@ -93,6 +102,7 @@ export const endpoints = {
     'transaction-detail': (transactionId) => `/billing/transactions/${transactionId}/`,
     'payments-momo': '/payments/momo/',
     'payments-zalopay': '/payments/zalopay/',
+    'payment-status': (bookingId) => `/payments/status/${bookingId}/`,
 };
 
 api.interceptors.request.use(async (config) => {
@@ -106,6 +116,8 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
+        error.userMessage = extractApiErrorMessage(error);
+
         const originalRequest = error.config;
         if (error.response?.status !== 401 || !originalRequest || originalRequest._retry) {
             return Promise.reject(error);

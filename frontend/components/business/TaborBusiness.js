@@ -3,7 +3,7 @@ import {FileText, Network, User, Users} from 'lucide-react-native';
 
 export const TaborBusiness = ({state, navigation, bottomInset = 10}) => {
     return (
-        <View style={[styles.bar, {paddingBottom: bottomInset, paddingTop: 10}]}>
+        <View style={[styles.bar, {paddingBottom: bottomInset, paddingTop: 8}]}>
             {state.routes.map((route, index) => {
                 const isFocused = state.index === index;
 

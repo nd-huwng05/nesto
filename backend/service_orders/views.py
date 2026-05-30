@@ -4,7 +4,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from accounts.services.permissions import IsBusinessMember, IsServiceMember
+from accounts.permissions import IsBusinessMember, IsServiceMember
 from accounts.services.tenant_queryset import TenantQuerysetService
 from service_orders.models import ExtraService, ServiceOrder
 from service_orders.serializers import ExtraServiceSerializer, ServiceOrderSerializer
@@ -66,7 +66,7 @@ class ServiceOrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         if order.status not in {"PENDING"}:
             return Response({"detail": "Only pending orders can be accepted."}, status=status.HTTP_400_BAD_REQUEST)
-        order.status = "CONFIRMED"
+        order.status = ServiceOrder.Status.CONFIRMED
         order.assigned_staff = request.user.name or request.user.email
         order.save(update_fields=["status", "assigned_staff", "updated_at"])
         OrderNotificationService.notify_order_updated(order)
@@ -78,7 +78,7 @@ class ServiceOrderViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def start(self, request, pk=None):
         order = self.get_object()
-        if order.status not in {"CONFIRMED"}:
+        if order.status not in {ServiceOrder.Status.CONFIRMED}:
             return Response({"detail": "Only confirmed orders can be started."}, status=status.HTTP_400_BAD_REQUEST)
         order.status = "IN_PROGRESS"
         order.save(update_fields=["status", "updated_at"])

@@ -15,18 +15,7 @@ import {ProfileSettingsRow} from '../../../components/profile/ProfileSettingsRow
 import {ProfileSettingsSection} from '../../../components/profile/ProfileSettingsSection';
 import {useManagerProfile} from '../../../configuration/ManagerProfileContext';
 import {UI, cardStyle} from '../../../styles/uiTokens';
-import {clearSession} from '../../../utils/authStorage';
-
-function resetToAccountFlow(navigation) {
-    let root = navigation;
-    while (root.getParent?.()) {
-        root = root.getParent();
-    }
-    root.reset({
-        index: 0,
-        routes: [{name: 'AccountFlow'}],
-    });
-}
+import {signOut} from '../../../utils/signOut';
 
 export default function ProfileBusinessScreen({navigation}) {
     const {profile, isLoading} = useManagerProfile();
@@ -47,8 +36,7 @@ export default function ProfileBusinessScreen({navigation}) {
                 text: 'Log out',
                 style: 'destructive',
                 onPress: async () => {
-                    await clearSession();
-                    resetToAccountFlow(navigation);
+                    await signOut(navigation);
                 },
             },
         ]);

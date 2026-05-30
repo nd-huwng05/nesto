@@ -1,40 +1,38 @@
 import {useCallback, useMemo, useState} from 'react';
 import {ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import {LogOut, MapPin} from 'lucide-react-native';
+import {LogOut, Lock, MapPin} from 'lucide-react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
-import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
-import {clearSession} from '../../../utils/authStorage';
+import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
+import {signOut} from '../../../utils/signOut';
 import {UI} from '../../../styles/uiTokens';
 import api, {endpoints} from '../../../configuration/Apis';
+import {getServiceStaffLabel} from '../../../constants/staffRoleMapping';
+import {resolveMediaUrl} from '../../../utils/mediaUrl';
 
 const roleConfig = {
     RECEPTIONIST: {label: 'Receptionist', bg: '#dcfce7', color: '#166534'},
     HOUSEKEEPING: {label: 'Housekeeping', bg: '#fef3c7', color: '#92400e'},
-    SERVICE: {label: 'Service / F&B', bg: '#dbeafe', color: '#1e40af'},
-    MANAGER: {label: 'Branch Manager', bg: '#ede9fe', color: '#5b21b6'},
+    SERVICE: {label: 'Service Staff', bg: '#dbeafe', color: '#1e40af'},
 };
 
-function resetToAccountFlow(navigation) {
-    let root = navigation;
-    while (root.getParent?.()) {
-        root = root.getParent();
-    }
-    root.reset({index: 0, routes: [{name: 'AccountFlow'}]});
-}
-
 export default function StaffProfileScreen({navigation}) {
-    const {user, role, branchId} = useStaffSession();
-    const branch = getStaffBranchInfo(branchId);
+    const {user, role, branchId, serviceCategory} = useStaffSession();
+    const {branch} = useStaffBranch(branchId);
     const [profile, setProfile] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [hasLoadError, setHasLoadError] = useState(false);
+    const serviceLabel = getServiceStaffLabel(serviceCategory || user?.serviceCategory, user?.jobRole);
     const roleStyle = roleConfig[role] || {
         label: user?.jobRole || 'Staff',
         bg: '#f1f5f9',
         color: '#475569',
     };
+    const displayRoleStyle =
+        role === 'SERVICE'
+            ? {...roleStyle, label: serviceLabel}
+            : roleStyle;
     const initials = useMemo(() => {
         const fullName = String(profile?.name || user?.name || '').trim();
         if (!fullName) return 'U';
@@ -44,13 +42,7 @@ export default function StaffProfileScreen({navigation}) {
             .map((part) => part[0]?.toUpperCase() || '')
             .join('');
     }, [profile?.name, user?.name]);
-    const normalizedAvatar = useMemo(() => {
-        const raw = String(profile?.avatar || '').trim();
-        if (!raw) return '';
-        if (/^https?:\/\//i.test(raw)) return raw;
-        const base = String(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
-        return base ? `${base}${raw.startsWith('/') ? raw : `/${raw}`}` : raw;
-    }, [profile?.avatar]);
+    const normalizedAvatar = useMemo(() => resolveMediaUrl(profile?.avatar), [profile?.avatar]);
 
     useFocusEffect(
         useCallback(() => {
@@ -93,8 +85,7 @@ export default function StaffProfileScreen({navigation}) {
                 text: 'Log out',
                 style: 'destructive',
                 onPress: async () => {
-                    await clearSession();
-                    resetToAccountFlow(navigation);
+                    await signOut(navigation);
                 },
             },
         ]);
@@ -120,9 +111,9 @@ export default function StaffProfileScreen({navigation}) {
                     )}
                     <Text style={styles.userName}>{profile?.name || user?.name || 'Team Member'}</Text>
                     <Text style={styles.userEmail}>{profile?.email || user?.email || 'No email'}</Text>
-                    <View style={[styles.roleBadge, {backgroundColor: roleStyle.bg}]}>
-                        <Text style={[styles.roleBadgeText, {color: roleStyle.color}]}>
-                            {roleStyle.label}
+                    <View style={[styles.roleBadge, {backgroundColor: displayRoleStyle.bg}]}>
+                        <Text style={[styles.roleBadgeText, {color: displayRoleStyle.color}]}>
+                            {displayRoleStyle.label}
                         </Text>
                     </View>
                 </View>
@@ -132,14 +123,23 @@ export default function StaffProfileScreen({navigation}) {
                         <MapPin size={18} color="#8294FF" />
                         <Text style={styles.branchCardTitle}>Assigned branch</Text>
                     </View>
-                    <Text style={styles.branchName}>{branch.name}</Text>
-                    <Text style={styles.branchAddress}>{branch.address}</Text>
+                    <Text style={styles.branchName}>{branch?.name || 'Branch'}</Text>
+                    <Text style={styles.branchAddress}>{branch?.address || '—'}</Text>
                     {(profile?.phone || user?.phone) ? (
                         <Text style={styles.branchMeta}>Contact: {profile?.phone || user?.phone}</Text>
                     ) : null}
                 </View>
 
                 <View style={styles.spacer} />
+
+                <TouchableOpacity
+                    onPress={() => navigation.navigate('ChangePasswordScreen')}
+                    activeOpacity={0.88}
+                    style={styles.changePasswordBtn}
+                >
+                    <Lock size={20} color="#475569" />
+                    <Text style={styles.changePasswordBtnText}>Change password</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity
                     onPress={handleLogout}
@@ -250,6 +250,23 @@ const styles = StyleSheet.create({
     spacer: {
         flex: 1,
         minHeight: 32,
+    },
+    changePasswordBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 16,
+        paddingVertical: 16,
+        gap: 10,
+        marginBottom: 12,
+    },
+    changePasswordBtnText: {
+        color: '#475569',
+        fontSize: 16,
+        fontWeight: '700',
     },
     logoutBtn: {
         flexDirection: 'row',

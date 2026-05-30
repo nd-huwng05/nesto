@@ -19,6 +19,9 @@ export default function CreateBranchWizard({navigation, route}) {
         selectedAmenities,
         amenityOptions,
         toggleAmenity,
+        catalogThemes,
+        selectedThemeIds,
+        toggleTheme,
         bankName,
         setBankName,
         bankAccount,
@@ -39,6 +42,8 @@ export default function CreateBranchWizard({navigation, route}) {
     } = useCreateBranch(navigation, route);
     const amenityList = Array.isArray(amenityOptions) ? amenityOptions : [];
     const selectedAmenityList = Array.isArray(selectedAmenities) ? selectedAmenities : [];
+    const themeList = Array.isArray(catalogThemes) ? catalogThemes : [];
+    const selectedThemeIdList = Array.isArray(selectedThemeIds) ? selectedThemeIds : [];
 
     return (
         <View className="flex-1">
@@ -46,7 +51,7 @@ export default function CreateBranchWizard({navigation, route}) {
                 navigation={{goBack: handleBack}}
                 title={getTitle()}
                 isValid={checkIsValid()}
-                isLoading={isLoading && step === 6}
+                isLoading={isLoading && step === 7}
                 onContinue={handleContinue}
                 footerText={
                     <Text className="text-gray-400 mb-2 font-sf text-center">
@@ -84,6 +89,38 @@ export default function CreateBranchWizard({navigation, route}) {
 
                 {step === 3 && (
                     <View className="flex-row flex-wrap gap-2.5 mt-4 justify-center">
+                        {themeList.map((theme) => {
+                            const themeId = String(theme?.id || '');
+                            const isSelected = selectedThemeIdList.includes(themeId);
+                            return (
+                                <TouchableOpacity
+                                    key={themeId || theme?.name}
+                                    activeOpacity={0.8}
+                                    onPress={() => toggleTheme(themeId)}
+                                    className={`px-5 py-3 rounded-full border ${
+                                        isSelected ? 'border-primary bg-primary' : 'border-gray-300 bg-white'
+                                    }`}
+                                >
+                                    <Text
+                                        className={`text-sm font-sf-medium ${
+                                            isSelected ? 'text-white' : 'text-slate-600'
+                                        }`}
+                                    >
+                                        {theme?.name || 'Theme'}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                        {!themeList.length ? (
+                            <Text className="text-gray-400 font-sf text-center px-4">
+                                Loading stay types…
+                            </Text>
+                        ) : null}
+                    </View>
+                )}
+
+                {step === 4 && (
+                    <View className="flex-row flex-wrap gap-2.5 mt-4 justify-center">
                         {amenityList.map((amenity) => {
                             const isSelected = selectedAmenityList.includes(amenity);
                             return (
@@ -108,7 +145,7 @@ export default function CreateBranchWizard({navigation, route}) {
                     </View>
                 )}
 
-                {step === 4 && (
+                {step === 5 && (
                     <View className="gap-4 mt-4">
                         <View className="flex-row items-center bg-gray-50 border rounded-2xl px-4 h-12 border-gray-100">
                             <TextInput
@@ -134,7 +171,7 @@ export default function CreateBranchWizard({navigation, route}) {
                     </View>
                 )}
 
-                {step === 5 && (
+                {step === 6 && (
                     <View className="mt-4">
                         <MultiImagePicker
                             images={branchImages}
@@ -144,7 +181,7 @@ export default function CreateBranchWizard({navigation, route}) {
                     </View>
                 )}
 
-                {step === 6 && (
+                {step === 7 && (
                     <View className="mb-4 mt-4">
                         <View
                             className={`flex-row items-center bg-gray-50 border rounded-2xl px-4 h-12 ${

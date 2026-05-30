@@ -2,6 +2,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Linking,
     FlatList,
     LayoutAnimation,
     Platform,
@@ -18,18 +19,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {EmptyState} from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
-import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
+import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 import {connectServiceUpdates} from '../../../services/WebSocketService';
 import {
     listServiceOrders,
     acceptServiceOrder,
+    startServiceOrder,
     completeServiceOrder,
     cancelServiceOrder,
 } from '../../../services/staffApiService';
+import {normalizeServiceOrderList} from '../../../utils/serviceOrderMapper';
 
 const STATUS_STYLES = {
     PENDING: {bg: '#FEF3C7', text: '#92400E', label: 'Pending'},
+    CONFIRMED: {bg: '#E0E7FF', text: '#4338CA', label: 'Confirmed'},
     IN_PROGRESS: {bg: '#DBEAFE', text: '#1D4ED8', label: 'In Progress'},
     COMPLETED: {bg: '#DCFCE7', text: '#166534', label: 'Completed'},
     CANCELLED: {bg: '#FEE2E2', text: '#991b1b', label: 'Cancelled'},
@@ -62,9 +66,9 @@ export default function ServiceOrderScreen() {
         UIManager.setLayoutAnimationEnabledExperimental(true);
     }
 
-    const {user, branchId} = useStaffSession();
-    const branch = getStaffBranchInfo(branchId);
-    const department = normalizeDepartment(user?.department);
+    const {user, branchId, serviceCategory} = useStaffSession();
+    const {branch} = useStaffBranch(branchId);
+    const department = normalizeDepartment(serviceCategory || user?.serviceCategory);
     const departmentMeta = getDepartmentMeta(department);
     const [orders, setOrders] = useState([]);
     const orderList = Array.isArray(orders) ? orders : [];
@@ -74,21 +78,28 @@ export default function ServiceOrderScreen() {
     const [errorMessage, setErrorMessage] = useState('');
 
     const loadOrders = useCallback(async () => {
-        if (!branchId || !department) {
+        if (!branchId) {
             setOrders([]);
+            setErrorMessage('Branch assignment is missing for this account.');
+            setIsLoading(false);
+            return;
+        }
+        if (!department) {
+            setOrders([]);
+            setErrorMessage('Service category is not configured for this account.');
             setIsLoading(false);
             return;
         }
         setIsLoading(true);
         try {
             const data = await listServiceOrders(branchId);
-            setOrders(
-                (data || []).filter(
-                    (order) =>
-                        order.branchId === branchId &&
-                        normalizeDepartment(order.category) === department
-                )
+            const normalized = normalizeServiceOrderList(data).filter(
+                (order) =>
+                    order.branchId === branchId &&
+                    normalizeDepartment(order.category) === department &&
+                    !['COMPLETED', 'CANCELLED'].includes(normalizeStatus(order.status))
             );
+            setOrders(normalized);
             setErrorMessage('');
         } catch (error) {
             console.error("API Error: ", error.response?.data || error.message);
@@ -169,16 +180,21 @@ export default function ServiceOrderScreen() {
     const handleAccept = async (orderId) => {
         setBusyId(orderId);
         try {
-            const result = await acceptServiceOrder(orderId, user?.name || null);
-            if (!result.success) {
-                Alert.alert('Unable to accept', result.message || 'Please try again.');
+            const acceptResult = await acceptServiceOrder(orderId, user?.name || null);
+            if (!acceptResult.success) {
+                Alert.alert('Unable to accept', acceptResult.message || 'Please try again.');
+                return;
+            }
+            const startResult = await startServiceOrder(orderId);
+            if (!startResult.success) {
+                Alert.alert('Unable to start', startResult.message || 'Order accepted but could not be started.');
+                await loadOrders();
                 return;
             }
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            const nextOrder = normalizeServiceOrderList([startResult.data])[0];
             setOrders((prev) =>
-                prev.map((order) =>
-                    order.id === orderId ? (result.data || {...order, status: 'IN_PROGRESS'}) : order
-                )
+                prev.map((order) => (order.id === orderId ? (nextOrder || {...order, status: 'IN_PROGRESS'}) : order))
             );
         } finally {
             setBusyId(null);
@@ -219,7 +235,12 @@ export default function ServiceOrderScreen() {
         <TabScreenLayout backgroundColor="#F8FAFC">
             <View style={styles.inner}>
                 <View style={styles.headerPad}>
-                    <StaffBranchHeader user={user} branchName={branch.name} branchAddress={branch.address} />
+                    <StaffBranchHeader
+                        user={user}
+                        branchName={branch?.name}
+                        branchAddress={branch?.address}
+                        branchImage={branch?.image}
+                    />
                     <Text style={styles.title}>{departmentMeta.title}</Text>
                     <Text style={styles.subtitle}>{departmentMeta.subtitle}</Text>
                 </View>
@@ -261,7 +282,10 @@ export default function ServiceOrderScreen() {
                                     <View style={styles.guestRow}>
                                         <Text style={styles.guestName}>{item.guestName || 'Guest'}</Text>
                                         <TouchableOpacity
-                                            onPress={() => {}}
+                                            onPress={() => {
+                                                const phone = String(item.guestPhone || '').replace(/\s/g, '');
+                                                if (phone) Linking.openURL(`tel:${phone}`);
+                                            }}
                                             style={styles.phoneWrap}
                                         >
                                             <Phone size={16} color="#475569" />
@@ -269,7 +293,7 @@ export default function ServiceOrderScreen() {
                                         </TouchableOpacity>
                                     </View>
 
-                                    {statusKey === 'IN_PROGRESS' && item.assignedStaff ? (
+                                    {(statusKey === 'IN_PROGRESS' || statusKey === 'CONFIRMED') && item.assignedStaff ? (
                                         <Text style={styles.assignedText}>Assigned to: {item.assignedStaff}</Text>
                                     ) : null}
 

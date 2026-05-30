@@ -16,8 +16,8 @@ import {Calendar, ChevronLeft, ChevronRight, QrCode, Search} from 'lucide-react-
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import EmptyState from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
-import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
+import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 import {fetchBookingsForDay} from '../../../services/ReceptionService';
 import {buildDateStripe, toDateKey} from '../../../utils/staffBookingOps';
 import {connectBookingUpdates} from '../../../services/WebSocketService';
@@ -49,7 +49,7 @@ function shiftDateKey(dateKey, days) {
 
 export default function BookingsScreen({navigation}) {
     const {user, branchId} = useStaffSession();
-    const branch = getStaffBranchInfo(branchId);
+    const {branch} = useStaffBranch(branchId);
     const [bookings, setBookings] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -141,8 +141,9 @@ export default function BookingsScreen({navigation}) {
                 <View style={styles.headerPad}>
                     <StaffBranchHeader
                         user={user}
-                        branchName={branch.name}
-                        branchAddress={branch.address}
+                        branchName={branch?.name}
+                        branchAddress={branch?.address}
+                        branchImage={branch?.image}
                     />
                     <View style={styles.titleRow}>
                         <View style={styles.titleBlock}>

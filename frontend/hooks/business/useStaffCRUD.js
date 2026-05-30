@@ -2,7 +2,6 @@ import {useCallback, useState} from 'react';
 import {Alert} from 'react-native';
 import {fetchBusinessList, fetchBranchList} from '../../services/BranchService';
 import {
-    MANAGER_ID,
     createStaff,
     deleteStaff,
     fetchStaffBranchOptions,
@@ -12,7 +11,7 @@ import {
 } from '../../services/StaffService';
 import {getErrorMessage} from '../../utils/authErrors';
 
-export function useStaffCRUD(managerId = MANAGER_ID) {
+export function useStaffCRUD() {
     const [staffList, setStaffList] = useState([]);
     const [businesses, setBusinesses] = useState([]);
     const [branchOptions, setBranchOptions] = useState([]);
@@ -21,7 +20,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
 
     const loadBusinesses = useCallback(async () => {
         try {
-            const res = await fetchBusinessList(managerId);
+            const res = await fetchBusinessList();
             if (res.status === 'success') {
                 const baseList = Array.isArray(res.data) ? res.data : [];
                 const enriched = await Promise.all(
@@ -40,7 +39,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
         } catch (err) {
             Alert.alert('Error', getErrorMessage(err, 'Unable to load businesses.'));
         }
-    }, [managerId]);
+    }, []);
 
     const loadBranchOptions = useCallback(async () => {
         try {
@@ -51,7 +50,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
         } catch (err) {
             Alert.alert('Error', getErrorMessage(err, 'Unable to load branches.'));
         }
-    }, [managerId]);
+    }, []);
 
     const loadList = useCallback(
         async (filters = {}) => {
@@ -71,7 +70,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
                 setIsLoading(false);
             }
         },
-        [managerId]
+        []
     );
 
     const loadStaff = useCallback(
@@ -81,7 +80,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
             Alert.alert('Error', res.message || 'Staff member not found.');
             return null;
         },
-        [managerId]
+        []
     );
 
     const create = useCallback(
@@ -104,7 +103,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [loadList, managerId]
+        [loadList]
     );
 
     const update = useCallback(
@@ -127,7 +126,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [loadList, managerId]
+        [loadList]
     );
 
     const remove = useCallback(
@@ -148,7 +147,7 @@ export function useStaffCRUD(managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [loadList, managerId]
+        [loadList]
     );
 
     return {

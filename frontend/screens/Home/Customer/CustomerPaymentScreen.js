@@ -1,18 +1,18 @@
 import React, {useMemo, useState} from 'react';
-import {ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
-import {getSession} from '../../../utils/authStorage';
-import {displayBookingId, normalizeBookingId} from '../../../utils/bookingId';
-import {pushCustomerNotification} from '../../../services/NotificationService';
-import {createMyBooking} from '../../../services/CustomerBookingService';
-import {initiateMomoPayment, initiateZaloPayPayment} from '../../../services/PaymentService';
-import BookingQrCode from '../../../components/booking/BookingQrCode';
+import {normalizeBookingId} from '../../../utils/bookingId';
+import {createMyBooking, fetchMyBookingDetail} from '../../../services/CustomerBookingService';
+import {initiateMomoPayment, initiateZaloPayPayment, pollPaymentUntilConfirmed} from '../../../services/PaymentService';
+import RemoteImage from '../../../components/common/RemoteImage';
 import {formatPricingTierLabel} from '../../../utils/roomPricing';
 import ScreenHeader from '../../../components/common/ScreenHeader';
+import {navigateToCustomerHome} from '../../../utils/navigation';
 import {formatVnd} from '../../../utils/formatCurrency';
+import {normalizeSelectedServices} from '../../../utils/bookingCheckout';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -21,38 +21,16 @@ const PAYMENT_LOGOS = {
     zalo: STAFF_MEDIA.ZALOPAY_LOGO,
 };
 
-const MONTH_TO_NUMBER = {
-    jan: '01',
-    feb: '02',
-    mar: '03',
-    apr: '04',
-    may: '05',
-    jun: '06',
-    jul: '07',
-    aug: '08',
-    sep: '09',
-    oct: '10',
-    nov: '11',
-    dec: '12',
-};
-
-const toUpcomingDateLabel = (value) => {
-    const text = String(value || '').trim();
-    const match = text.match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/);
-
-    if (!match) return text || 'N/A';
-
-    const day = String(match[1]).padStart(2, '0');
-    const month = MONTH_TO_NUMBER[String(match[2]).toLowerCase()] || '01';
-    const year = match[3];
-
-    return `${day}/${month}/${year}`;
-};
-
+/**
+ * CustomerPaymentScreen — thanh toan deposit MoMo/ZaloPay.
+ *
+ * - Neu co bookingDraft: tao booking PENDING luc bam Pay (UUID dung lam order_id)
+ * - Neu co backendBookingId: resume tu tab Bookings (booking da tao truoc do)
+ */
 export default function CustomerPaymentScreen({navigation, route}) {
     const insets = useSafeAreaInsets();
     const {
-        heroImage = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg',
+        heroImage = '',
         hotelName = '',
         roomName = '',
         checkIn = '',
@@ -88,8 +66,6 @@ export default function CustomerPaymentScreen({navigation, route}) {
 
     const [paymentMethod, setPaymentMethod] = useState('momo');
     const [failedLogos, setFailedLogos] = useState({});
-    const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [paidAmount, setPaidAmount] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isPaying, setIsPaying] = useState(false);
     const [createdBookingUuid, setCreatedBookingUuid] = useState(String(backendBookingId || '').trim());
@@ -104,7 +80,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
     );
 
     const normalizedServices = useMemo(
-        () => (Array.isArray(selectedServices) ? selectedServices.filter((item) => item && item.id) : []),
+        () => normalizeSelectedServices(selectedServices),
         [selectedServices]
     );
 
@@ -118,8 +94,8 @@ export default function CustomerPaymentScreen({navigation, route}) {
         const explicit = Number(depositAmount || 0);
         if (explicit > 0) return explicit;
         const pct = Math.max(20, Number(depositPercent || 20));
-        return Math.round(resolvedSubtotal * (pct / 100));
-    }, [depositAmount, depositPercent, resolvedSubtotal]);
+        return Math.round(Number(roomTotal || 0) * (pct / 100));
+    }, [depositAmount, depositPercent, roomTotal]);
 
     const resolvedHoldMinutes = useMemo(() => {
         const explicit = Number(holdMinutes || 0);
@@ -128,17 +104,6 @@ export default function CustomerPaymentScreen({navigation, route}) {
         const pct = Math.max(20, Number(depositPercent || 20));
         return Math.max(1, Math.round(duration * (pct / 100)));
     }, [holdMinutes, stayMinutes, depositPercent]);
-
-    const resolveUpcomingDateLabel = (isoValue, fallbackLabel) => {
-        const parsedIso = typeof isoValue === 'string' ? new Date(isoValue) : null;
-        if (parsedIso && Number.isFinite(parsedIso.getTime())) {
-            const day = String(parsedIso.getDate()).padStart(2, '0');
-            const month = String(parsedIso.getMonth() + 1).padStart(2, '0');
-            const year = parsedIso.getFullYear();
-            return `${day}/${month}/${year}`;
-        }
-        return toUpcomingDateLabel(fallbackLabel);
-    };
 
     const markLogoFailed = (id) => {
         setFailedLogos((prev) => ({...prev, [id]: true}));
@@ -164,123 +129,6 @@ export default function CustomerPaymentScreen({navigation, route}) {
         amount: amountToPay,
         orderInfo: `Nesto ${hotelName} - ${roomName}`,
     });
-
-    const handleProcessPayment = async (amountToPay, bookingUuid, bookingCode) => {
-        try {
-            const session = await getSession();
-            const sessionUser = session?.user || {};
-            const customerName = String(sessionUser?.name || sessionUser?.full_name || name || 'N/A').trim() || 'N/A';
-            const customerEmail = String(sessionUser?.email || email || '').trim().toLowerCase();
-            const customerPhone = String(sessionUser?.phone || phone || 'N/A').trim() || 'N/A';
-            const paidAt = new Date().toISOString();
-            const normalizedBookingId = normalizeBookingId(bookingCode || bookingId);
-            const safeBookingId = normalizedBookingId || String(bookingUuid || backendBookingId || '').trim();
-            const upcomingCheckIn = resolveUpcomingDateLabel(checkInDateIso, checkIn);
-            const upcomingCheckOut = resolveUpcomingDateLabel(checkOutDateIso, checkOut);
-            const remainingAmount = Math.max(0, resolvedSubtotal - amountToPay);
-            const invoiceDetails = {
-                subtotalAmount: resolvedSubtotal,
-                roomTotal: Number(roomTotal || 0),
-                servicesTotal: Number(servicesTotal || 0),
-                totalAmount: resolvedSubtotal,
-                depositAmount: resolvedDepositAmount,
-                depositPercent: Math.max(20, Number(depositPercent || 20)),
-                holdMinutes: resolvedHoldMinutes,
-                paidAmount: amountToPay,
-                remainingAmount,
-                selectedServices: normalizedServices,
-                paymentMethod,
-            };
-            const bookedItem = {
-                id: `upcoming-${Date.now()}`,
-                hotelName,
-                roomName,
-                checkIn: upcomingCheckIn,
-                checkOut: upcomingCheckOut,
-                checkInDateIso,
-                checkOutDateIso,
-                bookingId: safeBookingId,
-                actionLabel: 'Online Check-in',
-                actionColor: '#8294FF',
-                image: heroImage,
-                paymentStatus: 'completed',
-                paidAt,
-                customerName,
-                customerEmail,
-                customerPhone,
-                paidAmount: amountToPay,
-                totalAmount: resolvedSubtotal,
-                depositAmount: resolvedDepositAmount,
-                payableServiceTotal: Number(servicesTotal || 0),
-                subtotalPrice: resolvedSubtotal,
-                selectedServices: normalizedServices,
-                selectedService: normalizedServices[0] || null,
-                remainingAmount,
-                paymentMethod,
-                invoiceDetails,
-            };
-
-            const historyItem = {
-                id: `history-${Date.now()}`,
-                roomName,
-                roomCode: hotelName,
-                bookingId: safeBookingId,
-                stayDate: `${upcomingCheckIn} - ${upcomingCheckOut}`,
-                status: 'Complete',
-                image: heroImage,
-                paidAt,
-                paymentMethod,
-                customerName,
-                customerEmail,
-                customerPhone,
-                paidAmount: amountToPay,
-                totalAmount: resolvedSubtotal,
-                depositAmount: resolvedDepositAmount,
-                payableServiceTotal: Number(servicesTotal || 0),
-                subtotalPrice: resolvedSubtotal,
-                selectedServices: normalizedServices,
-                selectedService: normalizedServices[0] || null,
-                remainingAmount,
-                invoiceDetails,
-            };
-
-            const paymentStatusText = remainingAmount > 0
-                ? `prepaid ${formatVnd(amountToPay)}, remaining ${formatVnd(remainingAmount)}`
-                : `paid in full ${formatVnd(amountToPay)}`;
-
-            await pushCustomerNotification({
-                title: 'Booking payment confirmed',
-                type: 'booking-payment',
-                message: `You booked room ${roomName} (Booking ID ${safeBookingId}). ${paymentStatusText}. Check-in ${upcomingCheckIn}, check-out ${upcomingCheckOut}. Late hold: ${resolvedHoldMinutes} minutes.`,
-                meta: {
-                    bookingId: safeBookingId,
-                    hotelName,
-                    roomName,
-                    checkIn: upcomingCheckIn,
-                    checkOut: upcomingCheckOut,
-                    amount: amountToPay,
-                    remainingAmount,
-                    holdMinutes: resolvedHoldMinutes,
-                },
-            });
-
-            await pushCustomerNotification({
-                title: 'Payment recorded',
-                type: 'payment',
-                message: `You paid invoice for Booking ID ${safeBookingId} with ${paymentMethod === 'zalo' ? 'ZaloPay' : 'MoMo'}: ${formatVnd(amountToPay)}.`,
-                meta: {
-                    bookingId: safeBookingId,
-                    paymentMethod,
-                    amount: amountToPay,
-                },
-            });
-
-            void bookedItem;
-            void historyItem;
-        } catch (error) {
-            Alert.alert('Payment error', 'Unable to process payment right now. Please try again.');
-        }
-    };
 
     const handleConfirmPayment = async () => {
         const amountToPay = resolvedDepositAmount;
@@ -312,6 +160,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     expectedCheckOutAt: bookingDraft.expectedCheckOutAt,
                     serviceIds: bookingDraft.serviceIds || [],
                     depositPercentage: bookingDraft.depositPercentage || depositPercent,
+                    specialRequests: bookingDraft.specialRequests || '',
                 });
                 if (created.status !== 'success' || !created.data?.id) {
                     Alert.alert('Booking', created.message || 'Unable to create your booking.');
@@ -324,31 +173,48 @@ export default function CustomerPaymentScreen({navigation, route}) {
             }
 
             const payload = buildPaymentPayload(amountToPay);
-            payload.bookingId = normalizeBookingId(bookingCode) || bookingUuid;
+            payload.bookingId = bookingUuid;
             payload.bookingData.booking_id = bookingUuid;
 
             const gatewayResult = paymentMethod === 'zalo'
                 ? await initiateZaloPayPayment(payload)
                 : await initiateMomoPayment(payload);
 
-            if (gatewayResult.status !== 'success' || !gatewayResult.data?.payUrl) {
+            if (gatewayResult.status !== 'success') {
                 Alert.alert('Payment', gatewayResult.message || 'Unable to start payment gateway.');
                 return;
             }
 
-            const browserResult = await WebBrowser.openBrowserAsync(gatewayResult.data.payUrl);
-            if (browserResult.type === 'cancel') {
-                Alert.alert(
-                    'Payment cancelled',
-                    'Your booking is saved as PENDING. Complete payment later from Upcoming bookings.'
-                );
-                navigation.navigate('MainTabs', {screen: 'BookingTab'});
+            const payUrl = String(gatewayResult.data?.payUrl || '').trim();
+            if (!payUrl) {
+                Alert.alert('Payment', 'Payment gateway did not return a checkout URL. Please try again.');
                 return;
             }
 
-            setPaidAmount(amountToPay);
-            await handleProcessPayment(amountToPay, bookingUuid, bookingCode);
-            setShowSuccessModal(true);
+            await WebBrowser.openBrowserAsync(payUrl, {
+                presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+                showInRecents: true,
+            });
+
+            const pollResult = await pollPaymentUntilConfirmed(bookingUuid, {
+                maxAttempts: 45,
+                intervalMs: 2000,
+            });
+
+            if (pollResult.confirmed) {
+                Alert.alert(
+                    'Payment successful',
+                    'Your deposit has been confirmed. Show QR at reception for check-in.',
+                    [{text: 'Go to Home', onPress: () => navigateToCustomerHome(navigation)}]
+                );
+                return;
+            }
+
+            Alert.alert(
+                'Verifying payment',
+                'We are still confirming your payment with MoMo/ZaloPay. Check My bookings in a few minutes.',
+                [{text: 'Go to Home', onPress: () => navigateToCustomerHome(navigation)}]
+            );
         } catch {
             Alert.alert('Payment', 'Unable to process payment right now. Please try again.');
         } finally {
@@ -356,23 +222,19 @@ export default function CustomerPaymentScreen({navigation, route}) {
         }
     };
 
-    const handleGoBookings = () => {
-        setShowSuccessModal(false);
-        navigation.navigate('MainTabs', {screen: 'BookingTab'});
-    };
-
-    const handleGoHome = () => {
-        setShowSuccessModal(false);
-        navigation.navigate('CustomerHomeScreen');
-    };
-
-    const handleCloseSuccessModal = () => {
-        setShowSuccessModal(false);
-    };
-
-    const handleRefresh = () => {
+    const handleRefresh = async () => {
         setIsRefreshing(true);
-        setIsRefreshing(false);
+        try {
+            if (createdBookingUuid) {
+                const res = await fetchMyBookingDetail(createdBookingUuid);
+                if (res.status === 'success' && res.data) {
+                    const row = res.data;
+                    setCreatedBookingCode(String(row.bookingCode || row.booking_code || createdBookingCode));
+                }
+            }
+        } finally {
+            setIsRefreshing(false);
+        }
     };
 
     return (
@@ -391,7 +253,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
                 }
             >
                 <View style={styles.heroWrap}>
-                    <Image source={{uri: heroImage}} style={styles.heroImage} resizeMode="cover"/>
+                    <RemoteImage uri={heroImage} style={styles.heroImage} resizeMode="cover"/>
                 </View>
 
                 <View style={styles.cardTop}>
@@ -428,6 +290,11 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     ) : null}
                     <View style={styles.row}><Text style={styles.label}>Room total:</Text><Text style={styles.value}>{formatVnd(roomTotal)}</Text></View>
                     <View style={styles.row}><Text style={styles.label}>Services total:</Text><Text style={styles.value}>{formatVnd(servicesTotal)}</Text></View>
+                    {normalizedServices.length ? (
+                        normalizedServices.map((service) => (
+                            <Text key={service.id} style={styles.serviceHint}>• {service.name} ({formatVnd(service.price)})</Text>
+                        ))
+                    ) : null}
                     <View style={styles.divider}/>
                     <View style={styles.row}><Text style={styles.labelBold}>Subtotal:</Text><Text style={styles.valueBold}>{formatVnd(resolvedSubtotal)}</Text></View>
                     <View style={styles.row}><Text style={styles.labelBold}>Required deposit ({depositPercent}%):</Text><Text style={styles.valueBold}>{formatVnd(resolvedDepositAmount)}</Text></View>
@@ -436,7 +303,9 @@ export default function CustomerPaymentScreen({navigation, route}) {
 
                 <View style={styles.sectionCard}>
                     <Text style={styles.sectionTitle}>Payment method</Text>
-                    <Text style={styles.sectionHint}>Choose payment method to book room, you have 15 minutes to reserve a place</Text>
+                    <Text style={styles.sectionHint}>
+                        You will be redirected to {paymentMethod === 'zalo' ? 'ZaloPay' : 'MoMo'} to complete the transfer
+                    </Text>
 
                     {paymentRows.map((item) => {
                         const selected = paymentMethod === item.id;
@@ -475,54 +344,12 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     {isPaying ? (
                         <ActivityIndicator color="#fff" />
                     ) : (
-                        <Text style={styles.confirmBtnText}>Confirm payment · {formatVnd(resolvedDepositAmount)}</Text>
+                        <Text style={styles.confirmBtnText}>
+                            Pay with {paymentMethod === 'zalo' ? 'ZaloPay' : 'MoMo'} · {formatVnd(resolvedDepositAmount)}
+                        </Text>
                     )}
                 </TouchableOpacity>
             </View>
-
-            <Modal
-                visible={showSuccessModal}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowSuccessModal(false)}
-            >
-                <SafeAreaView style={styles.modalOverlaySafe} edges={['top', 'bottom', 'left', 'right']}>
-                    <View style={styles.modalOverlay}>
-                    <View style={styles.modalCard}>
-                        <TouchableOpacity
-                            style={styles.modalCloseBtn}
-                            onPress={handleCloseSuccessModal}
-                            activeOpacity={0.85}
-                        >
-                            <Ionicons name="close" size={20} color="#4f4f4f"/>
-                        </TouchableOpacity>
-                        <View style={styles.modalIconWrap}>
-                            <Ionicons name="checkmark" size={34} color="#fff"/>
-                        </View>
-                        <Text style={styles.modalTitle}>Booking confirmed</Text>
-                        <Text style={styles.modalHint}>
-                            Deposit {formatVnd(paidAmount)} paid via {paymentMethod === 'momo' ? 'MoMo' : 'ZaloPay'}.
-                            Show this QR at reception for check-in.
-                        </Text>
-
-                        <BookingQrCode
-                            bookingId={createdBookingUuid || backendBookingId}
-                            size={156}
-                            label={`Booking ${displayBookingId(createdBookingCode || bookingId)}`}
-                        />
-
-                        <TouchableOpacity style={styles.homeBtn} onPress={handleGoBookings} activeOpacity={0.88}>
-                            <Ionicons name="calendar" size={18} color="#fff"/>
-                            <Text style={styles.homeBtnText}>View Upcoming bookings</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.secondaryBtn} onPress={handleGoHome} activeOpacity={0.88}>
-                            <Text style={styles.secondaryBtnText}>Back to Home</Text>
-                        </TouchableOpacity>
-                    </View>
-                    </View>
-                </SafeAreaView>
-            </Modal>
         </SafeAreaView>
     );
 }

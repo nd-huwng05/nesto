@@ -11,9 +11,11 @@ const fail = (err, fallback) => ({
     data: null,
 });
 
-export const fetchReportDashboard = async (businessId = 'all', branchId = 'all') => {
+export const fetchReportDashboard = async (businessId = 'all', branchId = 'all', period = 'month') => {
     try {
-        const response = await api.get(endpoints['business-analytics-dashboard'], {params: {businessId, branchId, months: 6}});
+        const response = await api.get(endpoints['business-analytics-dashboard'], {
+            params: {businessId, branchId, months: 6, period},
+        });
         return ok(response, response?.data);
     } catch (error) {
         console.error("API Error: ", error.response?.data || error.message);

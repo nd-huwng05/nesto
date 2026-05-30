@@ -24,7 +24,7 @@ export default function RePasswordRegisterScreen({ navigation, route }) {
     });
 
     const onSubmit = () => {
-        navigation.navigate('PhoneRegisterScreen', { email, password, role });
+        navigation.navigate('ProfileRegisterScreen', { email, password, role });
     };
 
     return (

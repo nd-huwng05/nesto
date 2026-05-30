@@ -1,19 +1,16 @@
 import json
 import urllib.parse
-
-from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-
-from accounts.services.branch_access_service import BranchAccessService
+from channels.db import database_sync_to_async
 
 
 ALLOWED_CHANNELS = {'bookings', 'services', 'rooms', 'customer'}
 
 CHANNEL_ROLES = {
-    'bookings': {'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'MANAGER'},
-    'services': {'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'MANAGER'},
-    'rooms': {'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'MANAGER'},
-    'customer': {'CUSTOMER', 'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'MANAGER', 'SUPER_ADMIN'},
+    'bookings': {'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'SUPER_ADMIN'},
+    'services': {'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'SUPER_ADMIN'},
+    'rooms': {'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'SUPER_ADMIN'},
+    'customer': {'CUSTOMER', 'BUSINESS_OWNER', 'STAFF', 'RECEPTIONIST', 'HOUSEKEEPING', 'SERVICE', 'SUPER_ADMIN'},
 }
 
 
@@ -53,12 +50,6 @@ class AuthConsumer(AsyncWebsocketConsumer):
             if not branch_id:
                 await self.close(code=4004)
                 return
-            allowed_branch = await database_sync_to_async(BranchAccessService.can_access_branch)(
-                self.user, str(branch_id)
-            )
-            if not allowed_branch:
-                await self.close(code=4003)
-                return
 
         if self.room_name == "customer":
             self.subscription_groups = [
@@ -71,7 +62,6 @@ class AuthConsumer(AsyncWebsocketConsumer):
             self.subscription_groups.extend(
                 [
                     f"{self.room_name}_branch_{branch_id}_role_{role}",
-                    f"{self.room_name}_branch_{branch_id}_role_MANAGER",
                     f"{self.room_name}_branch_{branch_id}_role_BUSINESS_OWNER",
                     f"{self.room_name}_branch_{branch_id}_role_SUPER_ADMIN",
                 ]

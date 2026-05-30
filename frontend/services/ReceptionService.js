@@ -167,6 +167,16 @@ export const fetchAvailableRoomsForSwitch = async (branchId, roomType, bookingId
     }
 };
 
+export const reassignBookingRoom = async (bookingId, roomId) => {
+    try {
+        const res = await api.post(endpoints['booking-reassign-room'](bookingId), {room_id: roomId});
+        return {status: 'success', data: normalizeStaffBooking(res.data)};
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Room reassignment failed.');
+    }
+};
+
 export const switchBookingRoom = async (bookingId, roomId) => {
     try {
         const res = await api.post(endpoints['booking-switch-room'](bookingId), {room_id: roomId});
@@ -194,10 +204,13 @@ export const processPaymentAndCheckOut = async (bookingId, paymentMethod, amount
             body.amount_collected = amountCollected;
         }
         const res = await api.post(endpoints['booking-checkout'](bookingId), body);
+        const invoiceEmailed = Boolean(res.data?.invoiceEmailed);
         return {
             status: 'success',
             data: normalizeStaffBooking(res.data),
-            message: 'Checkout complete.',
+            message: invoiceEmailed
+                ? 'Checkout complete. Invoice emailed to guest.'
+                : 'Checkout complete.',
         };
     } catch (err) {
         console.error('API Error: ', err.response?.data || err.message);
@@ -214,5 +227,18 @@ export const addBookingExtraService = async (bookingId, serviceId) => {
     } catch (err) {
         console.error('API Error: ', err.response?.data || err.message);
         return fail(err, 'Unable to add service.');
+    }
+};
+
+export const cancelStaffBooking = async (bookingId, reason = '') => {
+    try {
+        const res = await api.post(endpoints['booking-cancel'](bookingId), {
+            reason,
+            cancelReason: reason,
+        });
+        return {status: 'success', data: normalizeStaffBooking(res.data)};
+    } catch (err) {
+        console.error('API Error: ', err.response?.data || err.message);
+        return fail(err, 'Unable to cancel booking.');
     }
 };

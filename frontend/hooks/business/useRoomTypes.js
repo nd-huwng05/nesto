@@ -1,7 +1,6 @@
 import {useCallback, useState} from 'react';
 import {Alert} from 'react-native';
 import {
-    MANAGER_ID,
     createRoomType,
     deleteRoomType,
     fetchRoomTypes,
@@ -9,7 +8,7 @@ import {
 } from '../../services/BranchService';
 import {getErrorMessage} from '../../utils/authErrors';
 
-export function useRoomTypes(branchId, managerId = MANAGER_ID) {
+export function useRoomTypes(branchId) {
     const [roomTypes, setRoomTypes] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -18,7 +17,7 @@ export function useRoomTypes(branchId, managerId = MANAGER_ID) {
         if (!branchId) return [];
         setIsLoading(true);
         try {
-            const res = await fetchRoomTypes(branchId, managerId);
+            const res = await fetchRoomTypes(branchId);
             if (res.status === 'success') {
                 setRoomTypes(res.data);
                 return res.data;
@@ -30,15 +29,15 @@ export function useRoomTypes(branchId, managerId = MANAGER_ID) {
         } finally {
             setIsLoading(false);
         }
-    }, [branchId, managerId]);
+    }, [branchId]);
 
     const save = useCallback(
         async (payload, roomTypeId) => {
             setIsSaving(true);
             try {
                 const res = roomTypeId
-                    ? await updateRoomType(branchId, roomTypeId, payload, managerId)
-                    : await createRoomType(branchId, payload, managerId);
+                    ? await updateRoomType(branchId, roomTypeId, payload)
+                    : await createRoomType(branchId, payload);
                 if (res.status === 'success') {
                     await loadList();
                     return res;
@@ -52,7 +51,7 @@ export function useRoomTypes(branchId, managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [branchId, loadList, managerId]
+        [branchId, loadList]
     );
 
     const remove = useCallback(
@@ -66,7 +65,7 @@ export function useRoomTypes(branchId, managerId = MANAGER_ID) {
                         onPress: async () => {
                             setIsSaving(true);
                             try {
-                                await deleteRoomType(branchId, roomTypeId, managerId);
+                                await deleteRoomType(branchId, roomTypeId);
                                 await loadList();
                                 resolve(true);
                             } catch (err) {
@@ -79,7 +78,7 @@ export function useRoomTypes(branchId, managerId = MANAGER_ID) {
                     },
                 ]);
             }),
-        [branchId, loadList, managerId]
+        [branchId, loadList]
     );
 
     return {roomTypes, isLoading, isSaving, loadList, save, remove};

@@ -1,12 +1,12 @@
 import {useMemo, useState, useEffect} from 'react';
 import {Alert, Keyboard} from 'react-native';
-import {createBranch, fetchAmenityOptions, fetchGuestSegments} from '../../services/BranchService';
+import {createBranch, fetchAmenityOptions, fetchCatalogThemes, fetchGuestSegments} from '../../services/BranchService';
 import {useAuthOTP} from '../account/useAuthOTP';
 import {useValidation, REGEX_PHONE} from '../validations/useFormValidation';
-import {resolveApiPayloadLogo} from '../../utils/mediaUrl';
+import {resolveMediaListForApi} from '../../utils/mediaUrl';
 import {useManagerProfile} from '../../configuration/ManagerProfileContext';
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 export function useCreateBranch(navigation, route) {
     const businessId = route.params?.businessId;
@@ -20,6 +20,7 @@ export function useCreateBranch(navigation, route) {
     const [branchName, setBranchName] = useState('');
     const [branchAddress, setBranchAddress] = useState('');
     const [selectedAmenities, setSelectedAmenities] = useState([]);
+    const [selectedThemeIds, setSelectedThemeIds] = useState([]);
     const [bankName, setBankName] = useState('');
     const [bankAccount, setBankAccount] = useState('');
     const [branchImages, setBranchImages] = useState([]);
@@ -30,7 +31,8 @@ export function useCreateBranch(navigation, route) {
     );
     const {handleSendBusinessOTP} = useAuthOTP();
     const [amenityOptions, setAmenityOptions] = useState([]);
-    const guestSegments = useMemo(() => ['Family', 'Business', 'Solo', 'Couple', 'Group'], []);
+    const [catalogThemes, setCatalogThemes] = useState([]);
+    const [guestSegments, setGuestSegments] = useState(['Family', 'Business', 'Solo', 'Couple', 'Group']);
     const verificationEmail = useMemo(
         () => String(profile?.email || '').trim().toLowerCase(),
         [profile?.email]
@@ -46,14 +48,36 @@ export function useCreateBranch(navigation, route) {
 
     useEffect(() => {
         (async () => {
-            const res = await fetchAmenityOptions();
+            const [res, segRes, themeRes] = await Promise.all([
+                fetchAmenityOptions(),
+                fetchGuestSegments(),
+                fetchCatalogThemes(),
+            ]);
             if (res.status === 'success') setAmenityOptions(Array.isArray(res?.data) ? res.data : []);
+            if (segRes.status === 'success' && Array.isArray(segRes.data) && segRes.data.length) {
+                setGuestSegments(segRes.data);
+            }
+            if (themeRes.status === 'success') {
+                const rows = Array.isArray(themeRes.data) ? themeRes.data : [];
+                setCatalogThemes(rows);
+                if (rows.length && selectedThemeIds.length === 0) {
+                    setSelectedThemeIds(rows.slice(0, 2).map((row) => String(row?.id || '')).filter(Boolean));
+                }
+            }
         })();
     }, []);
 
     const toggleAmenity = (amenity) => {
         setSelectedAmenities((prev) =>
             prev.includes(amenity) ? prev.filter((item) => item !== amenity) : [...prev, amenity]
+        );
+    };
+
+    const toggleTheme = (themeId) => {
+        const id = String(themeId || '').trim();
+        if (!id) return;
+        setSelectedThemeIds((prev) =>
+            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
         );
     };
 
@@ -84,7 +108,7 @@ export function useCreateBranch(navigation, route) {
         setIsLoading(true);
 
         try {
-            const remoteImages = (branchImages || []).map(resolveApiPayloadLogo).filter(Boolean);
+            const remoteImages = await resolveMediaListForApi(branchImages, 'nesto/branches');
             const newBranchPayload = {
                 name: String(branchName || '').trim(),
                 address: String(branchAddress || '').trim(),
@@ -92,8 +116,9 @@ export function useCreateBranch(navigation, route) {
                 image: remoteImages[0] || null,
                 amenities: selectedAmenities,
                 guestSegments,
+                themeIds: selectedThemeIds,
                 billing: {bankName, accountNumber: bankAccount},
-                phone: branchPhone,
+                contact: {phone: String(branchPhone || '').trim()},
             };
 
             const res = await createBranch(businessId, newBranchPayload);
@@ -127,12 +152,14 @@ export function useCreateBranch(navigation, route) {
             case 2:
                 return branchAddress.trim().length > 0;
             case 3:
-                return selectedAmenities.length > 0;
+                return selectedThemeIds.length > 0;
             case 4:
-                return bankName.trim().length > 0 && bankAccount.trim().length > 5;
+                return selectedAmenities.length > 0;
             case 5:
-                return branchImages.length > 0 && !isLoading;
+                return bankName.trim().length > 0 && bankAccount.trim().length > 5;
             case 6:
+                return branchImages.length > 0 && !isLoading;
+            case 7:
                 return isValidPhone && !isLoading;
             default:
                 return false;
@@ -146,12 +173,14 @@ export function useCreateBranch(navigation, route) {
             case 2:
                 return 'Where is this branch located?';
             case 3:
-                return 'Select facilities available at this location';
+                return 'Which stay types fit this branch?';
             case 4:
-                return 'Set up payout account for this branch';
+                return 'Select facilities available at this location';
             case 5:
-                return 'Upload branch photos';
+                return 'Set up payout account for this branch';
             case 6:
+                return 'Upload branch photos';
+            case 7:
                 return 'What is this branch hotline?';
             default:
                 return '';
@@ -171,6 +200,9 @@ export function useCreateBranch(navigation, route) {
         selectedAmenities,
         amenityOptions,
         toggleAmenity,
+        catalogThemes,
+        selectedThemeIds,
+        toggleTheme,
         bankName,
         setBankName,
         bankAccount,

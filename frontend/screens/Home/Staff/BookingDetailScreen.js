@@ -15,14 +15,17 @@ import {
 } from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Calendar, ChevronLeft, ChevronRight} from 'lucide-react-native';
+import BookingQrCode from '../../../components/booking/BookingQrCode';
 import {
     assignRoomAndCheckIn,
+    cancelStaffBooking,
     confirmCheckIn,
     fetchAvailableRoomsForSwitch,
     fetchBookingDetails,
     fetchFinalBill,
     fetchLiveBill,
     processPaymentAndCheckOut,
+    reassignBookingRoom,
     switchBookingRoom,
 } from '../../../services/ReceptionService';
 import {normalizeStaffBooking} from '../../../utils/staffBookingMapper';
@@ -59,15 +62,10 @@ function OvertimeSummaryRow({hoursLabel, amount}) {
     );
 }
 
-function MockBarcode() {
+function BookingQrStrip({bookingId}) {
     return (
         <View style={styles.barcodeWrap}>
-            {Array.from({length: 12}).map((_, i) => (
-                <View
-                    key={i}
-                    style={[styles.barcodeLine, {width: i % 3 === 0 ? 3 : i % 2 === 0 ? 2 : 4}]}
-                />
-            ))}
+            <BookingQrCode bookingId={bookingId} size={56} />
         </View>
     );
 }
@@ -85,12 +83,10 @@ function PaymentOption({icon, label, selected, onPress}) {
     );
 }
 
+import { resolveMediaUrl } from '../../../utils/mediaUrl';
+
 function buildNetworkUri(rawUri) {
-    const value = String(rawUri || '').trim();
-    if (!value) return '';
-    if (/^https?:\/\//i.test(value)) return value;
-    const base = String(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
-    return base ? `${base}${value.startsWith('/') ? value : `/${value}`}` : value;
+    return resolveMediaUrl(rawUri);
 }
 
 function ScreenHeader({navigation, booking, user}) {
@@ -128,6 +124,7 @@ function PendingCheckInView({
     onConfirm,
     onAssignAndCheckIn,
     onChangeRoom,
+    onCancel,
     processing,
 }) {
     const isUnassigned = booking.isUnassigned || !booking.roomNumber;
@@ -147,7 +144,7 @@ function PendingCheckInView({
                 <Text style={styles.codeLabel}>
                     Code: <Text style={styles.codeValue}>{booking.bookingCode}</Text>
                 </Text>
-                <MockBarcode />
+                <BookingQrStrip bookingId={booking.id || booking.bookingId} />
             </View>
 
             <View style={[styles.summaryCard, styles.summaryCardFlat]}>
@@ -207,6 +204,17 @@ function PendingCheckInView({
                     </Text>
                 )}
             </TouchableOpacity>
+
+            {onCancel ? (
+                <TouchableOpacity
+                    activeOpacity={0.85}
+                    disabled={processing}
+                    onPress={onCancel}
+                    style={styles.cancelBookingBtn}
+                >
+                    <Text style={styles.cancelBookingBtnText}>Cancel booking</Text>
+                </TouchableOpacity>
+            ) : null}
         </>
     );
 }
@@ -290,7 +298,7 @@ function CheckOutSummaryView({
                 <Text style={styles.codeLabel}>
                     Code: <Text style={styles.codeValue}>{booking.bookingCode}</Text>
                 </Text>
-                <MockBarcode />
+                <BookingQrStrip bookingId={booking.id || booking.bookingId} />
             </View>
 
             <View style={styles.heroBlock}>
@@ -684,7 +692,11 @@ export default function BookingDetailScreen({navigation, route}) {
             return;
         }
 
-        const result = await switchBookingRoom(bookingId, room.id);
+        const isPreCheckIn =
+            booking.status === 'PENDING' || booking.status === 'CONFIRMED';
+        const result = isPreCheckIn
+            ? await reassignBookingRoom(bookingId, room.id)
+            : await switchBookingRoom(bookingId, room.id);
         setProcessing(false);
         if (result.status === 'success' && result.data) {
             setBooking(normalizeStaffBooking(result.data));
@@ -712,6 +724,31 @@ export default function BookingDetailScreen({navigation, route}) {
                 },
             },
         ]);
+    };
+
+    const handleCancelBooking = () => {
+        Alert.alert(
+            'Cancel booking',
+            'This will cancel the reservation and notify the guest. Continue?',
+            [
+                {text: 'Keep booking', style: 'cancel'},
+                {
+                    text: 'Cancel booking',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setProcessing(true);
+                        const result = await cancelStaffBooking(bookingId, 'Cancelled by reception');
+                        setProcessing(false);
+                        if (result.status === 'success' && result.data) {
+                            setBooking(normalizeStaffBooking(result.data));
+                            Alert.alert('Booking cancelled', 'The reservation has been cancelled.');
+                            return;
+                        }
+                        Alert.alert('Cancel failed', result.message || 'Please try again.');
+                    },
+                },
+            ]
+        );
     };
 
     const resolveCheckoutFinalPayment = () => {
@@ -852,6 +889,7 @@ export default function BookingDetailScreen({navigation, route}) {
                         onConfirm={handleConfirmCheckIn}
                         onAssignAndCheckIn={handleOpenAssign}
                         onChangeRoom={handleOpenRoomSwitch}
+                        onCancel={handleCancelBooking}
                         processing={processing}
                     />
                 ) : null}
@@ -1240,6 +1278,20 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 16,
         fontWeight: '700',
+    },
+    cancelBookingBtn: {
+        marginTop: 12,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#fecaca',
+        backgroundColor: '#fff5f5',
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    cancelBookingBtnText: {
+        color: '#dc2626',
+        fontFamily: 'SF-SemiBold',
+        fontSize: 14,
     },
     completedBanner: {
         backgroundColor: '#dcfce7',

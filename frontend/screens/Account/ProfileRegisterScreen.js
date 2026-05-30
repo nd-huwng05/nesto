@@ -7,7 +7,7 @@ import { nameSchema } from '../../validation/authSchemas';
 import { resetToHomeFlow } from '../../utils/navigation';
 
 export default function ProfileRegisterScreen({ navigation, route }) {
-    const { email, password, role, phone } = route.params || {};
+    const { email, password, role } = route.params || {};
     const { handleRegister, isLoading } = useRegister();
 
     const {
@@ -28,7 +28,6 @@ export default function ProfileRegisterScreen({ navigation, route }) {
             password,
             confirmPassword: password,
             name,
-            phone,
             role,
         });
 

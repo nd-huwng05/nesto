@@ -1,5 +1,7 @@
-from django.db import migrations, models
+import uuid
+
 import django.db.models.deletion
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -11,7 +13,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="RoomThemeLink",
             fields=[
-                ("id", models.UUIDField(primary_key=True, serialize=False, editable=False)),
+                ("id", models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False, editable=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 (
@@ -47,7 +49,11 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="room",
             name="themes",
-            field=models.ManyToManyField(blank=True, related_name="rooms", through="rooms.RoomThemeLink", to="rooms.roomtheme"),
+            field=models.ManyToManyField(
+                blank=True,
+                related_name="rooms",
+                through="rooms.RoomThemeLink",
+                to="rooms.roomtheme",
+            ),
         ),
     ]
-

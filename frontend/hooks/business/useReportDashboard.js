@@ -12,6 +12,7 @@ export function useReportDashboard() {
     const [branchFilter, setBranchFilter] = useState('all');
     const [businessOptions, setBusinessOptions] = useState([{id: 'all', name: 'All Businesses'}]);
     const [allBranchOptions, setAllBranchOptions] = useState([{id: 'all', name: 'All Branches', businessId: 'all'}]);
+    const [periodFilter, setPeriodFilter] = useState('month');
     const [dashboard, setDashboard] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -47,11 +48,11 @@ export function useReportDashboard() {
     }, []);
 
     const loadDashboard = useCallback(
-        async (businessId = businessFilter, branchId = branchFilter, {silent = false} = {}) => {
+        async (businessId = businessFilter, branchId = branchFilter, period = periodFilter, {silent = false} = {}) => {
             if (!silent) setIsLoading(true);
             else setIsRefreshing(true);
             try {
-                const res = await fetchReportDashboard(businessId, branchId);
+                const res = await fetchReportDashboard(businessId, branchId, period);
                 if (res.status === 'success') {
                     setDashboard(res.data);
                 } else {
@@ -66,7 +67,7 @@ export function useReportDashboard() {
                 setIsRefreshing(false);
             }
         },
-        [branchFilter, businessFilter]
+        [branchFilter, businessFilter, periodFilter]
     );
 
     const selectBusiness = useCallback((businessId) => {
@@ -76,6 +77,10 @@ export function useReportDashboard() {
 
     const selectBranch = useCallback((branchId) => {
         setBranchFilter(branchId);
+    }, []);
+
+    const selectPeriod = useCallback((period) => {
+        setPeriodFilter(period);
     }, []);
 
     useEffect(() => {
@@ -90,15 +95,16 @@ export function useReportDashboard() {
     }, [branchOptions, branchFilter]);
 
     useEffect(() => {
-        loadDashboard(businessFilter, branchFilter);
-    }, [businessFilter, branchFilter, loadDashboard]);
+        loadDashboard(businessFilter, branchFilter, periodFilter);
+    }, [businessFilter, branchFilter, periodFilter, loadDashboard]);
 
     const refresh = useCallback(
-        () => loadDashboard(businessFilter, branchFilter, {silent: true}),
-        [businessFilter, branchFilter, loadDashboard]
+        () => loadDashboard(businessFilter, branchFilter, periodFilter, {silent: true}),
+        [businessFilter, branchFilter, periodFilter, loadDashboard]
     );
 
     return {
+        periodFilter,
         businessFilter,
         branchFilter,
         businessOptions,
@@ -108,6 +114,7 @@ export function useReportDashboard() {
         isRefreshing,
         selectBusiness,
         selectBranch,
+        selectPeriod,
         refresh,
     };
 }

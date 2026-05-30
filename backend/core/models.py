@@ -10,16 +10,23 @@ class BaseAuditedModel(models.Model):
 
     class Meta:
         abstract = True
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
 
 
 class TenantAwareModel(BaseAuditedModel):
+    """
+    Optional mixin: auto-fills tenant (Company) from branch or company FK.
+
+    Prefer TenantQuerysetService for API queryset scoping; subclass this only when
+    you need a persisted company_id column on branch-bound models.
+    """
+
     tenant = models.ForeignKey(
-        'businesses.Company',
+        "businesses.Company",
         on_delete=models.CASCADE,
-        related_name='%(class)s_set',
+        related_name="%(class)s_set",
         null=True,
-        blank=True
+        blank=True,
     )
 
     class Meta:
@@ -27,23 +34,16 @@ class TenantAwareModel(BaseAuditedModel):
 
     def save(self, *args, **kwargs):
         if self.tenant_id is None:
-            from django.db.models import F
-            if hasattr(self, 'branch_id') and self.branch_id:
+            if hasattr(self, "branch_id") and self.branch_id:
                 self.tenant_id = self._get_tenant_from_branch()
-            elif hasattr(self, 'business_id') and self.business_id:
-                self.tenant_id = self._get_tenant_from_business()
+            elif hasattr(self, "company_id") and self.company_id:
+                self.tenant_id = self.company_id
         super().save(*args, **kwargs)
 
     def _get_tenant_from_branch(self):
         from businesses.models import Branch
-        try:
-            return Branch.objects.get(pk=self.branch_id).business.tenant_id
-        except Branch.DoesNotExist:
-            return None
 
-    def _get_tenant_from_business(self):
-        from businesses.models import Company
         try:
-            return Company.objects.get(pk=self.business_id).tenant_id
-        except Company.DoesNotExist:
+            return Branch.objects.values_list("company_id", flat=True).get(pk=self.branch_id)
+        except Branch.DoesNotExist:
             return None

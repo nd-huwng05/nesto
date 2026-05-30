@@ -37,7 +37,6 @@ class Role(models.TextChoices):
     RECEPTIONIST = "RECEPTIONIST", "Receptionist"
     HOUSEKEEPING = "HOUSEKEEPING", "Housekeeping"
     SERVICE = "SERVICE", "Service"
-    MANAGER = "MANAGER", "Manager"
     STAFF = "STAFF", "Staff"
 
 
@@ -45,7 +44,6 @@ ROLE_GROUPS_MAP = {
     Role.SUPER_ADMIN: {"Admin_Group"},
     Role.CUSTOMER: {"Customer_Group"},
     Role.BUSINESS_OWNER: {"Business_Group"},
-    Role.MANAGER: {"Manager_Group", "Business_Group"},
     Role.RECEPTIONIST: {"Receptionist_Group", "Staff_Group"},
     Role.HOUSEKEEPING: {"Housekeeping_Group", "Staff_Group"},
     Role.SERVICE: {"Service_Group", "Staff_Group"},
@@ -80,13 +78,17 @@ class User(AbstractBaseUser, PermissionsMixin, BaseAuditedModel):
         return self.name or self.email
 
     def save(self, *args, **kwargs):
+        previous_role = None
+        if self.pk:
+            previous_role = (
+                type(self).objects.filter(pk=self.pk).values_list("role", flat=True).first()
+            )
         super().save(*args, **kwargs)
-        known_groups = set().union(*ROLE_GROUPS_MAP.values())
-        self.groups.remove(*self.groups.filter(name__in=known_groups))
-        target_groups = ROLE_GROUPS_MAP.get(self.role, set())
-        for group_name in target_groups:
-            group, _ = Group.objects.get_or_create(name=group_name)
-            self.groups.add(group)
+        from accounts.services.role_sync_service import RoleSyncService
+        from staff.models import StaffProfile
+
+        if not StaffProfile.objects.filter(user_id=self.id).exists() and previous_role != self.role:
+            RoleSyncService.sync_user_groups(self)
 
 
 class Provider(models.TextChoices):
@@ -112,3 +114,23 @@ class UserAuthMethod(BaseAuditedModel):
 
     def __str__(self):
         return f"{self.user.email} - {self.provider}"
+
+
+class UserNotification(BaseAuditedModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    title = models.CharField(max_length=255)
+    message = models.TextField(blank=True, default="")
+    notification_type = models.CharField(max_length=64, default="general", db_index=True)
+    meta = models.JSONField(default=dict, blank=True)
+    read = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        db_table = "user_notifications"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "read"]),
+            models.Index(fields=["user", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.title}"

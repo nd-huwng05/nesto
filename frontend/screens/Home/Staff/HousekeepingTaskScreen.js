@@ -18,8 +18,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {EmptyState} from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
-import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
+import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 import {connectBranchTasks, connectRoomUpdates} from '../../../services/WebSocketService';
 import {completeHousekeepingTask, listHousekeepingTasks, startHousekeepingTask} from '../../../services/staffApiService';
 
@@ -35,7 +35,7 @@ export default function HousekeepingTaskScreen() {
     }
 
     const {user, branchId} = useStaffSession();
-    const branch = getStaffBranchInfo(branchId);
+    const {branch} = useStaffBranch(branchId);
     const [tasks, setTasks] = useState([]);
     const taskList = Array.isArray(tasks) ? tasks : [];
     const [isLoading, setIsLoading] = useState(true);
@@ -197,7 +197,12 @@ export default function HousekeepingTaskScreen() {
         <TabScreenLayout backgroundColor="#F8FAFC">
             <View style={styles.inner}>
                 <View style={styles.headerPad}>
-                    <StaffBranchHeader user={user} branchName={branch.name} branchAddress={branch.address} />
+                    <StaffBranchHeader
+                        user={user}
+                        branchName={branch?.name}
+                        branchAddress={branch?.address}
+                        branchImage={branch?.image}
+                    />
                     <Text style={styles.title}>Housekeeping Tasks</Text>
                     <Text style={styles.subtitle}>Rooms marked Dirty or Cleaning — tap when ready for guests.</Text>
                 </View>

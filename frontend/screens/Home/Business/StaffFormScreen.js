@@ -19,7 +19,7 @@ import {STAFF_ROLE_PERMISSIONS} from '../../../constants/staffRolePermissions';
 import {FormDropdown} from '../../../components/common/FormDropdown';
 import {DetailScreenHeader} from '../../../components/business/DetailScreenHeader';
 import {useStaffCRUD} from '../../../hooks/business/useStaffCRUD';
-import {STAFF_ROLES} from '../../../services/StaffService';
+import {STAFF_FORM_ROLES, STAFF_ROLE_LABELS, buildStaffProfilePayload} from '../../../constants/staffRoleMapping';
 import {fetchBranchList} from '../../../services/BranchService';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
 import {UI, cardStyle} from '../../../styles/uiTokens';
@@ -44,7 +44,7 @@ function RoleSegment({value, onChange}) {
     return (
         <View>
             <View className="flex-row flex-wrap gap-2">
-                {STAFF_ROLES.map((role) => {
+                {STAFF_FORM_ROLES.map((role) => {
                     const active = value === role;
                     return (
                         <TouchableOpacity
@@ -60,7 +60,7 @@ function RoleSegment({value, onChange}) {
                                     active ? 'text-white font-semibold' : 'text-slate-600'
                                 }`}
                             >
-                                {role}
+                                {STAFF_ROLE_LABELS[role] || role}
                             </Text>
                         </TouchableOpacity>
                     );
@@ -114,7 +114,6 @@ export default function StaffFormScreen({navigation, route}) {
                     setBranchesError(res?.message || 'Unable to load branches.');
                     return;
                 }
-                console.log("FRONTEND RECEIVED BRANCHES:", res?.data);
                 const branchData = res.data?.results || res.data;
                 setBranches(Array.isArray(branchData) ? branchData : []);
                 setBranchesError('');
@@ -172,7 +171,7 @@ export default function StaffFormScreen({navigation, route}) {
                 setName(row.name);
                 setEmail(row.email);
                 setPhone(row.phone || '');
-                setRole(row.role);
+                setRole(row.formRole || row.role || 'RECEPTIONIST');
                 setBusinessId(row.businessId || '');
                 setBranchId(row.branchId);
             }
@@ -220,19 +219,14 @@ export default function StaffFormScreen({navigation, route}) {
             return;
         }
 
-        // StaffProfileSerializer expects flattened fields (source="user.*") so DRF builds nested user internally.
-        const payload = {
-            name: name.trim(),
-            email: email.trim().toLowerCase(),
-            phone: phone.trim(),
-            role: role, // maps to user.role
-            branch: branchId, // StaffProfile.branch (UUID)
-            department: role, // StaffProfile.department (RECEPTIONIST/HOUSEKEEPING/MANAGER/SERVICE)
-            job_role: '',
+        const payload = buildStaffProfilePayload({
+            name,
+            email,
+            phone,
+            formRole: role,
+            branchId,
             password: password.trim() || DEFAULT_STAFF_PASSWORD,
-        };
-        console.log('PAYLOAD SENT:', payload);
-
+        });
         try {
             const res = isEdit
                 ? await update(staffId, payload)
@@ -243,10 +237,8 @@ export default function StaffFormScreen({navigation, route}) {
                 ]);
                 return;
             }
-            console.log('API ERROR:', res?.data);
             Alert.alert('Error', res?.message || (typeof res?.data === 'object' ? JSON.stringify(res.data) : 'Unable to save staff.'));
         } catch (error) {
-            console.log('API ERROR:', error?.response?.data);
             const data = error?.response?.data;
             const msg =
                 data?.detail ||

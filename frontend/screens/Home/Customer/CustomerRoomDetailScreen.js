@@ -10,6 +10,7 @@ import api, {endpoints} from '../../../configuration/Apis';
 import {fetchReviews} from '../../../services/ReviewService';
 import {mapReviewsToWatchlistCards} from '../../../utils/locketFeed';
 import {formatVnd} from '../../../utils/formatCurrency';
+import {clearBookingSession} from '../../../utils/bookingCheckout';
 import {
   calculateTieredRoomPrice,
   formatDateTimeLabel,
@@ -168,6 +169,7 @@ export function HomeDetailScreen({navigation, route}) {
       Alert.alert('Booking', 'Select valid check-in and check-out times.');
       return;
     }
+    clearBookingSession();
     navigation.navigate('CustomerBookingScreen', {
       syncToken: Date.now(),
       branchId,
@@ -195,20 +197,20 @@ export function HomeDetailScreen({navigation, route}) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-[#ececec]">
+    <SafeAreaView className="flex-1 bg-white">
       <ScreenHeader onBack={() => navigation.goBack()} icon="chevron-back" />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        className="flex-1 bg-[#ececec]"
+        className="flex-1 bg-white"
         contentContainerStyle={{paddingBottom: 98}}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} colors={['#5b79df']} tintColor="#5b79df" />
         }
       >
-        <View className="mx-3 mt-2 rounded-[26px] overflow-hidden bg-[#ececec]">
+        <View className="mx-3 mt-2 rounded-[26px] overflow-hidden bg-white">
           <Image source={{uri: heroImage}} className="w-full h-[220px]" resizeMode="cover" />
 
-          <View className="bg-[#ececec] rounded-t-[34px] -mt-8 px-5 pt-6 pb-5">
+          <View className="bg-white rounded-t-[34px] -mt-8 px-5 pt-6 pb-5">
             <View className="flex-row items-start justify-between">
               <View className="flex-1 pr-3">
                 <Text className="font-sf-bold text-[24px] leading-[28px] text-black">{resolvedRoomName}</Text>

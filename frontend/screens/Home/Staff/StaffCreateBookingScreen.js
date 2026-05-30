@@ -11,8 +11,8 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {ChevronLeft} from 'lucide-react-native';
-import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
+import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 import {createStaffBooking} from '../../../services/ReceptionService';
 import {getRoom, canBookWalkInRoom} from '../../../services/staffApiService';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
@@ -31,7 +31,7 @@ function parseNonNegativeInt(value) {
 export default function StaffCreateBookingScreen({navigation, route}) {
     const {roomId, roomNumber, hourlyRate, roomType} = route.params || {};
     const {branchId} = useStaffSession();
-    const branch = getStaffBranchInfo(branchId);
+    const {branch} = useStaffBranch(branchId);
 
     const [guestName, setGuestName] = useState('');
     const [phone, setPhone] = useState('');
@@ -105,8 +105,8 @@ export default function StaffCreateBookingScreen({navigation, route}) {
             durationDays: days,
             durationHours: hours,
             walkIn: true,
-            hotelName: branch.name,
-            hotelAddress: branch.address,
+            hotelName: branch?.name || '',
+            hotelAddress: branch?.address || '',
         });
         setSubmitting(false);
 

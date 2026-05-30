@@ -2,6 +2,7 @@
   "expo": {
     "name": "nesto",
     "slug": "frontend",
+    "owner": "ndhuwng05",
     "scheme": "nesto",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,12 +15,13 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.project.nesto",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
-        "NSLocationWhenInUseUsageDescription": "Nesto uses your location to show nearby hotel Locket feeds on Watchlist."
+        "NSLocationWhenInUseUsageDescription": "Nesto uses your location to show nearby stays and your current area on Home."
       }
     },
     "android": {
@@ -27,8 +29,9 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "usesCleartextTraffic": true,
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.frontend",
+      "package": "com.project.nesto",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
@@ -49,7 +52,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Nesto uses your location to show nearby hotel Locket feeds on Watchlist."
+          "locationWhenInUsePermission": "Nesto uses your location to show nearby stays and your current area on Home."
         }
       ]
     ]

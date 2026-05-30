@@ -1,7 +1,6 @@
 import {useCallback, useState} from 'react';
 import {Alert} from 'react-native';
 import {
-    MANAGER_ID,
     createExtraService,
     deleteExtraService,
     fetchExtraServices,
@@ -9,7 +8,7 @@ import {
 } from '../../services/BranchService';
 import {getErrorMessage} from '../../utils/authErrors';
 
-export function useExtraServices(branchId, managerId = MANAGER_ID) {
+export function useExtraServices(branchId) {
     const [extraServices, setExtraServices] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -18,7 +17,7 @@ export function useExtraServices(branchId, managerId = MANAGER_ID) {
         if (!branchId) return [];
         setIsLoading(true);
         try {
-            const res = await fetchExtraServices(branchId, managerId);
+            const res = await fetchExtraServices(branchId);
             if (res.status === 'success') {
                 setExtraServices(res.data);
                 return res.data;
@@ -30,15 +29,15 @@ export function useExtraServices(branchId, managerId = MANAGER_ID) {
         } finally {
             setIsLoading(false);
         }
-    }, [branchId, managerId]);
+    }, [branchId]);
 
     const save = useCallback(
         async (payload, serviceId) => {
             setIsSaving(true);
             try {
                 const res = serviceId
-                    ? await updateExtraService(branchId, serviceId, payload, managerId)
-                    : await createExtraService(branchId, payload, managerId);
+                    ? await updateExtraService(branchId, serviceId, payload)
+                    : await createExtraService(branchId, payload);
                 if (res.status === 'success') {
                     await loadList();
                     return res;
@@ -52,7 +51,7 @@ export function useExtraServices(branchId, managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [branchId, loadList, managerId]
+        [branchId, loadList]
     );
 
     const remove = useCallback(
@@ -66,7 +65,7 @@ export function useExtraServices(branchId, managerId = MANAGER_ID) {
                         onPress: async () => {
                             setIsSaving(true);
                             try {
-                                await deleteExtraService(branchId, serviceId, managerId);
+                                await deleteExtraService(branchId, serviceId);
                                 await loadList();
                                 resolve(true);
                             } catch (err) {
@@ -79,7 +78,7 @@ export function useExtraServices(branchId, managerId = MANAGER_ID) {
                     },
                 ]);
             }),
-        [branchId, loadList, managerId]
+        [branchId, loadList]
     );
 
     return {extraServices, isLoading, isSaving, loadList, save, remove};

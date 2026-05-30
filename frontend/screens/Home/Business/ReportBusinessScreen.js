@@ -11,6 +11,7 @@ import {CalendarCheck, Wallet} from 'lucide-react-native';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {ReportBusinessFilter} from '../../../components/report/ReportBusinessFilter';
 import {ReportBranchFilter} from '../../../components/report/ReportBranchFilter';
+import {ReportPeriodFilter} from '../../../components/report/ReportPeriodFilter';
 import {ReportStatCard, ReportCsatCard} from '../../../components/report/ReportStatCard';
 import {ReportSection} from '../../../components/report/ReportSection';
 import {RevenueChart} from '../../../components/report/RevenueChart';
@@ -21,14 +22,11 @@ import {REPORT_SCREEN_PADDING, REPORT_SECTION_GAP, REPORT_STAT_GAP} from '../../
 import {UI} from '../../../styles/uiTokens';
 import {formatReportNumber, formatReportVnd} from '../../../utils/formatReport';
 import {useManagerProfile} from '../../../configuration/ManagerProfileContext';
-import {AUTH_ROLES} from '../../../constants/authRoles';
+import {canManageBusinessPortfolio} from '../../../constants/authRoles';
 
 export default function ReportBusinessScreen() {
     const {profile} = useManagerProfile();
-    const groups = Array.isArray(profile?.groups) ? profile.groups : [];
-    const canViewReports =
-        [AUTH_ROLES.SUPER_ADMIN, AUTH_ROLES.BUSINESS_OWNER, AUTH_ROLES.MANAGER].includes(profile?.rawRole) ||
-        groups.some((g) => ['Admin_Group', 'Business_Group', 'Manager_Group'].includes(g));
+    const canViewReports = canManageBusinessPortfolio(profile);
     const {
         businessFilter,
         branchFilter,
@@ -37,8 +35,10 @@ export default function ReportBusinessScreen() {
         dashboard,
         isLoading,
         isRefreshing,
+        periodFilter,
         selectBusiness,
         selectBranch,
+        selectPeriod,
         refresh,
     } = useReportDashboard();
 
@@ -49,6 +49,9 @@ export default function ReportBusinessScreen() {
     const totalRevenue = Number.isFinite(Number(safeDashboard?.totalRevenue)) ? Number(safeDashboard.totalRevenue) : 0;
     const totalBookings = Number.isFinite(Number(safeDashboard?.totalBookings)) ? Number(safeDashboard.totalBookings) : 0;
     const csatScore = Number.isFinite(Number(safeDashboard?.csatScore)) ? Number(safeDashboard.csatScore) : 0;
+    const housekeepingRate = Number.isFinite(Number(safeDashboard?.housekeepingCompletionRate))
+        ? Number(safeDashboard.housekeepingCompletionRate)
+        : csatScore;
     const occupancyRate = Number.isFinite(Number(safeDashboard?.occupancyRate)) ? Number(safeDashboard.occupancyRate) : 0;
     const monthlyRevenue = Array.isArray(safeDashboard?.monthlyRevenue) ? safeDashboard.monthlyRevenue : [];
     const monthlyRevenueSafe = monthlyRevenue
@@ -102,6 +105,8 @@ export default function ReportBusinessScreen() {
                     selectedId={branchFilter}
                     onSelect={selectBranch}
                 />
+
+                <ReportPeriodFilter selectedId={periodFilter} onSelect={selectPeriod} />
 
                 {isLoading && !dashboard ? (
                     <View style={styles.loading}>
@@ -164,7 +169,9 @@ export default function ReportBusinessScreen() {
                                     <Text className="font-sf-bold text-slate-700 text-sm text-center mb-3">
                                         Housekeeping Completion
                                     </Text>
-                                    <CsatStars score={csatScore} centered />
+                                    <Text className="font-sf-bold text-3xl text-slate-800 text-center">
+                                        {housekeepingRate.toFixed(0)}%
+                                    </Text>
                                     <Text className="font-sf text-xs text-gray-500 text-center mt-4 leading-5">
                                         Based on completed housekeeping tasks across the selected scope.
                                     </Text>

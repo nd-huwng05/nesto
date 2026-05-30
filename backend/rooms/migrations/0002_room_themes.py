@@ -1,8 +1,12 @@
+import uuid
+
+import django.db.models.deletion
 from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
     dependencies = [
+        ("businesses", "0001_initial"),
         ("rooms", "0001_initial"),
     ]
 
@@ -10,7 +14,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="RoomTheme",
             fields=[
-                ("id", models.UUIDField(primary_key=True, serialize=False, editable=False)),
+                ("id", models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False, editable=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("name", models.CharField(max_length=64, unique=True)),
@@ -22,13 +26,13 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="BranchTheme",
             fields=[
-                ("id", models.UUIDField(primary_key=True, serialize=False, editable=False)),
+                ("id", models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False, editable=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 (
                     "branch",
                     models.ForeignKey(
-                        on_delete=models.deletion.CASCADE,
+                        on_delete=django.db.models.deletion.CASCADE,
                         related_name="branch_themes",
                         to="businesses.branch",
                     ),
@@ -36,7 +40,7 @@ class Migration(migrations.Migration):
                 (
                     "theme",
                     models.ForeignKey(
-                        on_delete=models.deletion.CASCADE,
+                        on_delete=django.db.models.deletion.CASCADE,
                         related_name="branch_themes",
                         to="rooms.roomtheme",
                     ),
@@ -60,4 +64,3 @@ class Migration(migrations.Migration):
             index=models.Index(fields=["theme"], name="branch_themes_theme_idx"),
         ),
     ]
-

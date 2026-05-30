@@ -1,11 +1,10 @@
-import {Image, Text, TouchableOpacity, View} from 'react-native';
+import {Text, TouchableOpacity, View} from 'react-native';
 import {ChevronRight, Pencil} from 'lucide-react-native';
+import RemoteImage from '../common/RemoteImage';
 import {formatVnd} from './CatalogListItem';
 
-const PLACEHOLDER = 'https://placehold.co/96x96/e2e8f0/94a3b8?text=Room';
-
 export function RoomTypeCard({roomType, onPress, onEdit}) {
-    const thumbnailUri = roomType.images?.[0] || PLACEHOLDER;
+    const thumbnailUri = String(roomType.images?.[0] || '').trim();
     const meta = `${formatVnd(roomType.basePrice)} · Max ${roomType.capacity} guests`;
 
     return (
@@ -14,9 +13,9 @@ export function RoomTypeCard({roomType, onPress, onEdit}) {
             activeOpacity={0.75}
             className="flex-row items-center py-3 border-b border-gray-50"
         >
-            <Image
-                source={{uri: thumbnailUri}}
-                className="w-16 h-16 rounded-xl bg-gray-100 mr-3"
+            <RemoteImage
+                uri={thumbnailUri}
+                style={{width: 64, height: 64, borderRadius: 12, marginRight: 12}}
                 resizeMode="cover"
             />
 

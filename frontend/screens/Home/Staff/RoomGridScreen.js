@@ -12,10 +12,11 @@ import {
 import {useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
+import {Wrench} from 'lucide-react-native';
 import EmptyState from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
-import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
+import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 import {connectRoomUpdates} from '../../../services/WebSocketService';
 import {listRooms, isRoomGridBlocked} from '../../../services/staffApiService';
 import {UI} from '../../../styles/uiTokens';
@@ -51,7 +52,7 @@ function getBlockedHint(status) {
 
 export default function RoomGridScreen({navigation}) {
     const {user, branchId, role} = useStaffSession();
-    const branch = getStaffBranchInfo(branchId);
+    const {branch} = useStaffBranch(branchId);
     const [rooms, setRooms] = useState([]);
     const roomList = Array.isArray(rooms) ? rooms : [];
     const [isLoading, setIsLoading] = useState(true);
@@ -133,8 +134,21 @@ export default function RoomGridScreen({navigation}) {
                     </View>
                 ) : null}
                 <View style={styles.headerPad}>
-                    <StaffBranchHeader user={user} branchName={branch.name} branchAddress={branch.address} />
-                    <Text className="font-sf-bold text-2xl text-slate-800">Rooms</Text>
+                    <StaffBranchHeader
+                        user={user}
+                        branchName={branch?.name}
+                        branchAddress={branch?.address}
+                        branchImage={branch?.image}
+                    />
+                    <View style={styles.titleRow}>
+                        <Text className="font-sf-bold text-2xl text-slate-800">Rooms</Text>
+                        <TouchableOpacity
+                            style={styles.maintenanceBtn}
+                            onPress={() => navigation.navigate('RoomMaintenanceScreen')}
+                        >
+                            <Wrench size={18} color="#64748b" />
+                        </TouchableOpacity>
+                    </View>
                     <Text className="font-sf text-sm text-gray-500 mt-1 mb-2">
                         Tap a room to start a walk-in. Occupied and maintenance rooms cannot be booked.
                     </Text>
@@ -202,6 +216,15 @@ export default function RoomGridScreen({navigation}) {
 const styles = StyleSheet.create({
     inner: {flex: 1},
     headerPad: {paddingHorizontal: 20, paddingTop: 8},
+    titleRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4},
+    maintenanceBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: '#f1f5f9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     listContent: {paddingHorizontal: 20, paddingBottom: 24},
     roomCard: {
         backgroundColor: '#ffffff',

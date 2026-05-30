@@ -1,6 +1,6 @@
 from django.urls import path, include
 from drf_spectacular.views import SpectacularSwaggerView, SpectacularRedocView, SpectacularAPIView
-from rooms.views.suggestion_views import SearchSuggestionsView
+from rooms.views import SearchSuggestionsView
 from core.urls import billing_urlpatterns, media_urlpatterns
 
 urlpatterns = [

@@ -3,13 +3,11 @@ import {Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, FlatList, P
 import {LinearGradient} from 'expo-linear-gradient';
 import {Ionicons, MaterialIcons} from '@expo/vector-icons';
 import Avatar from '../common/Avatar';
+import RemoteImage from '../common/RemoteImage';
 
 const LOCKET_CARD_WIDTH = 220;
 const LOCKET_CARD_HEIGHT = 280;
 const LOCKET_CARD_GAP = 16;
-
-const DEFAULT_WATCHLIST_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80';
-const DEFAULT_REVIEWER_AVATAR = 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=500&q=80';
 
 const ROOM_TYPE_COLORS = {
     standard: '#2f6fd6',
@@ -48,21 +46,20 @@ export function FilterPill({icon, label, light = false, selected = false, onPres
 }
 
 export function GalleryStrip({gallery}) {
-    const [fallbackSet, setFallbackSet] = useState({});
+    const items = (Array.isArray(gallery) ? gallery : [])
+        .map((uri) => String(uri || '').trim())
+        .filter(Boolean);
 
-    const handleGalleryImageError = (index) => {
-        setFallbackSet((prev) => ({...prev, [index]: true}));
-    };
+    if (!items.length) return null;
 
     return (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-5" contentContainerStyle={styles.galleryRow}>
-            {gallery.map((uri, index) => (
-                <Image
+            {items.map((uri, index) => (
+                <RemoteImage
                     key={`${uri}-${index}`}
-                    source={{uri: fallbackSet[index] ? DEFAULT_WATCHLIST_IMAGE : uri}}
-                    className="w-28 h-24 rounded-[18px] mr-4"
+                    uri={uri}
+                    style={{width: 112, height: 96, borderRadius: 18, marginRight: 16}}
                     resizeMode="cover"
-                    onError={() => handleGalleryImageError(index)}
                 />
             ))}
         </ScrollView>
@@ -102,22 +99,12 @@ export function RoomCard({room, onViewDetail, onBookNow}) {
     const priceAmount = room?.price?.amount;
     const priceCurrency = room?.price?.currency ?? 'VND';
     const roomNameColor = getRoomTypeColor(room?.name);
-    const [roomImage, setRoomImage] = useState(room?.image ?? DEFAULT_WATCHLIST_IMAGE);
-
-    useEffect(() => {
-        setRoomImage(room?.image ?? DEFAULT_WATCHLIST_IMAGE);
-    }, [room?.image]);
-
-    const handleRoomImageError = () => {
-        if (roomImage !== DEFAULT_WATCHLIST_IMAGE) {
-            setRoomImage(DEFAULT_WATCHLIST_IMAGE);
-        }
-    };
+    const roomImage = String(room?.image || '').trim();
 
     return (
         <View className="rounded-[24px] bg-white p-5 mb-5 flex-row" style={styles.cardShadow}>
             <View style={styles.roomMediaColumn}>
-                <Image source={{uri: roomImage}} className="w-full h-[150px] rounded-[16px]" resizeMode="cover" onError={handleRoomImageError}/>
+                <RemoteImage uri={roomImage} style={{width: '100%', height: 150, borderRadius: 16}} resizeMode="cover" />
             </View>
 
             <View style={styles.roomInfoColumn}>
@@ -210,14 +197,14 @@ export function FeaturedTag({label, onRemove}) {
 }
 
 function GuestMemoryCard({item}) {
-    const imageUri = String(item?.image || item?.imageUrl || '').trim() || DEFAULT_WATCHLIST_IMAGE;
+    const imageUri = String(item?.image || item?.imageUrl || '').trim();
     const note = String(item?.description || item?.review || '').trim();
     const userName = String(item?.userName || item?.reviewer || 'Guest').trim() || 'Guest';
     const userAvatar = String(item?.userAvatar || item?.avatar || '').trim();
 
     return (
         <View style={styles.locketCard}>
-            <Image source={{uri: imageUri}} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+            <RemoteImage uri={imageUri} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
             <LinearGradient
                 colors={['transparent', 'rgba(0,0,0,0.75)']}
                 style={styles.locketGradient}
@@ -344,8 +331,9 @@ export function WatchlistCard({watchlist, reviews = []}) {
 
     const activeReview = reviewList[currentIndex] || reviewList[0];
     const reviewKey = String(activeReview?.id ?? currentIndex);
-    const activeImage = failedImages[reviewKey] ? DEFAULT_WATCHLIST_IMAGE : (activeReview?.image ?? DEFAULT_WATCHLIST_IMAGE);
-    const activeAvatar = failedAvatars[reviewKey] ? DEFAULT_REVIEWER_AVATAR : (activeReview?.avatar ?? DEFAULT_REVIEWER_AVATAR);
+    const activeImage = failedImages[reviewKey] ? '' : String(activeReview?.image || '').trim();
+    const activeAvatar = failedAvatars[reviewKey] ? '' : String(activeReview?.avatar || activeReview?.userAvatar || '').trim();
+    const reviewerName = String(activeReview?.reviewer || activeReview?.userName || 'Guest').trim() || 'Guest';
 
     const handleImageError = () => {
         setFailedImages((prev) => ({...prev, [reviewKey]: true}));
@@ -361,17 +349,15 @@ export function WatchlistCard({watchlist, reviews = []}) {
             <Text className="text-white text-[14px] mt-1">{activeReview?.subtitle || watchlist?.subtitle}</Text>
 
             <View className="mt-4 rounded-[24px] overflow-hidden" {...panResponder.panHandlers}>
-                <Image source={{uri: activeImage}} className="w-full h-[360px]" resizeMode="cover" onError={handleImageError}/>
+                <RemoteImage uri={activeImage} style={{width: '100%', height: 360}} resizeMode="cover" />
                 <View style={styles.reviewBubble}>
                     <Text className="text-white text-[14px]">{activeReview?.review}</Text>
                 </View>
             </View>
 
             <View className="flex-row items-center justify-center mt-4">
-                <View className="w-[24px] h-[24px] rounded-full overflow-hidden border border-[#1f8fff] mr-3">
-                    <Image source={{uri: activeAvatar}} className="w-full h-full" resizeMode="cover" onError={handleAvatarError}/>
-                </View>
-                <Text className="text-white text-[15px]">{activeReview?.reviewer}</Text>
+                <Avatar uri={activeAvatar} name={reviewerName} size={24} />
+                <Text className="text-white text-[15px] ml-3">{reviewerName}</Text>
             </View>
 
             {reviewList.length > 1 ? (

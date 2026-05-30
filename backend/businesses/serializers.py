@@ -1,6 +1,9 @@
 from rest_framework import serializers
 
 from businesses.models import Branch, Company, Department
+from rooms.models import BranchTheme, RoomTheme
+from businesses.services.geocode_service import GeocodeService
+from rooms.services.customer_theme_service import assign_branch_themes, ensure_customer_themes
 from core.services.serializer_mixins import CloudinaryRepresentationMixin
 from core.services.cloudinary_service import CloudinaryMediaService
 
@@ -133,6 +136,38 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
     def get_image(self, obj):
         return CloudinaryMediaService.resolve_field_url(getattr(obj, "image", None))
 
+    @staticmethod
+    def _assign_default_theme(branch):
+        if BranchTheme.objects.filter(branch=branch).exists():
+            return
+        themes = [t for t in ensure_customer_themes() if t.show_in_tabs][:2]
+        if themes:
+            for theme in themes:
+                BranchTheme.objects.get_or_create(branch=branch, theme=theme)
+            return
+        theme, _ = RoomTheme.objects.get_or_create(name="Featured", defaults={"slug": "featured", "sort_order": 10})
+        BranchTheme.objects.get_or_create(branch=branch, theme=theme)
+
+    @staticmethod
+    def _assign_themes_from_payload(branch, payload):
+        if not isinstance(payload, dict):
+            BranchSerializer._assign_default_theme(branch)
+            return
+        raw = payload.get("themeIds") or payload.get("theme_ids") or payload.get("themes")
+        theme_ids = raw if isinstance(raw, list) else []
+        theme_ids = [str(item).strip() for item in theme_ids if str(item or "").strip()]
+        if theme_ids:
+            assign_branch_themes(branch, theme_ids)
+            return
+        BranchSerializer._assign_default_theme(branch)
+
+    @staticmethod
+    def _apply_geocode(branch, *, address: str | None = None):
+        try:
+            GeocodeService.apply_branch_coordinates(branch, address=address or branch.address)
+        except Exception:
+            pass
+
     def create(self, validated_data):
         request = self.context.get("request") if isinstance(self.context, dict) else None
         user = getattr(request, "user", None)
@@ -149,6 +184,13 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
         if contact:
             validated_data["phone"] = contact.get("phone", validated_data.get("phone", ""))
             validated_data["email"] = contact.get("email", validated_data.get("email", ""))
+        elif isinstance(payload, dict):
+            top_phone = str(payload.get("phone") or "").strip()
+            if top_phone:
+                validated_data["phone"] = top_phone
+            top_email = str(payload.get("email") or "").strip()
+            if top_email:
+                validated_data["email"] = top_email
         if billing:
             validated_data["bank_name"] = billing.get("bankName", "")
             validated_data["bank_account_number"] = billing.get("accountNumber", "")
@@ -168,7 +210,10 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
                 else:
                     normalized.append(item)
             validated_data["images"] = normalized
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+        self._apply_geocode(instance, address=instance.address)
+        self._assign_themes_from_payload(instance, payload)
+        return instance
 
     def update(self, instance, validated_data):
         payload = self.initial_data
@@ -190,6 +235,7 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
                 else:
                     normalized.append(item)
             validated_data["images"] = normalized
+        old_address = str(instance.address or "")
         for key, value in validated_data.items():
             setattr(instance, key, value)
         if isinstance(contact, dict):
@@ -199,6 +245,12 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
             instance.bank_name = billing.get("bankName", instance.bank_name)
             instance.bank_account_number = billing.get("accountNumber", instance.bank_account_number)
         instance.save()
+        if "address" in validated_data and str(validated_data.get("address") or "") != old_address:
+            self._apply_geocode(instance, address=instance.address)
+        if isinstance(payload, dict):
+            raw = payload.get("themeIds") or payload.get("theme_ids") or payload.get("themes")
+            if isinstance(raw, list) and raw:
+                assign_branch_themes(instance, raw)
         return instance
 
 

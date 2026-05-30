@@ -1,5 +1,5 @@
-from django.db import models
 from django.conf import settings
+from django.db import models
 
 from core.models import BaseAuditedModel
 
@@ -7,10 +7,30 @@ from core.models import BaseAuditedModel
 class RoomTheme(BaseAuditedModel):
     class Meta:
         db_table = "room_themes"
-        indexes = [models.Index(fields=["name"])]
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["is_active", "sort_order"]),
+        ]
+        ordering = ["sort_order", "name"]
 
     name = models.CharField(max_length=64, unique=True)
+    slug = models.SlugField(max_length=64, unique=True, blank=True, default="")
     icon = models.CharField(max_length=64, blank=True, default="")
+    description = models.CharField(max_length=255, blank=True, default="")
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    show_in_tabs = models.BooleanField(
+        default=True,
+        help_text="When true, theme appears in customer home tabs and business branch picker.",
+    )
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from django.utils.text import slugify
+
+            base = slugify(self.name) or "theme"
+            self.slug = base[:64]
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.name
@@ -35,6 +55,9 @@ class BranchTheme(BaseAuditedModel):
 class RoomCategory(BaseAuditedModel):
     class Meta:
         db_table = "room_categories"
+        constraints = [
+            models.UniqueConstraint(fields=["branch", "name"], name="uniq_room_category_branch_name"),
+        ]
 
     branch = models.ForeignKey("businesses.Branch", on_delete=models.CASCADE, related_name="room_categories")
 
@@ -43,7 +66,11 @@ class RoomCategory(BaseAuditedModel):
     price_per_hour = models.IntegerField(default=0)
     price_per_half_day = models.IntegerField(default=0)
     price_per_day = models.IntegerField(default=0)
-    capacity = models.IntegerField(default=1)
+    max_guests = models.IntegerField(
+        default=1,
+        db_column="capacity",
+        help_text="Maximum guest occupancy for this room category.",
+    )
     description = models.TextField(blank=True, default="")
 
     room_amenities = models.JSONField(default=list, blank=True)
@@ -63,8 +90,22 @@ class RoomCategory(BaseAuditedModel):
 
 
 class Room(BaseAuditedModel):
+    class Status(models.TextChoices):
+        AVAILABLE = "AVAILABLE", "Available"
+        OCCUPIED = "OCCUPIED", "Occupied"
+        DIRTY = "DIRTY", "Dirty"
+        CLEANING = "CLEANING", "Cleaning"
+        MAINTENANCE = "MAINTENANCE", "Maintenance"
+        OUT_OF_ORDER = "OUT_OF_ORDER", "Out of order"
+
     class Meta:
         db_table = "rooms"
+        constraints = [
+            models.UniqueConstraint(fields=["branch", "room_number"], name="uniq_room_branch_number"),
+        ]
+        indexes = [
+            models.Index(fields=["branch", "category", "status"]),
+        ]
 
     branch = models.ForeignKey("businesses.Branch", on_delete=models.CASCADE, related_name="rooms")
     category = models.ForeignKey(RoomCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="rooms")
@@ -75,7 +116,8 @@ class Room(BaseAuditedModel):
 
     status = models.CharField(
         max_length=32,
-        default="AVAILABLE",
+        choices=Status.choices,
+        default=Status.AVAILABLE,
         db_index=True,
     )
 
@@ -102,16 +144,26 @@ class RoomThemeLink(BaseAuditedModel):
 class MaintenanceIssue(BaseAuditedModel):
     class Meta:
         db_table = "maintenance_issues"
+        indexes = [
+            models.Index(fields=["branch", "is_resolved"]),
+        ]
 
     branch = models.ForeignKey("businesses.Branch", on_delete=models.CASCADE, related_name="maintenance_issues")
+    room = models.ForeignKey(
+        "rooms.Room",
+        on_delete=models.CASCADE,
+        related_name="maintenance_issues",
+        null=True,
+        blank=True,
+    )
 
-    room_number = models.CharField(max_length=32, blank=True, default="")
     issue_type = models.CharField(max_length=128, blank=True, default="Maintenance")
     description = models.TextField(blank=True, default="")
     is_resolved = models.BooleanField(default=False)
 
     def __str__(self) -> str:
-        return f"{self.issue_type} - {self.room_number}"
+        room_no = self.room.room_number if self.room_id else "?"
+        return f"{self.issue_type} - {room_no}"
 
 
 class HousekeepingTask(BaseAuditedModel):
@@ -120,6 +172,7 @@ class HousekeepingTask(BaseAuditedModel):
         indexes = [
             models.Index(fields=["branch", "status"]),
             models.Index(fields=["room", "status"]),
+            models.Index(fields=["assigned_to", "status"]),
         ]
 
     class Status(models.TextChoices):
@@ -130,6 +183,13 @@ class HousekeepingTask(BaseAuditedModel):
 
     branch = models.ForeignKey("businesses.Branch", on_delete=models.CASCADE, related_name="housekeeping_tasks")
     room = models.ForeignKey("rooms.Room", on_delete=models.CASCADE, related_name="housekeeping_tasks")
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="housekeeping_tasks",
+    )
 
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.PENDING, db_index=True)
     note = models.TextField(blank=True, default="")

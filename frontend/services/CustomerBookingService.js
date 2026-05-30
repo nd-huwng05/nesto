@@ -50,6 +50,30 @@ export const fetchCustomerLiveBill = async (bookingId) => {
   }
 };
 
+export const cancelMyBooking = async (bookingId, {reason} = {}) => {
+  try {
+    const res = await api.post(endpoints['customer-booking-cancel'](bookingId), {
+      reason: reason || '',
+    });
+    return ok(res, res.data);
+  } catch (err) {
+    return fail(err, 'Unable to cancel booking.');
+  }
+};
+
+export const confirmBookingPayment = async (bookingId, {amount, paymentMethod, transactionRef} = {}) => {
+  try {
+    const res = await api.post(endpoints['customer-booking-pay-deposit'](bookingId), {
+      amount,
+      payment_method: paymentMethod,
+      transaction_ref: transactionRef || '',
+    });
+    return ok(res, res.data);
+  } catch (err) {
+    return fail(err, 'Unable to confirm payment.');
+  }
+};
+
 export const addServicesToBooking = async (bookingId, serviceIds = []) => {
   try {
     const res = await api.post(endpoints['customer-booking-add-service'](bookingId), {
@@ -95,6 +119,7 @@ export const createMyBooking = async ({
   expectedCheckOutAt,
   serviceIds = [],
   depositPercentage = 20,
+  specialRequests = '',
 } = {}) => {
   try {
     const payload = {
@@ -106,6 +131,7 @@ export const createMyBooking = async ({
       guest_name: String(guestName || '').trim(),
       email: String(email || '').trim(),
       phone: String(phone || '').trim(),
+      special_requests: String(specialRequests || '').trim(),
       check_in_at: checkInAt || null,
       expected_check_out_at: expectedCheckOutAt || null,
       service_ids: Array.isArray(serviceIds) ? serviceIds.filter(Boolean) : [],

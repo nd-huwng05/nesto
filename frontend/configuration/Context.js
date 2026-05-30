@@ -4,7 +4,8 @@ import {LoadScreen} from "../components/utils/Load";
 import {Asset} from "expo-asset";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import OnboardingFlow from "../screens/Onboarding/OnboardingNavigator";
-import {ensureSessionOnColdStart} from "../utils/tokenRefresh";
+import {assertApiConfigured} from '../utils/apiConfig';
+import {ensureSessionOnColdStart} from '../utils/sessionBootstrap';
 
 export const GlobalContext = createContext()
 
@@ -22,8 +23,9 @@ export default function Context({children}) {
     useEffect(() => {
         async function prepareApp() {
             try {
+                assertApiConfigured();
                 const images = [
-                    require('../assets/images/icon.svg'),
+                    require('../assets/images/icon.png'),
                     require('../assets/images/onboarding/nesto_01.jpg'),
                     require('../assets/images/onboarding/nesto_02.jpg'),
                     require('../assets/images/onboarding/nesto_03.jpg'),

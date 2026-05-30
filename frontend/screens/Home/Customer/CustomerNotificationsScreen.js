@@ -4,7 +4,11 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
 import CustomerBottomTabBar from '../../../components/customer/CustomerBottomTabBar';
-import {listCustomerNotifications, markAllCustomerNotificationsRead} from '../../../services/NotificationService';
+import {
+    listCustomerNotifications,
+    markAllCustomerNotificationsRead,
+    markCustomerNotificationRead,
+} from '../../../services/NotificationService';
 
 const formatRelativeTime = (isoTime) => {
     const timeMs = Date.parse(String(isoTime || ''));
@@ -45,7 +49,6 @@ export default function CustomerNotificationsScreen({navigation}) {
             const run = async () => {
                 setIsLoading(true);
                 try {
-                    await markAllCustomerNotificationsRead();
                     const items = await listCustomerNotifications();
                     if (mounted) setNotifications(Array.isArray(items) ? items : []);
                 } catch (error) {
@@ -71,6 +74,27 @@ export default function CustomerNotificationsScreen({navigation}) {
         setRefreshing(false);
     };
 
+    const handleMarkAllRead = async () => {
+        const items = await markAllCustomerNotificationsRead();
+        setNotifications(Array.isArray(items) ? items : []);
+    };
+
+    const handleOpenNotification = async (item) => {
+        if (!item?.read) {
+            await markCustomerNotificationRead(item.id);
+            setNotifications((current) =>
+                current.map((row) => (row.id === item.id ? { ...row, read: true } : row))
+            );
+        }
+
+        const bookingId = item?.meta?.bookingId || item?.meta?.booking_id;
+        if (bookingId) {
+            navigation.navigate('BookingDetailScreen', { bookingId });
+        }
+    };
+
+    const unreadCount = notifications.reduce((count, item) => count + (item?.read ? 0 : 1), 0);
+
     return (
         <SafeAreaView style={styles.page}>
             <View style={styles.headerRow}>
@@ -78,7 +102,13 @@ export default function CustomerNotificationsScreen({navigation}) {
                     <Ionicons name="arrow-back" size={22} color="#1f2430" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Notifications</Text>
-                <View style={styles.backBtnGhost} />
+                {unreadCount > 0 ? (
+                    <TouchableOpacity style={styles.markAllBtn} onPress={handleMarkAllRead}>
+                        <Text style={styles.markAllText}>Mark all read</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <View style={styles.backBtnGhost} />
+                )}
             </View>
 
             <ScrollView
@@ -97,13 +127,18 @@ export default function CustomerNotificationsScreen({navigation}) {
                         <ActivityIndicator size="large" color="#5b79df" />
                     </View>
                 ) : notifications.length ? notifications.map((item) => (
-                    <View key={item.id} style={styles.card}>
+                    <TouchableOpacity
+                        key={item.id}
+                        activeOpacity={0.85}
+                        onPress={() => handleOpenNotification(item)}
+                        style={[styles.card, !item.read && styles.cardUnread]}
+                    >
                         <View style={styles.cardTop}>
                             <Text style={styles.cardTitle}>{item.title}</Text>
                             <Text style={styles.cardTime}>{formatRelativeTime(item.createdAt)}</Text>
                         </View>
                         <Text style={styles.cardMessage}>{item.message}</Text>
-                    </View>
+                    </TouchableOpacity>
                 )) : (
                     <Text style={styles.emptyText}>No notifications yet.</Text>
                 )}
@@ -136,8 +171,19 @@ const styles = StyleSheet.create({
         backgroundColor: '#f3f4f8',
     },
     backBtnGhost: {
-        width: 36,
+        width: 72,
         height: 36,
+    },
+    markAllBtn: {
+        minWidth: 72,
+        height: 36,
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+    },
+    markAllText: {
+        fontFamily: 'SF-SemiBold',
+        fontSize: 12,
+        color: '#5b79df',
     },
     headerTitle: {
         fontFamily: 'SF-Bold',
@@ -161,6 +207,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         paddingHorizontal: 12,
         paddingVertical: 10,
+    },
+    cardUnread: {
+        borderColor: '#c7d2fe',
+        backgroundColor: '#f8faff',
     },
     cardTop: {
         flexDirection: 'row',

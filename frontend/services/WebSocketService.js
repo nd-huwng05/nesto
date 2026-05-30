@@ -1,6 +1,8 @@
 import {getValidAccessToken} from '../utils/tokenRefresh';
 
-const WS_URL = (process.env.EXPO_PUBLIC_WS_URL || 'ws://127.0.0.1:8000').replace(/\/$/, '');
+import {WS_BASE_URL} from '../utils/apiConfig';
+
+const WS_URL = WS_BASE_URL.replace(/\/$/, '');
 
 const INITIAL_RETRY_DELAY_MS = 1000;
 const MAX_RETRY_DELAY_MS = 30000;

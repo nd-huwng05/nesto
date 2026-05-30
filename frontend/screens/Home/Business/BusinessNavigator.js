@@ -21,11 +21,9 @@ import ExtraServiceFormScreen from "./ExtraServiceFormScreen";
 import EditBranchMediaScreen from "./EditBranchMediaScreen";
 import PhysicalRoomFormScreen from "./PhysicalRoomFormScreen";
 import EditProfileScreen from "./EditProfileScreen";
-import ChangePasswordScreen from "./ChangePasswordScreen";
+import ChangePasswordScreen from "../../Account/ChangePasswordScreen";
 import StaffFormScreen from "./StaffFormScreen";
 import {UI} from "../../../styles/uiTokens";
-import {useManagerProfile} from "../../../configuration/ManagerProfileContext";
-import {AUTH_ROLES} from "../../../constants/authRoles";
 
 const BusinessTab = createBottomTabNavigator();
 const BusinessStack = createNativeStackNavigator();
@@ -46,22 +44,15 @@ const tabBarBaseStyle = {
 
 function BusinessTabComponent() {
     const insets = useSafeAreaInsets();
-    const {profile} = useManagerProfile();
-    const bottomPad = Math.max(insets.bottom, 10);
-    const groups = Array.isArray(profile?.groups) ? profile.groups : [];
-    const canViewReports =
-        [AUTH_ROLES.SUPER_ADMIN, AUTH_ROLES.BUSINESS_OWNER, AUTH_ROLES.MANAGER].includes(profile?.rawRole) ||
-        groups.some((g) => ['Admin_Group', 'Business_Group', 'Manager_Group'].includes(g));
-    const canManageStaff =
-        [AUTH_ROLES.SUPER_ADMIN, AUTH_ROLES.BUSINESS_OWNER, AUTH_ROLES.MANAGER].includes(profile?.rawRole) ||
-        groups.some((g) => ['Admin_Group', 'Business_Group', 'Manager_Group'].includes(g));
+    const bottomPad = Math.max(insets.bottom, 6);
 
     const tabBarStyle = useMemo(
         () => ({
             ...tabBarBaseStyle,
-            paddingBottom: bottomPad,
+            paddingBottom: 0,
+            height: undefined,
         }),
-        [bottomPad]
+        []
     );
 
     return (
@@ -74,8 +65,8 @@ function BusinessTabComponent() {
             }}
         >
             <BusinessTab.Screen name="HomeBusinessMain" component={HomeBusinessScreen} />
-            {canViewReports ? <BusinessTab.Screen name="ReportBusinessScreen" component={ReportBusinessScreen} /> : null}
-            {canManageStaff ? <BusinessTab.Screen name="StaffBusinessScreen" component={StaffManagementScreen} /> : null}
+            <BusinessTab.Screen name="ReportBusinessScreen" component={ReportBusinessScreen} />
+            <BusinessTab.Screen name="StaffBusinessScreen" component={StaffManagementScreen} />
             <BusinessTab.Screen name="ProfileBusinessScreen" component={ProfileBusinessScreen} />
         </BusinessTab.Navigator>
     );

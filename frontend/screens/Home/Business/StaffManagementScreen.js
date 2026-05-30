@@ -19,7 +19,7 @@ import {useStaffCRUD} from '../../../hooks/business/useStaffCRUD';
 import {DEFAULT_STAFF_PASSWORD} from '../../../services/StaffService';
 import {UI} from '../../../styles/uiTokens';
 import {useManagerProfile} from '../../../configuration/ManagerProfileContext';
-import {AUTH_ROLES} from '../../../constants/authRoles';
+import {canManageBusinessPortfolio} from '../../../constants/authRoles';
 
 function getFirstBranchForBusiness(business) {
     const raw = business?.branches;
@@ -33,10 +33,7 @@ export default function StaffManagementScreen({navigation}) {
     const {staffList, businesses, isLoading, loadList, loadBusinesses} = useStaffCRUD();
     const safeBusinesses = Array.isArray(businesses) ? businesses : [];
     const safeStaffList = Array.isArray(staffList) ? staffList : [];
-    const groups = Array.isArray(profile?.groups) ? profile.groups : [];
-    const canManageStaff =
-        [AUTH_ROLES.SUPER_ADMIN, AUTH_ROLES.BUSINESS_OWNER, AUTH_ROLES.MANAGER].includes(profile?.rawRole) ||
-        groups.some((g) => ['Admin_Group', 'Business_Group', 'Manager_Group'].includes(g));
+    const canManageStaff = canManageBusinessPortfolio(profile);
 
     const [refreshing, setRefreshing] = useState(false);
     const [businessFilter, setBusinessFilter] = useState('');

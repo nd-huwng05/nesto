@@ -2,7 +2,6 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {Image, Pressable, Text, TouchableOpacity, View} from "react-native";
 import {StoryWidget} from "../../components/login/StoryWidget";
 
-
 export function AccountScreen({navigation}) {
     return (
         <SafeAreaView className={"flex-1 w-screen h-screen"}>

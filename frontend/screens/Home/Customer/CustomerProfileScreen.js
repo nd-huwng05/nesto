@@ -2,9 +2,10 @@ import {useEffect, useMemo, useState} from 'react';
 import {Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Feather, Ionicons, MaterialCommunityIcons} from '@expo/vector-icons';
-import {getSession, clearSession} from '../../../utils/authStorage';
-import {resetToAccountFlow} from '../../../utils/navigation';
+import {getSession} from '../../../utils/authStorage';
+import {signOut} from '../../../utils/signOut';
 import {useCustomerProfile} from '../../../hooks/customer/useCustomerProfile';
+import {navigateToForgotPassword} from '../../../utils/navigation';
 
 function SettingsRow({icon, label, value, danger = false, isLast = false, onPress, rightElement}) {
     return (
@@ -43,8 +44,7 @@ export function CustomerProfileScreen({navigation}) {
                     text: 'Logout',
                     onPress: async () => {
                         try {
-                            await clearSession();
-                            resetToAccountFlow(navigation);
+                            await signOut(navigation);
                         } catch (error) {
                             Alert.alert('Error', 'Failed to logout. Please try again.');
                         }
@@ -151,8 +151,13 @@ export function CustomerProfileScreen({navigation}) {
                     />
                     <SettingsRow
                         icon={<Ionicons name="lock-closed-outline" size={20} color="#717171" />}
+                        label="Change password"
+                        onPress={() => navigation.navigate('ChangePasswordScreen')}
+                    />
+                    <SettingsRow
+                        icon={<Ionicons name="key-outline" size={20} color="#717171" />}
                         label="Forgot password"
-                        onPress={() => navigation.navigate('ForgotPasswordScreen', {email: account.email})}
+                        onPress={() => navigateToForgotPassword(navigation, account.email)}
                     />
                     <SettingsRow
                         icon={<Feather name="phone" size={20} color="#717171" />}

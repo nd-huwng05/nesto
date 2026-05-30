@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Alert, Vibration } from 'react-native';
 import { login as loginApi } from '../../services/AuthService';
+import { extractApiErrorMessage, getApiErrorAlertTitle } from '../../utils/apiError';
 
 export const useAuth = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -16,9 +17,9 @@ export const useAuth = () => {
             Vibration.vibrate([0, 100, 50, 100]);
             return { success: false, message: 'Login failed.' };
         } catch (err) {
-            console.error("API Error: ", err.response?.data || err.message);
-            const message = err?.message || 'Email or password is incorrect.';
-            Alert.alert('Sign in failed', message);
+            const message = extractApiErrorMessage(err, 'Email or password is incorrect.');
+            console.error('API Error: ', err.response?.data || message);
+            Alert.alert(getApiErrorAlertTitle(err, 'Sign in failed'), message);
             Vibration.vibrate([0, 100, 50, 100]);
             return { success: false, message };
         } finally {

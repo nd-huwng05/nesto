@@ -8,14 +8,6 @@ export const emailSchema = yup.object({
         .required('Email is required'),
 });
 
-export const phoneSchema = yup.object({
-    phone: yup
-        .string()
-        .trim()
-        .matches(/^(0[3|5|7|8|9])([0-9]{8})$/, 'Please enter a valid Vietnamese phone number')
-        .required('Phone number is required'),
-});
-
 export const loginPasswordSchema = yup.object({
     password: yup.string().required('Password is required'),
 });

@@ -1,7 +1,6 @@
 import {useCallback, useState} from 'react';
 import {Alert} from 'react-native';
 import {
-    MANAGER_ID,
     createBranch,
     deleteBranch,
     fetchBranchDetail,
@@ -9,7 +8,7 @@ import {
 } from '../../services/BranchService';
 import {getErrorMessage} from '../../utils/authErrors';
 
-export function useBranchCRUD(managerId = MANAGER_ID) {
+export function useBranchCRUD() {
     const [branchDetail, setBranchDetail] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -18,7 +17,7 @@ export function useBranchCRUD(managerId = MANAGER_ID) {
         async (branchId) => {
             setIsLoading(true);
             try {
-                const res = await fetchBranchDetail(branchId, managerId);
+                const res = await fetchBranchDetail(branchId);
                 if (res.status === 'success') {
                     setBranchDetail(res.data);
                     return res.data;
@@ -32,14 +31,14 @@ export function useBranchCRUD(managerId = MANAGER_ID) {
                 setIsLoading(false);
             }
         },
-        [managerId]
+        [],
     );
 
     const create = useCallback(
         async (businessId, payload) => {
             setIsSaving(true);
             try {
-                const res = await createBranch(businessId, payload, managerId);
+                const res = await createBranch(businessId, payload);
                 if (res.status === 'success') return res;
                 Alert.alert('Error', res.message || 'Failed to create branch.');
                 return null;
@@ -50,14 +49,14 @@ export function useBranchCRUD(managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [managerId]
+        [],
     );
 
     const update = useCallback(
         async (branchId, updates) => {
             setIsSaving(true);
             try {
-                const res = await updateBranch(branchId, updates, managerId);
+                const res = await updateBranch(branchId, updates);
                 if (res.status === 'success') {
                     setBranchDetail(res.data);
                     return res;
@@ -71,7 +70,7 @@ export function useBranchCRUD(managerId = MANAGER_ID) {
                 setIsSaving(false);
             }
         },
-        [managerId]
+        [],
     );
 
     const remove = useCallback(
@@ -88,7 +87,7 @@ export function useBranchCRUD(managerId = MANAGER_ID) {
                             onPress: async () => {
                                 setIsSaving(true);
                                 try {
-                                    const res = await deleteBranch(branchId, managerId);
+                                    const res = await deleteBranch(branchId);
                                     if (res.status === 'success') {
                                         Alert.alert('Deleted', 'Branch removed successfully.');
                                         resolve(true);
@@ -108,7 +107,7 @@ export function useBranchCRUD(managerId = MANAGER_ID) {
                 );
             });
         },
-        [managerId]
+        [],
     );
 
     return {

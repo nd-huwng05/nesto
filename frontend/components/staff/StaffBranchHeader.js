@@ -1,20 +1,25 @@
 import {Image, StyleSheet, Text, View} from 'react-native';
-import {STAFF_MEDIA} from '../../constants/staffMedia';
+import {resolveMediaUrl} from '../../utils/mediaUrl';
 import {StaffUserAvatar} from './StaffUserAvatar';
 
 const HOTEL_SIZE = 40;
 
-export function StaffBranchHeader({user, branchName, branchAddress}) {
+export function StaffBranchHeader({user, branchName, branchAddress, branchImage = ''}) {
+    const imageUri = resolveMediaUrl(branchImage);
+    const initials = String(branchName || 'N').trim().charAt(0).toUpperCase() || 'N';
+
     return (
         <View style={styles.header}>
-            <Image
-                source={{uri: STAFF_MEDIA.HOTEL_AVATAR || STAFF_MEDIA.BRANCH_LOGO}}
-                style={styles.hotelImage}
-                resizeMode="cover"
-            />
+            {imageUri ? (
+                <Image source={{uri: imageUri}} style={styles.hotelImage} resizeMode="cover" />
+            ) : (
+                <View style={[styles.hotelImage, styles.hotelFallback]}>
+                    <Text style={styles.hotelFallbackText}>{initials}</Text>
+                </View>
+            )}
             <View style={styles.info}>
                 <Text style={styles.branchName} numberOfLines={1}>
-                    {branchName}
+                    {branchName || 'Branch'}
                 </Text>
                 <Text style={styles.branchAddress} numberOfLines={2}>
                     {branchAddress || '—'}
@@ -37,6 +42,16 @@ const styles = StyleSheet.create({
         borderRadius: 999,
         marginRight: 12,
         backgroundColor: '#e2e8f0',
+    },
+    hotelFallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#dbeafe',
+    },
+    hotelFallbackText: {
+        color: '#8294FF',
+        fontWeight: '700',
+        fontSize: 16,
     },
     info: {
         flex: 1,

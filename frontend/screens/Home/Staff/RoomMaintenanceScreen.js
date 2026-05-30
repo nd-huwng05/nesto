@@ -15,8 +15,8 @@ import {Plus, Wrench} from 'lucide-react-native';
 import Apis, {endpoints} from '../../../configuration/Apis';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
-import {getStaffBranchInfo} from '../../../constants/staffBranchInfo';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
+import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 
 function getStatusStyle(isResolved) {
     if (isResolved) {
@@ -48,7 +48,7 @@ function MaintenanceCard({item, onPress}) {
 
 export default function RoomMaintenanceScreen({navigation}) {
     const {user, branchId} = useStaffSession();
-    const branch = getStaffBranchInfo(branchId);
+    const {branch} = useStaffBranch(branchId);
     const [maintenance, setMaintenance] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -124,11 +124,34 @@ export default function RoomMaintenanceScreen({navigation}) {
         }
     };
 
+    const resolveIssue = async (item) => {
+        if (item.is_resolved) return;
+        Alert.alert('Mark resolved?', `Room ${item.room_number}: ${item.issue_type}`, [
+            {text: 'Cancel', style: 'cancel'},
+            {
+                text: 'Resolve',
+                onPress: async () => {
+                    try {
+                        await Apis.patch(`${endpoints.maintenance_rooms}${item.id}/`, {is_resolved: true});
+                        loadMaintenance();
+                    } catch (err) {
+                        Alert.alert('Error', err?.response?.data?.detail || 'Unable to resolve issue.');
+                    }
+                },
+            },
+        ]);
+    };
+
     return (
         <TabScreenLayout backgroundColor="#F8FAFC">
             <View style={styles.inner}>
                 <View style={styles.headerPad}>
-                    <StaffBranchHeader user={user} branchName={branch.name} branchAddress={branch.address}/>
+                    <StaffBranchHeader
+                        user={user}
+                        branchName={branch?.name}
+                        branchAddress={branch?.address}
+                        branchImage={branch?.image}
+                    />
                     <Text style={styles.title}>Room Maintenance</Text>
                     <Text style={styles.subtitle}>Report and track maintenance issues.</Text>
                     <TouchableOpacity
@@ -184,7 +207,7 @@ export default function RoomMaintenanceScreen({navigation}) {
                             <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF"/>
                         }
                         renderItem={({item}) => (
-                            <MaintenanceCard item={item} onPress={() => {}}/>
+                            <MaintenanceCard item={item} onPress={() => resolveIssue(item)}/>
                         )}
                         ListEmptyComponent={
                             <Text style={styles.emptyText}>No maintenance issues reported.</Text>

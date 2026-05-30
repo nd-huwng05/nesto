@@ -9,6 +9,8 @@ class RoomCategorySerializer(CloudinaryRepresentationMixin, serializers.ModelSer
     pricePerHour = serializers.IntegerField(source="price_per_hour", required=False)
     pricePerHalfDay = serializers.IntegerField(source="price_per_half_day", required=False)
     pricePerDay = serializers.IntegerField(source="price_per_day", required=False)
+    capacity = serializers.IntegerField(source="max_guests", required=False)
+    maxGuests = serializers.IntegerField(source="max_guests", required=False)
     roomAmenities = serializers.ListField(source="room_amenities", child=serializers.CharField(), required=False)
 
     cloudinary_gallery_fields = ("images",)
@@ -24,6 +26,7 @@ class RoomCategorySerializer(CloudinaryRepresentationMixin, serializers.ModelSer
             "pricePerHalfDay",
             "pricePerDay",
             "capacity",
+            "maxGuests",
             "description",
             "roomAmenities",
             "images",
@@ -40,9 +43,24 @@ class RoomCategoryAvailabilitySerializer(RoomCategorySerializer):
 
 
 class RoomThemeSerializer(serializers.ModelSerializer):
+    sortOrder = serializers.IntegerField(source="sort_order", read_only=True)
+    showInTabs = serializers.BooleanField(source="show_in_tabs", read_only=True)
+    isActive = serializers.BooleanField(source="is_active", read_only=True)
+
     class Meta:
         model = RoomTheme
-        fields = ["id", "name", "icon", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "icon",
+            "description",
+            "sortOrder",
+            "showInTabs",
+            "isActive",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class RoomSerializer(serializers.ModelSerializer):
@@ -50,6 +68,7 @@ class RoomSerializer(serializers.ModelSerializer):
     roomTypeId = serializers.UUIDField(source="category_id", allow_null=True, required=False)
     roomTypeName = serializers.CharField(source="category.name", read_only=True)
     room_type_name = serializers.CharField(source="category.name", read_only=True)
+    pricePerHour = serializers.IntegerField(source="category.price_per_hour", read_only=True)
     themes = RoomThemeSerializer(many=True, read_only=True)
 
     class Meta:
@@ -63,6 +82,7 @@ class RoomSerializer(serializers.ModelSerializer):
             "roomTypeId",
             "roomTypeName",
             "room_type_name",
+            "pricePerHour",
             "themes",
             "created_at",
             "updated_at",
@@ -70,12 +90,17 @@ class RoomSerializer(serializers.ModelSerializer):
 
 
 class MaintenanceIssueSerializer(serializers.ModelSerializer):
+    roomNumber = serializers.CharField(source="room.room_number", read_only=True)
+    roomId = serializers.UUIDField(source="room_id", read_only=True)
+
     class Meta:
         model = MaintenanceIssue
         fields = [
             "id",
             "branch",
-            "room_number",
+            "room",
+            "roomId",
+            "roomNumber",
             "issue_type",
             "description",
             "is_resolved",
@@ -88,6 +113,7 @@ class HousekeepingTaskSerializer(serializers.ModelSerializer):
     roomNumber = serializers.CharField(source="room.room_number", read_only=True)
     branchId = serializers.UUIDField(source="branch_id", read_only=True)
     roomId = serializers.UUIDField(source="room_id", read_only=True)
+    assignedTo = serializers.UUIDField(source="assigned_to_id", allow_null=True, required=False)
 
     class Meta:
         model = HousekeepingTask
@@ -98,6 +124,8 @@ class HousekeepingTaskSerializer(serializers.ModelSerializer):
             "room",
             "roomId",
             "roomNumber",
+            "assigned_to",
+            "assignedTo",
             "status",
             "note",
             "completed_at",

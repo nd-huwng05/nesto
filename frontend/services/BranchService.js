@@ -52,6 +52,12 @@ export const fetchGuestSegments = async () => {
     return {status: 'success', data: res.data?.guestSegments || []};
 };
 
+export const fetchCatalogThemes = async () => {
+    const res = await fetchBusinessMetadata();
+    if (res.status !== 'success') return res;
+    return {status: 'success', data: res.data?.catalogThemes || []};
+};
+
 export const fetchRoomAmenityOptions = async () => {
     const res = await fetchBusinessMetadata();
     if (res.status !== 'success') return res;
@@ -165,6 +171,16 @@ export const fetchRoomTypes = async (branchId) => {
     } catch (error) {
         console.error("API Error: ", error.response?.data || error.message);
         return fail(error, 'Unable to fetch room types.');
+    }
+};
+
+export const fetchRoomTypeDetail = async (roomTypeId) => {
+    try {
+        const response = await api.get(endpoints['room-type-detail'](roomTypeId));
+        return ok(response);
+    } catch (error) {
+        console.error("API Error: ", error.response?.data || error.message);
+        return fail(error, 'Unable to fetch room type.');
     }
 };
 

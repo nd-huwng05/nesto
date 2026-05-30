@@ -2,9 +2,8 @@ import re
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
-from accounts.models import Role, User
-from core.services.serializer_mixins import CloudinaryRepresentationMixin
-from core.services.cloudinary_service import CloudinaryMediaService
+from accounts.models import Role, User, UserNotification
+import cloudinary.uploader
 
 User = get_user_model()
 
@@ -17,45 +16,52 @@ class PhoneValidationMixin:
             raise serializers.ValidationError("Phone number must be at least 8 digits.")
         return normalized
 
-class UserSerializer(PhoneValidationMixin, CloudinaryRepresentationMixin, serializers.ModelSerializer):
+class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
+    """Authenticated profile — sole source of user metadata for clients."""
+
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     groups = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
     branchId = serializers.SerializerMethodField()
     department = serializers.SerializerMethodField()
     jobRole = serializers.SerializerMethodField()
+    serviceCategory = serializers.SerializerMethodField()
+    uiFlow = serializers.SerializerMethodField()
     preferredLocation = serializers.CharField(source="preferred_location", required=False, allow_blank=True)
     preferredLatitude = serializers.FloatField(source="preferred_latitude", required=False, allow_null=True)
     preferredLongitude = serializers.FloatField(source="preferred_longitude", required=False, allow_null=True)
-
-    cloudinary_field_map = {"avatar": "avatar"}
 
     def get_groups(self, obj):
         return [group.name for group in obj.groups.all()]
 
     def get_avatar(self, obj):
-        return CloudinaryMediaService.resolve_field_url(getattr(obj, "avatar", None))
+        try:
+            return obj.avatar.url if getattr(obj, "avatar", None) else ""
+        except Exception:
+            return ""
 
     def get_branchId(self, obj):
-        try:
-            sp = getattr(obj, "staff_profile", None)
-            return str(sp.branch_id) if sp and getattr(sp, "branch_id", None) else ""
-        except Exception:
-            return ""
+        sp = getattr(obj, "staff_profile", None)
+        if sp and getattr(sp, "branch_id", None):
+            return str(sp.branch_id)
+        return ""
 
     def get_department(self, obj):
-        try:
-            sp = getattr(obj, "staff_profile", None)
-            return str(getattr(sp, "department", "") or "")
-        except Exception:
-            return ""
+        sp = getattr(obj, "staff_profile", None)
+        return str(getattr(sp, "department", "") or "") if sp else ""
 
     def get_jobRole(self, obj):
-        try:
-            sp = getattr(obj, "staff_profile", None)
-            return str(getattr(sp, "job_role", "") or "")
-        except Exception:
-            return ""
+        sp = getattr(obj, "staff_profile", None)
+        return str(getattr(sp, "job_role", "") or "") if sp else ""
+
+    def get_serviceCategory(self, obj):
+        sp = getattr(obj, "staff_profile", None)
+        return str(getattr(sp, "service_category", "") or "") if sp else ""
+
+    def get_uiFlow(self, obj):
+        from accounts.services.role_sync_service import resolve_ui_flow
+
+        return resolve_ui_flow(obj)
 
     class Meta:
         model = User
@@ -68,26 +74,22 @@ class UserSerializer(PhoneValidationMixin, CloudinaryRepresentationMixin, serial
             'role',
             'role_display',
             'groups',
-            'is_active',
-            'is_staff',
-            'is_superuser',
             'branchId',
             'department',
             'jobRole',
+            'serviceCategory',
+            'uiFlow',
             'preferredLocation',
             'preferredLatitude',
             'preferredLongitude',
         ]
-        read_only_fields = ['id', 'email']
+        read_only_fields = ['id', 'email', 'role', 'role_display', 'groups', 'branchId', 'department', 'jobRole', 'serviceCategory', 'uiFlow']
 
 class SendOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
     def validate_email(self, value):
-        email = value.lower().strip()
-        if User.objects.filter(email=email).exists():
-            raise serializers.ValidationError("This email is already registered.")
-        return email
+        return value.lower().strip()
 
 
 class SendBusinessContactOTPSerializer(serializers.Serializer):
@@ -152,10 +154,14 @@ class UserRegistrationSerializer(PhoneValidationMixin, serializers.ModelSerializ
         validated_data.pop('confirm_password')
         validated_data.pop('register_token')
         validated_data['is_active'] = True
-        return User.objects.create_user(**validated_data)
+        user = User.objects.create_user(**validated_data)
+        from accounts.services.role_sync_service import RoleSyncService
+        RoleSyncService.sync_user_groups(user)
+        return user
 
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
+
 
 class ResetPasswordSerializer(serializers.Serializer):
     token = serializers.CharField(required=True)
@@ -186,3 +192,14 @@ class ChangePasswordSerializer(serializers.Serializer):
         except Exception as exc:
             raise serializers.ValidationError({"new_password": list(getattr(exc, "messages", [str(exc)]))})
         return data
+
+
+class UserNotificationSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(read_only=True)
+    type = serializers.CharField(source="notification_type", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+
+    class Meta:
+        model = UserNotification
+        fields = ["id", "title", "message", "type", "notification_type", "meta", "read", "createdAt", "created_at"]
+        read_only_fields = fields

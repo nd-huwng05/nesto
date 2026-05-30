@@ -1,9 +1,7 @@
-import {useEffect, useState} from 'react';
-import {Image, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {AntDesign, Ionicons} from '@expo/vector-icons';
-
-const DEFAULT_WATCHLIST_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80';
-const DEFAULT_REVIEWER_AVATAR = 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=500&q=80';
+import RemoteImage from '../common/RemoteImage';
+import Avatar from '../common/Avatar';
 
 export function formatMoney(amount, currency) {
     const safeAmount = Number.isFinite(amount) ? amount : 0;
@@ -27,21 +25,20 @@ export function FilterPill({icon, label, light = false, selected = false, onPres
 }
 
 export function GalleryStrip({gallery}) {
-    const [fallbackSet, setFallbackSet] = useState({});
+    const items = (Array.isArray(gallery) ? gallery : [])
+        .map((uri) => String(uri || '').trim())
+        .filter(Boolean);
 
-    const handleGalleryImageError = (index) => {
-        setFallbackSet((prev) => ({...prev, [index]: true}));
-    };
+    if (!items.length) return null;
 
     return (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-5" contentContainerStyle={styles.galleryRow}>
-            {gallery.map((uri, index) => (
-                <Image
+            {items.map((uri, index) => (
+                <RemoteImage
                     key={`${uri}-${index}`}
-                    source={{uri: fallbackSet[index] ? DEFAULT_WATCHLIST_IMAGE : uri}}
-                    className="w-28 h-24 rounded-[18px] mr-4"
+                    uri={uri}
+                    style={{width: 112, height: 96, borderRadius: 18, marginRight: 16}}
                     resizeMode="cover"
-                    onError={() => handleGalleryImageError(index)}
                 />
             ))}
         </ScrollView>
@@ -76,21 +73,11 @@ export function RatingRow({rating, reviews}) {
 export function RoomCard({room, onViewDetail}) {
     const priceAmount = room?.price?.amount;
     const priceCurrency = room?.price?.currency ?? 'VND';
-    const [roomImage, setRoomImage] = useState(room?.image ?? DEFAULT_WATCHLIST_IMAGE);
-
-    useEffect(() => {
-        setRoomImage(room?.image ?? DEFAULT_WATCHLIST_IMAGE);
-    }, [room?.image]);
-
-    const handleRoomImageError = () => {
-        if (roomImage !== DEFAULT_WATCHLIST_IMAGE) {
-            setRoomImage(DEFAULT_WATCHLIST_IMAGE);
-        }
-    };
+    const roomImage = String(room?.image || '').trim();
 
     return (
         <View className="rounded-[24px] bg-white p-3 mb-5 flex-row" style={styles.cardShadow}>
-            <Image source={{uri: roomImage}} className="w-[136px] h-[116px] rounded-[20px]" resizeMode="cover" onError={handleRoomImageError}/>
+            <RemoteImage uri={roomImage} style={{width: 136, height: 116, borderRadius: 20}} resizeMode="cover" />
             <View className="flex-1 ml-3 justify-between">
                 <View className="flex-row items-start justify-between">
                     <Text className="font-sf-bold text-[18px] text-black flex-1 pr-2">{room.name}</Text>
@@ -151,30 +138,9 @@ export function FeaturedTag({label, onRemove}) {
 }
 
 export function WatchlistCard({watchlist}) {
-    const sourceImage = watchlist?.image ?? DEFAULT_WATCHLIST_IMAGE;
-    const sourceAvatar = watchlist?.avatar ?? DEFAULT_REVIEWER_AVATAR;
-    const [activeImage, setActiveImage] = useState(sourceImage);
-    const [activeAvatar, setActiveAvatar] = useState(sourceAvatar);
-
-    useEffect(() => {
-        setActiveImage(sourceImage);
-    }, [sourceImage]);
-
-    useEffect(() => {
-        setActiveAvatar(sourceAvatar);
-    }, [sourceAvatar]);
-
-    const handleImageError = () => {
-        if (activeImage !== DEFAULT_WATCHLIST_IMAGE) {
-            setActiveImage(DEFAULT_WATCHLIST_IMAGE);
-        }
-    };
-
-    const handleAvatarError = () => {
-        if (activeAvatar !== DEFAULT_REVIEWER_AVATAR) {
-            setActiveAvatar(DEFAULT_REVIEWER_AVATAR);
-        }
-    };
+    const imageUri = String(watchlist?.image || '').trim();
+    const avatarUri = String(watchlist?.avatar || '').trim();
+    const reviewerName = String(watchlist?.reviewer || 'Guest').trim() || 'Guest';
 
     return (
         <View className="rounded-[26px] bg-black p-4 mt-2 mb-8">
@@ -182,17 +148,15 @@ export function WatchlistCard({watchlist}) {
             <Text className="text-white text-[14px] mt-1">{watchlist.subtitle}</Text>
 
             <View className="mt-4 rounded-[24px] overflow-hidden">
-                <Image source={{uri: activeImage}} className="w-full h-[360px]" resizeMode="cover" onError={handleImageError}/>
+                <RemoteImage uri={imageUri} style={{width: '100%', height: 360}} resizeMode="cover" />
                 <View style={styles.reviewBubble}>
                     <Text className="text-white text-[14px]">{watchlist.review}</Text>
                 </View>
             </View>
 
             <View className="flex-row items-center justify-center mt-4">
-                <View className="w-[24px] h-[24px] rounded-full overflow-hidden border border-[#1f8fff] mr-3">
-                    <Image source={{uri: activeAvatar}} className="w-full h-full" resizeMode="cover" onError={handleAvatarError}/>
-                </View>
-                <Text className="text-white text-[15px]">{watchlist.reviewer}</Text>
+                <Avatar uri={avatarUri} name={reviewerName} size={24} />
+                <Text className="text-white text-[15px] ml-3">{reviewerName}</Text>
             </View>
         </View>
     );

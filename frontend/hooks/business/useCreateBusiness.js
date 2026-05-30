@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {createBusiness, fetchLodgingTypes} from '../../services/BranchService';
 import {useAuthOTP} from '../account/useAuthOTP';
 import {useValidation, REGEX_EMAIL, REGEX_PHONE} from '../validations/useFormValidation';
-import {getImagePickerMediaTypes, resolveApiPayloadLogo} from '../../utils/mediaUrl';
+import {getImagePickerMediaTypes, resolveMediaForApi} from '../../utils/mediaUrl';
 
 export function useCreateBusiness(navigation, route) {
     const [step, setStep] = useState(1);
@@ -94,7 +94,7 @@ export function useCreateBusiness(navigation, route) {
         setIsLoading(true);
 
         try {
-            const remoteLogo = resolveApiPayloadLogo(logo);
+            const remoteLogo = await resolveMediaForApi(logo, 'nesto/business');
             const newBusinessPayload = {
                 name: String(name || '').trim(),
                 lodgingType: type,

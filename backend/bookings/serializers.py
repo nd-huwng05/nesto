@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from bookings.services.billing_service import build_booking_bill, build_final_bill
-from bookings.models import Booking, BookingExtraService
+from bookings.models import Booking, BookingExtraService, BookingLineItem, build_display_code
 from core.services.serializer_mixins import CloudinaryRepresentationMixin
 from core.services.cloudinary_service import CloudinaryMediaService
 
@@ -10,6 +10,25 @@ class BookingExtraServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = BookingExtraService
         fields = ["id", "service_key", "summary", "amount", "created_at", "updated_at"]
+
+
+class BookingLineItemSerializer(serializers.ModelSerializer):
+    line_id = serializers.UUIDField(source="id", read_only=True)
+    display_code = serializers.SerializerMethodField()
+    name = serializers.CharField(source="summary", read_only=True)
+    price = serializers.IntegerField(source="amount", read_only=True)
+
+    class Meta:
+        model = BookingLineItem
+        fields = [
+            "id", "line_id", "service_key", "service_code", "line_no", "display_code",
+            "summary", "name", "amount", "price", "category", "status", "source",
+            "assigned_staff", "assigned_to", "items", "room_number", "guest_name", "guest_phone",
+            "created_at", "updated_at",
+        ]
+
+    def get_display_code(self, obj):
+        return build_display_code(obj.service_code, obj.line_no)
 
 
 class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
@@ -21,9 +40,11 @@ class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
     checkOutTime = serializers.SerializerMethodField()
     originalRoomNumber = serializers.CharField(source="original_room_number", required=False, allow_blank=True)
     roomChangeNote = serializers.CharField(source="room_change_note", required=False, allow_blank=True)
+    specialRequests = serializers.CharField(source="special_requests", required=False, allow_blank=True)
     hourlyRate = serializers.IntegerField(source="hourly_rate", required=False)
     basePrice = serializers.IntegerField(source="base_price", required=False)
     extraServices = BookingExtraServiceSerializer(source="extra_services", many=True, read_only=True)
+    lineItems = BookingLineItemSerializer(source="line_items", many=True, read_only=True)
     servicesTotal = serializers.SerializerMethodField()
     roomTotal = serializers.SerializerMethodField()
     subtotal = serializers.SerializerMethodField()
@@ -87,6 +108,7 @@ class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
             "hotel_address",
             "originalRoomNumber",
             "roomChangeNote",
+            "specialRequests",
             "hourlyRate",
             "basePrice",
             "roomPrice",
@@ -115,8 +137,19 @@ class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
             "discount",
             "payment_method",
             "extraServices",
+            "lineItems",
             "created_at",
             "updated_at",
+        ]
+        read_only_fields = [
+            "status",
+            "booking_code",
+            "base_price",
+            "deposit_amount",
+            "room_price",
+            "check_in_at",
+            "check_out_at",
+            "expected_check_out_at",
         ]
 
     def get_roomNumber(self, obj):
@@ -248,6 +281,21 @@ class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
                 data[key] = None
             elif not CloudinaryMediaService.is_http_url(str(value)):
                 data[key] = CloudinaryMediaService.resolve_legacy_url(str(value))
+
+        line_items = data.get("lineItems") or []
+        legacy_services = data.get("extraServices") or []
+        if line_items and not legacy_services:
+            data["extraServices"] = [
+                {
+                    "id": item.get("id"),
+                    "service_key": item.get("service_key") or item.get("serviceKey"),
+                    "summary": item.get("summary") or item.get("name") or "Service",
+                    "amount": item.get("amount") or item.get("price") or 0,
+                    "created_at": item.get("created_at"),
+                    "updated_at": item.get("updated_at"),
+                }
+                for item in line_items
+            ]
         return data
 
 
@@ -273,6 +321,7 @@ class CustomerBookingCreateSerializer(serializers.ModelSerializer):
             "guest_name",
             "email",
             "phone",
+            "special_requests",
             "check_in_at",
             "expected_check_out_at",
             "service_ids",
@@ -308,6 +357,7 @@ from bookings.models import ReviewForumPost
 
 
 class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
+    booking_id = serializers.SerializerMethodField()
     author_name = serializers.SerializerMethodField()
     author_email = serializers.SerializerMethodField()
     author_avatar = serializers.SerializerMethodField()
@@ -355,6 +405,11 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
             "liked_by_me",
             "likedByMe",
         ]
+
+    def get_booking_id(self, obj):
+        if obj.booking_ref_id:
+            return str(obj.booking_ref_id)
+        return ""
 
     def _author_user(self, obj):
         return getattr(obj, "customer", None)
@@ -438,6 +493,7 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
 
 
 class ReviewForumPostCreateSerializer(serializers.ModelSerializer):
+    booking_id = serializers.CharField(required=False, allow_blank=True, write_only=True)
     branch_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
     image_url = serializers.URLField(required=False, allow_blank=True, write_only=True)
 

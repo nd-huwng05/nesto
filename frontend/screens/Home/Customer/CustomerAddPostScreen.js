@@ -16,10 +16,13 @@ const normalizeBookingId = (value) => {
     return normalized.startsWith('#') ? normalized : `#${normalized}`;
 };
 
-export default function CustomerAddPostScreen({navigation}) {
+export default function CustomerAddPostScreen({navigation, route}) {
+    const routeParams = route?.params || {};
     const [currentUser, setCurrentUser] = useState({name: 'Guest', email: ''});
     const [bookingRecords, setBookingRecords] = useState([]);
-    const [bookingIdInput, setBookingIdInput] = useState('');
+    const [bookingIdInput, setBookingIdInput] = useState(() =>
+        normalizeBookingId(routeParams.bookingId || routeParams.booking_id || '')
+    );
     const [matchedBooking, setMatchedBooking] = useState(null);
     const [draftImageUri, setDraftImageUri] = useState('');
     const [draftComment, setDraftComment] = useState('');
@@ -79,6 +82,17 @@ export default function CustomerAddPostScreen({navigation}) {
                 if (mounted) {
                     setBookingRecords(Array.from(deduped.values()));
                 }
+
+                const prefilledId = normalizeBookingId(routeParams.bookingId || routeParams.booking_id || '');
+                if (mounted && prefilledId) {
+                    const found = Array.from(deduped.values()).find(
+                        (item) => normalizeBookingId(item?.bookingId) === prefilledId
+                    );
+                    if (found) {
+                        setMatchedBooking(found);
+                        setBookingIdInput(prefilledId);
+                    }
+                }
             } catch {
                 if (mounted) {
                     setBookingRecords([]);
@@ -91,7 +105,7 @@ export default function CustomerAddPostScreen({navigation}) {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [routeParams.bookingId, routeParams.booking_id]);
 
     const bookingCountText = useMemo(() => {
         return `${bookingRecords.length} verified booking(s) available`;

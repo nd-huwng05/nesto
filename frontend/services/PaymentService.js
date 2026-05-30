@@ -119,3 +119,30 @@ export const initiateZaloPayPayment = async ({
         return fail(err, 'Unable to start ZaloPay payment.');
     }
 };
+
+export const fetchPaymentStatus = async (bookingId) => {
+    try {
+        const response = await api.get(endpoints['payment-status'](bookingId));
+        return ok(response, response.data);
+    } catch (err) {
+        return fail(err, 'Unable to check payment status.');
+    }
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const pollPaymentUntilConfirmed = async (
+    bookingId,
+    {maxAttempts = 30, intervalMs = 2000} = {}
+) => {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const result = await fetchPaymentStatus(bookingId);
+        if (result.status === 'success' && result.data?.depositPaid) {
+            return {confirmed: true, data: result.data};
+        }
+        if (attempt < maxAttempts - 1) {
+            await sleep(intervalMs);
+        }
+    }
+    return {confirmed: false, data: null};
+};

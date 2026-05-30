@@ -1,5 +1,13 @@
-from django.db import migrations, models
 import django.db.models.deletion
+from django.db import migrations, models
+
+
+def add_review_fields_if_missing(apps, schema_editor):
+    pass
+
+
+def noop_reverse(apps, schema_editor):
+    pass
 
 
 class Migration(migrations.Migration):
@@ -30,4 +38,3 @@ class Migration(migrations.Migration):
             ),
         ),
     ]
-

@@ -1,4 +1,3 @@
-import { Text } from 'react-native';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { QuestionLayout } from '../../layout/QuestionLayout';
@@ -6,7 +5,7 @@ import { AuthTextField } from '../../components/auth/AuthTextField';
 import { AuthAlternateButton } from '../../components/auth/AuthAlternateButton';
 import { emailSchema } from '../../validation/authSchemas';
 import { useGoogleAuth } from '../../hooks/account/useGoogleAuth';
-import { resetToHomeFlow } from '../../utils/navigation';
+import { Text } from 'react-native';
 
 const TERMS_FOOTER = (
     <Text className="text-[12px] font-sf text-gray-400 mb-4 text-center w-3/4">
@@ -16,12 +15,8 @@ const TERMS_FOOTER = (
     </Text>
 );
 
-const navigateByRole = (navigation) => {
-    resetToHomeFlow(navigation);
-};
-
 export default function EmailLoginScreen({ navigation }) {
-    const { login: googleLogin, isLoading: isGoogleLoading } = useGoogleAuth();
+    const { login: googleLogin, googleTemporarilyDisabled } = useGoogleAuth(navigation);
 
     const {
         control,
@@ -37,11 +32,8 @@ export default function EmailLoginScreen({ navigation }) {
         navigation.navigate('PasswordScreen', { email: email.trim().toLowerCase() });
     };
 
-    const handleGoogleLogin = async () => {
-        const result = await googleLogin();
-        if (result.success && result.user) {
-            navigateByRole(navigation, result.user);
-        }
+    const handleGoogleLogin = () => {
+        googleLogin();
     };
 
     return (
@@ -64,9 +56,15 @@ export default function EmailLoginScreen({ navigation }) {
 
             <AuthAlternateButton
                 icon="google"
-                label={isGoogleLoading ? 'Connecting...' : 'Continue with Google'}
+                label="Continue with Google"
                 onPress={handleGoogleLogin}
             />
+
+            {googleTemporarilyDisabled ? (
+                <Text className="text-[11px] font-sf text-gray-400 mt-2 text-center px-2">
+                    Google Sign-In cần build dev app — dùng email/mật khẩu hoặc cấu hình EXPO_PUBLIC_WEB_CLIENT_ID.
+                </Text>
+            ) : null}
         </QuestionLayout>
     );
 }

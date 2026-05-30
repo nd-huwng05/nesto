@@ -15,12 +15,10 @@ const fail = (err, fallback) => ({
 const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
 
 export const STAFF_ROLES = [
-    'ADMIN',
     'RECEPTIONIST',
     'HOUSEKEEPING',
-    'SERVICE',
-    'RESTAURANT',
     'SPA',
+    'RESTAURANT',
     'DRIVER',
 ];
 

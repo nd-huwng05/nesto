@@ -3,11 +3,12 @@ from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from accounts.services.permissions import IsBusinessMember
+from accounts.permissions import IsBusinessMember
+from accounts.services.tenant_queryset import TenantQuerysetService
 from businesses.models import Branch, Company, Department
 from businesses.serializers import BranchSerializer, CompanySerializer, DepartmentSerializer
 from businesses.services.analytics_service import BusinessAnalyticsService
-from staff.models import StaffProfile
+from rooms.models import RoomTheme
 
 
 @extend_schema(tags=["Businesses"])
@@ -15,11 +16,14 @@ class CompanyViewSet(viewsets.ModelViewSet):
     serializer_class = CompanySerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [permissions.IsAuthenticated(), IsBusinessMember()]
+        return [permissions.IsAuthenticated()]
+
     def get_queryset(self):
-        user = self.request.user
-        if getattr(user, "role", None) in {"SUPER_ADMIN", "BUSINESS_OWNER"}:
-            return Company.objects.filter(manager=user).order_by("-created_at")
-        return Company.objects.none()
+        qs = Company.objects.all().order_by("-created_at")
+        return TenantQuerysetService.filter_companies(qs, self.request.user)
 
 
 @extend_schema(tags=["Businesses"])
@@ -33,19 +37,8 @@ class BranchViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated(), IsBusinessMember()]
 
     def get_queryset(self):
-        user = self.request.user
         qs = Branch.objects.select_related("company").order_by("-created_at")
-        role = getattr(user, "role", None)
-        if role in {"SUPER_ADMIN", "BUSINESS_OWNER"}:
-            qs = qs.filter(company__manager=user)
-        else:
-            staff_branch_id = (
-                StaffProfile.objects.filter(user=user).values_list("branch_id", flat=True).first()
-            )
-            if staff_branch_id:
-                qs = qs.filter(id=staff_branch_id)
-            else:
-                qs = qs.none()
+        qs = TenantQuerysetService.filter_branches(qs, self.request.user)
 
         company_id = self.request.query_params.get("businessId") or self.request.query_params.get("company")
         if company_id:
@@ -79,6 +72,19 @@ class BusinessMetadataViewSet(viewsets.GenericViewSet):
                     "Restaurant",
                 ],
                 "guestSegments": ["Family", "Business", "Solo", "Couple", "Group"],
+                "catalogThemes": [
+                    {
+                        "id": str(theme.id),
+                        "name": theme.name,
+                        "slug": theme.slug,
+                        "icon": theme.icon,
+                        "description": theme.description,
+                        "sortOrder": theme.sort_order,
+                    }
+                    for theme in RoomTheme.objects.filter(is_active=True, show_in_tabs=True).order_by(
+                        "sort_order", "name"
+                    )
+                ],
                 "roomAmenities": [
                     "Air Conditioner",
                     "TV",
@@ -105,10 +111,12 @@ class BusinessAnalyticsViewSet(viewsets.GenericViewSet):
             months = int(qp.get("months", 6) or 6)
         except (TypeError, ValueError):
             months = 6
+        period = str(qp.get("period") or qp.get("periodType") or "month").strip().lower()
         payload = BusinessAnalyticsService.build_dashboard(
             request.user,
             business_id=business_id,
             branch_id=branch_id,
             months=months,
+            period=period,
         )
         return Response(payload)

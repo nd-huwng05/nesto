@@ -5,6 +5,7 @@ import {DetailScreenHeader} from '../../../components/business/DetailScreenHeade
 import {MultiImagePicker} from '../../../components/business/MultiImagePicker';
 import {useBranchCRUD} from '../../../hooks/business/useBranchCRUD';
 import {fetchBranchDetail, updateBranch} from '../../../services/BranchService';
+import {resolveMediaListForApi} from '../../../utils/mediaUrl';
 
 export default function EditBranchMediaScreen({navigation, route}) {
     const {branchId} = route.params || {};
@@ -52,7 +53,12 @@ export default function EditBranchMediaScreen({navigation, route}) {
         }
         setSaving(true);
         try {
-            const res = await updateBranch(branchId, {images, image: images[0]});
+            const uploaded = await resolveMediaListForApi(images, 'nesto/branches');
+            if (!uploaded.length) {
+                Alert.alert('Error', 'Could not upload photos.');
+                return;
+            }
+            const res = await updateBranch(branchId, {images: uploaded, image: uploaded[0]});
             if (res.status === 'success') {
                 Alert.alert('Saved', 'Branch photos updated.', [
                     {text: 'OK', onPress: () => navigation.goBack()},

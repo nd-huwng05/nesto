@@ -14,6 +14,7 @@ channels-redis>=4.2.0
 
 # OAuth 2.0
 django-oauth-toolkit>=2.3.0
+google-auth>=2.29.0
 
 # Cloud Storage
 cloudinary>=1.36.0  # Optional, for image uploads

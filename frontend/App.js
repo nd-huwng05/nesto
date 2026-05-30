@@ -14,6 +14,25 @@ import {resetToAccountFlow} from "./utils/navigation";
 
 const Stack = createNativeStackNavigator()
 
+const linking = {
+    prefixes: ['nesto://'],
+    config: {
+        screens: {
+            AccountFlow: {
+                screens: {
+                    ResetPasswordScreen: {
+                        path: 'reset-password',
+                        parse: {
+                            uid: (uid) => String(uid || ''),
+                            token: (token) => String(token || ''),
+                        },
+                    },
+                },
+            },
+        },
+    },
+};
+
 function AppNavigator() {
     const {initialRoute} = useContext(GlobalContext)
     const navigationRef = useNavigationContainerRef();
@@ -29,7 +48,7 @@ function AppNavigator() {
     return (
         <SafeAreaProvider>
             <ErrorBoundary>
-                <NavigationContainer ref={navigationRef}>
+                <NavigationContainer ref={navigationRef} linking={linking}>
                     <Stack.Navigator screenOptions={{headerShown: false}} initialRouteName={initialRoute}>
                         <Stack.Screen name="OnboardingFlow" component={OnboardingFlow} />
                         <Stack.Screen name="AccountFlow" component={AccountFlow} />

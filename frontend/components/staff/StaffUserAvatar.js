@@ -1,23 +1,25 @@
-import {Image, StyleSheet, View} from 'react-native';
-import {STAFF_MEDIA} from '../../constants/staffMedia';
+import {Image, StyleSheet, Text, View} from 'react-native';
+import {resolveMediaUrl} from '../../utils/mediaUrl';
 
 export function StaffUserAvatar({user, size = 40, style}) {
     const raw = String(user?.avatar || '').trim();
-    const uri = (() => {
-        if (!raw) return STAFF_MEDIA.USER_PLACEHOLDER;
-        if (/^https?:\/\//i.test(raw)) return raw;
-        const base = String(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
-        return base ? `${base}${raw.startsWith('/') ? raw : `/${raw}`}` : raw;
-    })();
+    const uri = resolveMediaUrl(raw);
     const radius = size / 2;
+    const initials = String(user?.name || user?.email || 'U').trim().charAt(0).toUpperCase() || 'U';
 
     return (
         <View style={[styles.wrap, {width: size, height: size, borderRadius: radius}, style]}>
-            <Image
-                source={{uri}}
-                style={{width: size, height: size, borderRadius: radius}}
-                resizeMode="cover"
-            />
+            {uri ? (
+                <Image
+                    source={{uri}}
+                    style={{width: size, height: size, borderRadius: radius}}
+                    resizeMode="cover"
+                />
+            ) : (
+                <View style={[styles.fallback, {width: size, height: size, borderRadius: radius}]}>
+                    <Text style={[styles.fallbackText, {fontSize: Math.max(12, size * 0.38)}]}>{initials}</Text>
+                </View>
+            )}
         </View>
     );
 }
@@ -30,6 +32,15 @@ const styles = StyleSheet.create({
     wrap: {
         overflow: 'hidden',
         backgroundColor: '#e2e8f0',
+    },
+    fallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#8294FF',
+    },
+    fallbackText: {
+        color: '#fff',
+        fontWeight: '700',
     },
     largeShadow: {
         shadowColor: '#8294FF',

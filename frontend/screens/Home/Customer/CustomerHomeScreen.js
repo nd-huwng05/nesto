@@ -3,27 +3,56 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {AntDesign, Ionicons} from '@expo/vector-icons';
 import {useFocusEffect} from '@react-navigation/native';
-import {STAFF_MEDIA} from '../../../constants/staffMedia';
+import RemoteImage from '../../../components/common/RemoteImage';
 import {getUnreadCustomerNotificationCount} from '../../../services/NotificationService';
 import api, {endpoints} from '../../../configuration/Apis';
 import {getSession} from '../../../utils/authStorage';
 import Avatar from '../../../components/common/Avatar';
 import * as Location from 'expo-location';
 import {connectCustomerUpdates} from '../../../services/WebSocketService';
+import {formatVnd} from '../../../utils/formatCurrency';
+import {navigateToCustomerProfile} from '../../../utils/navigation';
 
 const BASE_TABS = ['AI ✨', 'ALL'];
 const PRIMARY = '#5b79df';
-const DEFAULT_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?fit=crop&w=1400&q=80&fm=jpg';
 const DEFAULT_RATING_VALUE = 0;
+
+const sortThemeNamesFromApi = (list, names) => {
+    const unique = Array.from(new Set(names.filter(Boolean)));
+    const orderMap = new Map(
+        (Array.isArray(list) ? list : []).map((row) => [
+            String(row?.name || '').trim(),
+            Number(row?.sortOrder ?? row?.sort_order ?? 999),
+        ])
+    );
+    return unique.sort((a, b) => {
+        const left = orderMap.has(a) ? orderMap.get(a) : 999;
+        const right = orderMap.has(b) ? orderMap.get(b) : 999;
+        if (left !== right) return left - right;
+        return a.localeCompare(b, 'vi');
+    });
+};
+
+const buildShortLocationLabel = (place) => {
+    if (!place || typeof place !== 'object') return '';
+    const district = String(place.district || place.subregion || place.subAdministrativeArea || '').trim();
+    const city = String(place.city || place.region || place.administrativeArea || '').trim();
+    const parts = [district, city].filter(Boolean);
+    if (parts.length >= 2) return `${parts[0]}, ${parts[1]}`;
+    if (parts.length === 1) return parts[0];
+    const street = String(place.street || place.name || place.streetNumber || '').trim();
+    if (street && city) return `${street}, ${city}`.slice(0, 42);
+    return street || city || '';
+};
 
 const toImageUri = (image) => {
     if (typeof image === 'number') {
-        return Image.resolveAssetSource(image)?.uri || DEFAULT_HOTEL_IMAGE;
+        return Image.resolveAssetSource(image)?.uri || '';
     }
     if (typeof image === 'string' && image.trim().length > 0) {
         return image;
     }
-    return DEFAULT_HOTEL_IMAGE;
+    return '';
 };
 
 const normalizeThemeNames = (themes) => {
@@ -45,7 +74,7 @@ function HotelCard({item, onPress, cardWidth}) {
 
     return (
         <TouchableOpacity style={[styles.hotelCard, {width: cardWidth}]} activeOpacity={0.92} onPress={onPress}>
-            <Image source={{uri: imageUri}} style={styles.hotelImage} resizeMode="cover"/>
+            <RemoteImage uri={imageUri} style={styles.hotelImage} resizeMode="cover"/>
             <View style={styles.hotelMeta}>
                 <View style={styles.hotelTitleRow}>
                     <Text style={styles.hotelTitle} numberOfLines={1}>{item.title}</Text>
@@ -191,9 +220,13 @@ export function HomeScreen({navigation}) {
             const rows = res?.data?.results || res?.data || [];
             const list = Array.isArray(rows) ? rows : [];
             setThemes(list);
-            const names = list
-                .map((t) => String(t?.name || '').trim())
-                .filter((name) => Boolean(name) && !BASE_TABS.includes(name));
+            const names = sortThemeNamesFromApi(
+                list,
+                list
+                    .filter((row) => row?.showInTabs !== false && row?.show_in_tabs !== false)
+                    .map((t) => String(t?.name || '').trim())
+                    .filter((name) => Boolean(name) && !BASE_TABS.includes(name))
+            );
             setTabs([...BASE_TABS, ...names]);
         } catch (error) {
             setThemes([]);
@@ -209,6 +242,14 @@ export function HomeScreen({navigation}) {
             const latitude = Number(current?.coords?.latitude);
             const longitude = Number(current?.coords?.longitude);
             if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+            try {
+                const places = await Location.reverseGeocodeAsync({latitude, longitude});
+                const shortLabel = buildShortLocationLabel(places?.[0]);
+                if (shortLabel) setLocationLabel(shortLabel);
+            } catch {
+            }
+
             await loadCatalog({coords: {latitude, longitude}, silent: true});
         } catch {
         }
@@ -319,24 +360,33 @@ export function HomeScreen({navigation}) {
     const handleRefresh = useCallback(async () => {
         setIsRefreshing(true);
         try {
-            await loadCatalog();
+            await Promise.all([
+                loadCatalog(),
+                loadThemes(),
+                attemptLocationRefresh(),
+            ]);
             setUnreadNotificationCount(await getUnreadCustomerNotificationCount());
         } catch (error) {
             Alert.alert('Error', 'Failed to refresh. Please try again.');
         } finally {
             setIsRefreshing(false);
         }
-    }, [loadCatalog]);
+    }, [attemptLocationRefresh, loadCatalog, loadThemes]);
 
     const enrichedCatalog = useMemo(() => {
         const rows = Array.isArray(catalog) ? catalog : [];
-        return rows.map((item) => ({
-            ...item,
-            syncedRating: Number.isFinite(item?.rating) ? item.rating : DEFAULT_RATING_VALUE,
-            reviewCount: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
-            themes: normalizeThemeNames(item?.themes),
-            price: String(item?.price || '').trim(),
-        }));
+        return rows.map((item) => {
+            const minPriceHour = Number(item?.minPriceHour);
+            const priceLabel = String(item?.price || '').trim()
+                || (Number.isFinite(minPriceHour) && minPriceHour > 0 ? `From ${formatVnd(minPriceHour)}/h` : '');
+            return {
+                ...item,
+                syncedRating: Number.isFinite(item?.rating) ? item.rating : DEFAULT_RATING_VALUE,
+                reviewCount: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
+                themes: normalizeThemeNames(item?.themes),
+                price: priceLabel,
+            };
+        });
     }, [catalog]);
 
     const filteredHotels = useMemo(() => {
@@ -355,13 +405,35 @@ export function HomeScreen({navigation}) {
 
     const allTabOrder = tabs.filter((t) => t !== 'AI ✨' && t !== 'ALL');
     const allTabSections = useMemo(() => {
-        const sections = allTabOrder.map((tab) => ({
-            title: tab,
-            data: filterHotelsByKeyword(enrichedCatalog.filter((row) => Array.isArray(row?.themes) && row.themes.includes(tab)), keyword),
-        }));
+        const themedSections = allTabOrder
+            .map((tab) => ({
+                title: tab,
+                data: filterHotelsByKeyword(
+                    enrichedCatalog.filter((row) => Array.isArray(row?.themes) && row.themes.includes(tab)),
+                    keyword,
+                ),
+            }))
+            .filter((section) => section.data.length > 0);
 
-        return keyword ? sections.filter((section) => section.data.length > 0) : sections;
-    }, [enrichedCatalog, keyword]);
+        const unthemed = filterHotelsByKeyword(
+            enrichedCatalog.filter((row) => !Array.isArray(row?.themes) || row.themes.length === 0),
+            keyword,
+        );
+
+        const sections = [];
+        if (unthemed.length) {
+            sections.push({title: 'All stays', data: unthemed});
+        }
+        sections.push(...themedSections);
+
+        if (!sections.length && enrichedCatalog.length) {
+            return [{
+                title: 'All stays',
+                data: filterHotelsByKeyword(enrichedCatalog, keyword),
+            }];
+        }
+        return sections;
+    }, [allTabOrder, enrichedCatalog, keyword]);
 
     if (isLoading && !enrichedCatalog.length) {
         return (
@@ -391,7 +463,7 @@ export function HomeScreen({navigation}) {
                                 </View>
                             ) : null}
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => navigation.navigate('CustomerProfileScreen')}>
+                        <TouchableOpacity onPress={() => navigateToCustomerProfile(navigation)}>
                             <Avatar uri={avatarUrl} name={avatarName} size={44} />
                         </TouchableOpacity>
                     </View>
@@ -484,9 +556,7 @@ export function HomeScreen({navigation}) {
                         <Section title="AI ✨" data={filteredHotels} cardWidth={cardWidth} navigation={navigation}/>
                     )
                 ) : activeTab === 'ALL' ? (
-                    enrichedCatalog.length && allTabOrder.length === 0 ? (
-                        <Section title="All" data={filteredHotels} cardWidth={cardWidth} navigation={navigation}/>
-                    ) : allTabSections.length ? (
+                    allTabSections.length ? (
                         allTabSections.map((section) => (
                             <Section
                                 key={section.title}

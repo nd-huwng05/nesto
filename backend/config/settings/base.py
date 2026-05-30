@@ -132,14 +132,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
 
 def _channel_layer_hosts(redis_url: str):
-    """Parse REDIS_URL for channels_redis (supports redis://host:port/db)."""
+    """Pass REDIS_URL to channels_redis (must keep user/password in URL)."""
     from urllib.parse import urlparse
 
     parsed = urlparse(redis_url)
     if parsed.scheme in {'redis', 'rediss'} and parsed.hostname:
-        port = parsed.port or 6379
-        db = int((parsed.path or '/0').lstrip('/') or 0)
-        return [(parsed.hostname, port, db)]
+        # Full URL preserves :password@ — tuple (host, port, db) drops auth and breaks Redis 6+.
+        return [redis_url]
+
     return [redis_url]
 
 
@@ -174,7 +174,7 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@nesto.local')
 AUTH_USER_MODEL = 'accounts.User'
 
 AUTHENTICATION_BACKENDS = [
-    'accounts.services.oauth_backend.EmailBackend',
+    'accounts.backends.EmailBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
@@ -201,6 +201,8 @@ REST_FRAMEWORK = {
 }
 
 # OAuth2 Provider Settings
+OAUTH_CLIENT_ID = os.getenv('OAUTH_CLIENT_ID', 'ggb9KpzfxhcaIof27VOtdTkLA5puE3J0tNsU68KO')
+
 OAUTH2_PROVIDER = {
     'SCOPES': {
         'read': 'Read access',
@@ -215,7 +217,7 @@ OAUTH2_PROVIDER = {
         'google',
     ),
     'ALLOWED_GRANT_TYPES': ['password', 'refresh_token', 'google'],
-    'OAUTH2_VALIDATOR_CLASS': 'accounts.services.oauth_backend.CustomOAuth2Validator',
+    'OAUTH2_VALIDATOR_CLASS': 'accounts.backends.CustomOAuth2Validator',
 }
 
 # CORS Settings
@@ -283,10 +285,11 @@ LOGGING = {
     },
 }
 
-SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', '')
-SENDGRID_FROM_EMAIL = os.getenv('SENDGRID_FROM', '')
+SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', '').strip()
+SENDGRID_FROM_EMAIL = os.getenv('SENDGRID_FROM', '').strip()
+EMAIL_FORCE_SMTP = os.getenv('EMAIL_FORCE_SMTP', '').lower() == 'true'
 
-if SENDGRID_API_KEY:
+if SENDGRID_API_KEY and SENDGRID_FROM_EMAIL and (EMAIL_FORCE_SMTP or not DEBUG):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = 'smtp.sendgrid.net'
     EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
@@ -297,7 +300,7 @@ if SENDGRID_API_KEY:
 else:
     EMAIL_BACKEND = os.getenv(
         'EMAIL_BACKEND',
-        'django.core.mail.backends.console.EmailBackend'
+        'django.core.mail.backends.console.EmailBackend',
     )
     EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
     EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
@@ -311,15 +314,31 @@ MOMO_SECRET_KEY = os.getenv('MOMO_SECRET_KEY', '')
 MOMO_REDIRECT_URL = os.getenv('MOMO_REDIRECT_URL', 'https://nesto.local/payments/momo/return')
 MOMO_IPN_URL = os.getenv('MOMO_IPN_URL', 'https://nesto.local/payments/momo/ipn')
 MOMO_ENDPOINT = os.getenv('MOMO_ENDPOINT', 'https://test-payment.momo.vn/v2/gateway/api/create')
+MOMO_QUERY_ENDPOINT = os.getenv('MOMO_QUERY_ENDPOINT', 'https://test-payment.momo.vn/v2/gateway/api/query')
+MOMO_REFUND_ENDPOINT = os.getenv('MOMO_REFUND_ENDPOINT', 'https://test-payment.momo.vn/v2/gateway/api/refund')
 
 ZALOPAY_APP_ID = os.getenv('ZALOPAY_APP_ID', '2553')
 ZALOPAY_KEY1 = os.getenv('ZALOPAY_KEY1', '')
+ZALOPAY_KEY2 = os.getenv('ZALOPAY_KEY2', '')
 ZALOPAY_APP_USER = os.getenv('ZALOPAY_APP_USER', 'nesto_guest')
 ZALOPAY_REDIRECT_URL = os.getenv('ZALOPAY_REDIRECT_URL', 'https://nesto.local/payments/zalopay/return')
 ZALOPAY_ENDPOINT = os.getenv('ZALOPAY_ENDPOINT', 'https://sb-openapi.zalopay.vn/v2/create')
+ZALOPAY_QUERY_ENDPOINT = os.getenv('ZALOPAY_QUERY_ENDPOINT', 'https://sb-openapi.zalopay.vn/v2/query')
+ZALOPAY_REFUND_ENDPOINT = os.getenv('ZALOPAY_REFUND_ENDPOINT', 'https://sb-openapi.zalopay.vn/v2/refund')
 
-GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID', '')
-GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', '')
+# When true, or when gateway keys are missing, deposits are confirmed internally (dev/demo).
+PAYMENTS_SANDBOX = os.getenv('PAYMENTS_SANDBOX', '').lower() in ('1', 'true', 'yes')
+
+GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID', '').strip()
+GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', '').strip()
+_raw_google_client_ids = os.getenv('GOOGLE_OAUTH2_CLIENT_IDS', '')
+GOOGLE_OAUTH2_CLIENT_IDS = [
+    cid.strip()
+    for cid in (_raw_google_client_ids.split(',') if _raw_google_client_ids else [])
+    if cid.strip()
+]
+if GOOGLE_OAUTH2_CLIENT_ID and GOOGLE_OAUTH2_CLIENT_ID not in GOOGLE_OAUTH2_CLIENT_IDS:
+    GOOGLE_OAUTH2_CLIENT_IDS.insert(0, GOOGLE_OAUTH2_CLIENT_ID)
 
 SOCIAL_AUTH_GOOGLE_OAUTH2_UTILS_ENDPOINT = (
     'https://oauth2.googleapis.com/tokeninfo'
