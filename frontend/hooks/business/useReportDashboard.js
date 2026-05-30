@@ -55,13 +55,15 @@ export function useReportDashboard() {
                 const res = await fetchReportDashboard(businessId, branchId, period);
                 if (res.status === 'success') {
                     setDashboard(res.data);
-                } else {
+                } else if (!silent) {
                     setDashboard(null);
                     Alert.alert('Error', res.message || 'Unable to load report data.');
                 }
             } catch (err) {
-                setDashboard(null);
-                Alert.alert('Error', getErrorMessage(err, 'Unable to load report data.'));
+                if (!silent) {
+                    setDashboard(null);
+                    Alert.alert('Error', getErrorMessage(err, 'Unable to load report data.'));
+                }
             } finally {
                 setIsLoading(false);
                 setIsRefreshing(false);

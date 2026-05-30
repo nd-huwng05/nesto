@@ -1,14 +1,12 @@
-from django.db import transaction
 from drf_spectacular.utils import extend_schema
-from rest_framework import permissions, status, viewsets
-from rest_framework.decorators import action
-from rest_framework.response import Response
+from rest_framework import permissions, viewsets
 
-from accounts.permissions import IsBusinessMember, IsServiceMember
+from accounts.permissions import IsBusinessMember
 from accounts.services.tenant_queryset import TenantQuerysetService
-from service_orders.models import ExtraService, ServiceOrder
-from service_orders.serializers import ExtraServiceSerializer, ServiceOrderSerializer
-from service_orders.services.order_notification_service import OrderNotificationService
+from service_orders.models import ExtraService
+from service_orders.serializers import ExtraServiceSerializer
+
+
 @extend_schema(tags=["Service Orders"])
 class ExtraServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ExtraServiceSerializer
@@ -34,80 +32,3 @@ class ExtraServiceViewSet(viewsets.ModelViewSet):
         if branch_id:
             qs = qs.filter(branch_id=branch_id)
         return qs
-
-
-@extend_schema(tags=["Service Orders"])
-class ServiceOrderViewSet(viewsets.ModelViewSet):
-    serializer_class = ServiceOrderSerializer
-    permission_classes = [permissions.IsAuthenticated, IsServiceMember]
-
-    def get_queryset(self):
-        qs = ServiceOrder.objects.select_related("booking", "branch").order_by("-created_at")
-        qs = TenantQuerysetService.filter_by_branch_membership(qs, self.request.user)
-        branch_id = self.request.query_params.get("branch_id") or self.request.query_params.get("branch")
-        if branch_id:
-            qs = qs.filter(branch_id=branch_id)
-        return qs
-
-    def perform_create(self, serializer):
-        order = serializer.save()
-        OrderNotificationService.notify_order_updated(order)
-        OrderNotificationService.notify_branch_task(order, event_type="task_created")
-
-    def perform_update(self, serializer):
-        order = serializer.save()
-        OrderNotificationService.notify_order_updated(order)
-        OrderNotificationService.notify_branch_task(order, event_type="task_updated")
-
-    @extend_schema(tags=["Service Orders"])
-    @action(detail=True, methods=["post"])
-    @transaction.atomic
-    def accept(self, request, pk=None):
-        order = self.get_object()
-        if order.status not in {"PENDING"}:
-            return Response({"detail": "Only pending orders can be accepted."}, status=status.HTTP_400_BAD_REQUEST)
-        order.status = ServiceOrder.Status.CONFIRMED
-        order.assigned_staff = request.user.name or request.user.email
-        order.save(update_fields=["status", "assigned_staff", "updated_at"])
-        OrderNotificationService.notify_order_updated(order)
-        OrderNotificationService.notify_branch_task(order, event_type="task_updated")
-        return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
-
-    @extend_schema(tags=["Service Orders"])
-    @action(detail=True, methods=["post"])
-    @transaction.atomic
-    def start(self, request, pk=None):
-        order = self.get_object()
-        if order.status not in {ServiceOrder.Status.CONFIRMED}:
-            return Response({"detail": "Only confirmed orders can be started."}, status=status.HTTP_400_BAD_REQUEST)
-        order.status = "IN_PROGRESS"
-        order.save(update_fields=["status", "updated_at"])
-        OrderNotificationService.notify_order_updated(order)
-        OrderNotificationService.notify_branch_task(order, event_type="task_updated")
-        return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
-
-    @extend_schema(tags=["Service Orders"])
-    @action(detail=True, methods=["post"])
-    @transaction.atomic
-    def complete(self, request, pk=None):
-        order = self.get_object()
-        if order.status not in {"IN_PROGRESS"}:
-            return Response({"detail": "Only in-progress orders can be completed."}, status=status.HTTP_400_BAD_REQUEST)
-        order.status = "COMPLETED"
-        order.save(update_fields=["status", "updated_at"])
-        OrderNotificationService.notify_order_updated(order)
-        OrderNotificationService.notify_branch_task(order, event_type="task_updated")
-        return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
-
-    @extend_schema(tags=["Service Orders"])
-    @action(detail=True, methods=["post"])
-    @transaction.atomic
-    def cancel(self, request, pk=None):
-        order = self.get_object()
-        if order.status in {"COMPLETED", "CANCELLED"}:
-            return Response({"detail": "Order is already closed."}, status=status.HTTP_400_BAD_REQUEST)
-        order.status = "CANCELLED"
-        order.save(update_fields=["status", "updated_at"])
-        OrderNotificationService.notify_order_updated(order)
-        OrderNotificationService.notify_branch_task(order, event_type="task_updated")
-        return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)

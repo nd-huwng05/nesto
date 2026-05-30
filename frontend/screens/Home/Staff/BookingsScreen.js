@@ -21,23 +21,85 @@ import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 import {fetchBookingsForDay} from '../../../services/ReceptionService';
 import {buildDateStripe, toDateKey} from '../../../utils/staffBookingOps';
 import {connectBookingUpdates} from '../../../services/WebSocketService';
-import {UI, cardStyle} from '../../../styles/uiTokens';
+import {UI} from '../../../styles/uiTokens';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-function badgeStyle(status) {
+function formatVnd(amount) {
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    return `${value.toLocaleString('en-US')} VND`;
+}
+
+function getBookingStatusBadge(status, statusLabel) {
     const key = String(status || '').trim().toUpperCase();
-    if (key === 'CHECKED_IN') return styles.badgeInHouse;
-    if (key === 'CHECKED_OUT') return styles.badgeDone;
-    return styles.badgePending;
+    const label = String(statusLabel || '').trim() || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    if (key === 'CHECKED_IN') {
+        return {label, badgeStyle: styles.badgeBlue, textStyle: styles.badgeTextBlue};
+    }
+    if (key === 'CHECKED_OUT') {
+        return {label, badgeStyle: styles.badgeGreen, textStyle: styles.badgeTextGreen};
+    }
+    if (key === 'CONFIRMED') {
+        return {label, badgeStyle: styles.badgeGreen, textStyle: styles.badgeTextGreen};
+    }
+    if (key === 'CANCELLED' || key === 'CANCELLED_NO_SHOW') {
+        return {label, badgeStyle: styles.badgeRed, textStyle: styles.badgeTextRed};
+    }
+    return {label, badgeStyle: styles.badgeYellow, textStyle: styles.badgeTextYellow};
 }
 
 function matchesSearch(booking, query) {
     if (!query) return true;
     const q = query.toLowerCase();
-    const name = String(booking.guestName || '').toLowerCase();
+    const name = String(booking.guest_name || booking.guestName || '').toLowerCase();
     const phone = String(booking.phone || '').replace(/\s/g, '');
     const phoneQuery = query.replace(/\s/g, '');
-    return name.includes(q) || phone.includes(phoneQuery);
+    const code = String(booking.booking_code || booking.bookingCode || '').toLowerCase();
+    const roomType = String(booking.room_type || booking.roomType || '').toLowerCase();
+    return name.includes(q) || phone.includes(phoneQuery) || code.includes(q) || roomType.includes(q);
+}
+
+function BookingListCard({item}) {
+    const roomType = item.room_type || item.roomType || '—';
+    const roomNumber = item.room_number || item.roomNumber || '';
+    const isUnassigned = item.is_unassigned ?? item.isUnassigned ?? !roomNumber;
+    const roomCharge = formatVnd(item.room_total ?? item.roomCharge);
+    const duration = item.duration || '';
+    const checkIn = item.check_in_time || item.checkInTime || '';
+    const statusBadge = getBookingStatusBadge(item.status, item.status_label || item.statusLabel);
+    const scheduleHint = [checkIn ? `In ${checkIn}` : '', duration].filter(Boolean).join(' · ');
+
+    return (
+        <View style={styles.bookingCard}>
+            <View style={styles.cardTop}>
+                <View style={styles.cardLeft}>
+                    <Text style={styles.guestName} numberOfLines={1}>
+                        {item.guest_name || item.guestName || 'Guest'}
+                    </Text>
+                    <Text style={styles.roomType}>{roomType}</Text>
+                    <Text className="font-sf text-sm text-indigo-600 mt-1">
+                        {item.booking_code || item.bookingCode || '—'}
+                    </Text>
+                    <Text style={styles.metaLine}>{item.phone || '—'}</Text>
+                    {scheduleHint ? <Text style={styles.metaLine}>{scheduleHint}</Text> : null}
+                    {item.walk_in || item.walkIn ? (
+                        <Text style={styles.walkInHint}>Walk-in guest</Text>
+                    ) : null}
+                </View>
+                <View style={[styles.statusBadge, statusBadge.badgeStyle]}>
+                    <Text style={[styles.statusBadgeText, statusBadge.textStyle]}>
+                        {statusBadge.label}
+                    </Text>
+                </View>
+            </View>
+            <View style={styles.cardFooter}>
+                <Text style={styles.priceText}>{roomCharge || '—'}</Text>
+                <Text style={[styles.footerHint, isUnassigned && styles.footerHintAction]}>
+                    {isUnassigned ? 'Tap to assign room' : `Room ${roomNumber}`}
+                </Text>
+            </View>
+        </View>
+    );
 }
 
 function shiftDateKey(dateKey, days) {
@@ -225,7 +287,7 @@ export default function BookingsScreen({navigation}) {
                         <TextInput
                             value={searchQuery}
                             onChangeText={setSearchQuery}
-                            placeholder="Search by guest name or phone"
+                            placeholder="Search by name, phone, or booking code"
                             placeholderTextColor="#94a3b8"
                             style={styles.searchInput}
                             autoCorrect={false}
@@ -251,25 +313,7 @@ export default function BookingsScreen({navigation}) {
                                     navigation.navigate('BookingDetailScreen', {bookingId: item.id})
                                 }
                             >
-                                <View style={[cardStyle, styles.bookingCard]}>
-                                    <View style={styles.bookingTop}>
-                                        <Text className="font-sf-bold text-base text-slate-800">
-                                            {item.guestName}
-                                        </Text>
-                                        <View style={[styles.badge, badgeStyle(item.status)]}>
-                                            <Text style={styles.badgeText}>{item.statusLabel}</Text>
-                                        </View>
-                                    </View>
-
-                                    <Text className="font-sf text-sm text-gray-600 mt-2">
-                                        {item.phone || '—'}
-                                    </Text>
-                                    <Text className="font-sf text-sm text-gray-600 mt-1">
-                                        {item.isUnassigned || !item.roomNumber
-                                            ? `Unassigned · Type: ${item.roomType || '—'}`
-                                            : `Room ${item.roomNumber}`}
-                                    </Text>
-                                </View>
+                                <BookingListCard item={item} />
                             </TouchableOpacity>
                         )}
                         ListEmptyComponent={
@@ -420,11 +464,45 @@ const styles = StyleSheet.create({
         paddingVertical: 0,
     },
     listContent: {paddingHorizontal: 20, paddingBottom: 24},
-    bookingCard: {marginBottom: UI.sectionGap},
-    bookingTop: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
-    badge: {paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12},
-    badgePending: {backgroundColor: '#fef3c7'},
-    badgeInHouse: {backgroundColor: '#dbeafe'},
-    badgeDone: {backgroundColor: '#dcfce7'},
-    badgeText: {fontSize: 10, fontWeight: '600', color: '#475569'},
+    bookingCard: {
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: UI.sectionGap,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        shadowColor: '#0f172a',
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    cardTop: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12},
+    cardLeft: {flex: 1, minWidth: 0},
+    guestName: {fontSize: 18, fontWeight: '800', color: '#0f172a'},
+    roomType: {fontSize: 15, fontWeight: '600', color: '#475569', marginTop: 4},
+    metaLine: {fontSize: 12, color: '#94a3b8', marginTop: 2},
+    walkInHint: {fontSize: 12, fontWeight: '600', color: '#8294FF', marginTop: 6},
+    statusBadge: {paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, flexShrink: 0},
+    statusBadgeText: {fontSize: 11, fontWeight: '700'},
+    badgeGreen: {backgroundColor: '#dcfce7'},
+    badgeTextGreen: {color: '#166534'},
+    badgeYellow: {backgroundColor: '#fef9c3'},
+    badgeTextYellow: {color: '#854d0e'},
+    badgeRed: {backgroundColor: '#fee2e2'},
+    badgeTextRed: {color: '#991b1b'},
+    badgeBlue: {backgroundColor: '#dbeafe'},
+    badgeTextBlue: {color: '#1d4ed8'},
+    cardFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 14,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+    },
+    priceText: {fontSize: 14, fontWeight: '700', color: '#059669'},
+    footerHint: {fontSize: 12, fontWeight: '600', color: '#64748b'},
+    footerHintAction: {color: '#8294FF'},
 });

@@ -1,4 +1,5 @@
 import api, {endpoints} from '../configuration/Apis';
+import {pickResults} from '../utils/apiShape';
 
 const ok = (response, dataOverride = undefined) => ({
     status: 'success',
@@ -22,7 +23,7 @@ const fail = (err, fallback) => {
     return {status: 'error', message, data: data || null};
 };
 
-const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
+const pickList = pickResults;
 
 const fetchBusinessMetadata = async () => {
     try {
@@ -37,31 +38,31 @@ const fetchBusinessMetadata = async () => {
 export const fetchLodgingTypes = async () => {
     const res = await fetchBusinessMetadata();
     if (res.status !== 'success') return res;
-    return {status: 'success', data: res.data?.lodgingTypes || []};
+    return {status: 'success', data: res.data?.lodging_types || []};
 };
 
 export const fetchAmenityOptions = async () => {
     const res = await fetchBusinessMetadata();
     if (res.status !== 'success') return res;
-    return {status: 'success', data: res.data?.amenityOptions || []};
+    return {status: 'success', data: res.data?.amenity_options || []};
 };
 
 export const fetchGuestSegments = async () => {
     const res = await fetchBusinessMetadata();
     if (res.status !== 'success') return res;
-    return {status: 'success', data: res.data?.guestSegments || []};
+    return {status: 'success', data: res.data?.guest_segments || []};
 };
 
 export const fetchCatalogThemes = async () => {
     const res = await fetchBusinessMetadata();
     if (res.status !== 'success') return res;
-    return {status: 'success', data: res.data?.catalogThemes || []};
+    return {status: 'success', data: res.data?.catalog_themes || []};
 };
 
 export const fetchRoomAmenityOptions = async () => {
     const res = await fetchBusinessMetadata();
     if (res.status !== 'success') return res;
-    return {status: 'success', data: res.data?.roomAmenities || []};
+    return {status: 'success', data: res.data?.room_amenities || []};
 };
 
 export const fetchBusinessList = async () => {
@@ -116,7 +117,7 @@ export const deleteBusiness = async (businessId) => {
 
 export const fetchBranchList = async (businessId) => {
     try {
-        const response = await api.get(endpoints['branches'], {params: {businessId}});
+        const response = await api.get(endpoints['branches'], {params: {business_id: businessId}});
         return ok(response, pickList(response.data));
     } catch (error) {
         console.error("API Error: ", error.response?.data || error.message);
@@ -136,7 +137,7 @@ export const fetchBranchDetail = async (branchId) => {
 
 export const createBranch = async (businessId, payload) => {
     try {
-        const response = await api.post(endpoints['branches'], {...payload, businessId});
+        const response = await api.post(endpoints['branches'], {...payload, business_id: businessId});
         return ok(response);
     } catch (error) {
         console.error("API Error: ", error.response?.data || error.message);
@@ -228,9 +229,9 @@ export const createPhysicalRoom = async (branchId, payload) => {
     try {
         const response = await api.post(endpoints['rooms'], {
             branch: branchId,
-            roomNumber: payload.roomNumber,
+            room_number: payload.room_number,
             floor: payload.floor,
-            roomTypeId: payload.roomTypeId,
+            room_type_id: payload.room_type_id,
             status: payload.status || 'AVAILABLE',
         });
         return ok(response);
@@ -243,9 +244,9 @@ export const createPhysicalRoom = async (branchId, payload) => {
 export const updatePhysicalRoom = async (branchId, roomId, payload) => {
     try {
         const response = await api.patch(endpoints['room-detail'](roomId), {
-            roomNumber: payload.roomNumber,
+            room_number: payload.room_number,
             floor: payload.floor,
-            roomTypeId: payload.roomTypeId,
+            room_type_id: payload.room_type_id,
             status: payload.status,
         });
         return ok(response);

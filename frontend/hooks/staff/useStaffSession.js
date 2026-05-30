@@ -11,6 +11,7 @@ import {
 } from '../../constants/authRoles';
 import {resolveServiceCategoryForUser} from '../../constants/staffRoleMapping';
 import api, {endpoints} from '../../configuration/Apis';
+import {normalizeUser} from '../../utils/apiShape';
 
 export function useStaffSession() {
     const [user, setUser] = useState(null);
@@ -28,7 +29,7 @@ export function useStaffSession() {
             let currentUser = session.user || null;
             try {
                 const response = await api.get(endpoints['current-user']);
-                currentUser = response.data || currentUser;
+                currentUser = normalizeUser(response.data) || currentUser;
             } catch (error) {
                 console.error('API Error: ', error.response?.data || error.message);
             }
@@ -40,7 +41,7 @@ export function useStaffSession() {
 
             setRole(resolvedRole || null);
             setSessionKind(resolvedSessionKind);
-            setUser({...mergedUser, serviceCategory: category, uiFlow});
+            setUser({...mergedUser, service_category: category, ui_flow: uiFlow});
             setStaffUiFlow(uiFlow);
             setServiceCategory(category);
             setGroups(Array.isArray(mergedUser?.groups) ? mergedUser.groups : []);
@@ -67,7 +68,7 @@ export function useStaffSession() {
         sessionKind,
         staffUiFlow,
         serviceCategory,
-        branchId: user?.branchId || user?.branch_id || '',
+        branchId: user?.branch_id || '',
         isLoading,
         reload: loadSession,
         isCustomer: isCustomer(role) || sessionKind === 'customer' || staffUiFlow === STAFF_UI_FLOWS.CUSTOMER,

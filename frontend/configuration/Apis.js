@@ -16,10 +16,12 @@ const api = axios.create({
 });
 
 export const endpoints = {
+    // OAuth / token
     'login': '/token/',
     'refresh-token': '/token/',
     'revoke-token': '/revoke_token/',
     'current-user': '/accounts/users/me/',
+    // Account auth (OTP, register, password)
     'send-otp': '/accounts/auth/send_otp/',
     'verify-otp': '/accounts/auth/verify_otp/',
     'send-business-otp': '/accounts/auth/send_business_otp/',
@@ -84,12 +86,12 @@ export const endpoints = {
     'themes': '/operations/themes/',
     'branch-themes': '/operations/branch-themes/',
     'branch-theme-toggle': '/operations/branch-themes/toggle/',
-    'service-orders': '/operations/service-orders/',
-    'service-order-detail': (orderId) => `/operations/service-orders/${orderId}/`,
-    'service-order-accept': (orderId) => `/operations/service-orders/${orderId}/accept/`,
-    'service-order-start': (orderId) => `/operations/service-orders/${orderId}/start/`,
-    'service-order-complete': (orderId) => `/operations/service-orders/${orderId}/complete/`,
-    'service-order-cancel': (orderId) => `/operations/service-orders/${orderId}/cancel/`,
+    'service-tasks': '/operations/service-tasks/',
+    'service-task-detail': (taskId) => `/operations/service-tasks/${taskId}/`,
+    'service-task-accept': (taskId) => `/operations/service-tasks/${taskId}/accept/`,
+    'service-task-start': (taskId) => `/operations/service-tasks/${taskId}/start/`,
+    'service-task-complete': (taskId) => `/operations/service-tasks/${taskId}/complete/`,
+    'service-task-cancel': (taskId) => `/operations/service-tasks/${taskId}/cancel/`,
     'extra-services': '/operations/extra-services/',
     'extra-service-detail': (serviceId) => `/operations/extra-services/${serviceId}/`,
     'maintenance-rooms': '/operations/maintenance-rooms/',
@@ -102,7 +104,10 @@ export const endpoints = {
     'transaction-detail': (transactionId) => `/billing/transactions/${transactionId}/`,
     'payments-momo': '/payments/momo/',
     'payments-zalopay': '/payments/zalopay/',
-    'payment-status': (bookingId) => `/payments/status/${bookingId}/`,
+    'payment-status': (sessionId) => `/payments/status/${sessionId}/`,
+    'payment-sync': (sessionId) => `/payments/sync/${sessionId}/`,
+    'payment-checkout-complete': (checkoutSessionId) => `/payments/checkout/${checkoutSessionId}/complete/`,
+    'branch-customers': '/businesses/branch-customers/',
 };
 
 api.interceptors.request.use(async (config) => {

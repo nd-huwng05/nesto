@@ -3,6 +3,8 @@ import urllib.parse
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 
+from core.services.json_utils import dumps_ws_message
+
 
 ALLOWED_CHANNELS = {'bookings', 'services', 'rooms', 'customer'}
 
@@ -56,16 +58,23 @@ class AuthConsumer(AsyncWebsocketConsumer):
                 "customer_global_role_CUSTOMER",
                 f"user_{self.user.id}_bookings",
             ]
+            if branch_id:
+                self.subscription_groups.extend(
+                    [
+                        f"bookings_branch_{branch_id}_role_CUSTOMER",
+                        f"rooms_branch_{branch_id}_role_CUSTOMER",
+                    ]
+                )
         else:
             self.subscription_groups = []
-        if branch_id:
-            self.subscription_groups.extend(
-                [
-                    f"{self.room_name}_branch_{branch_id}_role_{role}",
-                    f"{self.room_name}_branch_{branch_id}_role_BUSINESS_OWNER",
-                    f"{self.room_name}_branch_{branch_id}_role_SUPER_ADMIN",
-                ]
-            )
+            if branch_id:
+                self.subscription_groups.extend(
+                    [
+                        f"{self.room_name}_branch_{branch_id}_role_{role}",
+                        f"{self.room_name}_branch_{branch_id}_role_BUSINESS_OWNER",
+                        f"{self.room_name}_branch_{branch_id}_role_SUPER_ADMIN",
+                    ]
+                )
 
         for group_name in self.subscription_groups:
             await self.channel_layer.group_add(group_name, self.channel_name)
@@ -90,4 +99,4 @@ class AuthConsumer(AsyncWebsocketConsumer):
     async def group_message(self, event):
         if event.get('sender_channel') == self.channel_name:
             return
-        await self.send(text_data=json.dumps(event['message']))
+        await self.send(text_data=dumps_ws_message(event.get("message") or {}))

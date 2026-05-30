@@ -19,6 +19,7 @@ import StaffProfileScreen from './StaffProfileScreen';
 import ReceptionQrScannerScreen from './ReceptionQrScannerScreen';
 import RoomMaintenanceScreen from './RoomMaintenanceScreen';
 import ChangePasswordScreen from '../../Account/ChangePasswordScreen';
+import {StaffRoomLiveProvider} from '../../../contexts/StaffRoomLiveContext';
 
 const StaffTab = createBottomTabNavigator();
 const StaffStack = createNativeStackNavigator();
@@ -63,18 +64,21 @@ function ServiceTabs({bottomInset, serviceCategory}) {
 }
 
 function ReceptionistFlow({bottomInset}) {
+    const {branchId} = useStaffSession();
     return (
-        <StaffStack.Navigator screenOptions={{headerShown: false}}>
-            <StaffStack.Screen name="ReceptionistMain">
-                {() => <ReceptionistTabs bottomInset={bottomInset} />}
-            </StaffStack.Screen>
-            <StaffStack.Screen name="BookingDetailScreen" component={BookingDetailScreen} />
-            <StaffStack.Screen name="StaffAddServiceScreen" component={StaffAddServiceScreen} />
-            <StaffStack.Screen name="StaffCreateBookingScreen" component={StaffCreateBookingScreen} />
-            <StaffStack.Screen name="ReceptionQrScannerScreen" component={ReceptionQrScannerScreen} />
-            <StaffStack.Screen name="RoomMaintenanceScreen" component={RoomMaintenanceScreen} />
-            <StaffStack.Screen name="ChangePasswordScreen" component={ChangePasswordScreen} />
-        </StaffStack.Navigator>
+        <StaffRoomLiveProvider branchId={branchId}>
+            <StaffStack.Navigator screenOptions={{headerShown: false}}>
+                <StaffStack.Screen name="ReceptionistMain">
+                    {() => <ReceptionistTabs bottomInset={bottomInset} />}
+                </StaffStack.Screen>
+                <StaffStack.Screen name="BookingDetailScreen" component={BookingDetailScreen} />
+                <StaffStack.Screen name="StaffAddServiceScreen" component={StaffAddServiceScreen} />
+                <StaffStack.Screen name="StaffCreateBookingScreen" component={StaffCreateBookingScreen} />
+                <StaffStack.Screen name="ReceptionQrScannerScreen" component={ReceptionQrScannerScreen} />
+                <StaffStack.Screen name="RoomMaintenanceScreen" component={RoomMaintenanceScreen} />
+                <StaffStack.Screen name="ChangePasswordScreen" component={ChangePasswordScreen} />
+            </StaffStack.Navigator>
+        </StaffRoomLiveProvider>
     );
 }
 

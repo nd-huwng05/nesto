@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useFocusEffect} from '@react-navigation/native';
 import {
@@ -35,6 +35,8 @@ import {StaffUserAvatar} from '../../../components/staff/StaffUserAvatar';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {UI} from '../../../styles/uiTokens';
 import {calculateOvertimeCharge, computeCheckoutTotals} from '../../../utils/staffOvertimeBilling';
+import {getRoomStatusLabel, patchRoomListWithStatus} from '../../../utils/roomStatus';
+import {useStaffRoomLive} from '../../../contexts/StaffRoomLiveContext';
 
 function formatVnd(amount) {
     return `${Number(amount).toLocaleString('en-US')} VND`;
@@ -90,31 +92,36 @@ function buildNetworkUri(rawUri) {
 }
 
 function ScreenHeader({navigation, booking, user}) {
+    const hotelLogo = booking?.hotel_logo || booking?.hero_image || booking?.hotelLogo;
+    const hotelAddress = booking?.hotel_address || booking?.hotelAddress || '';
+
     return (
         <View style={styles.headerRow}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={12}>
                 <ChevronLeft size={22} color="#334155" />
             </TouchableOpacity>
-            {booking?.hotelLogo ? (
+            {hotelLogo ? (
                 <Image
-                    source={{uri: buildNetworkUri(booking.hotelLogo)}}
+                    source={{uri: buildNetworkUri(hotelLogo)}}
                     style={styles.hotelLogo}
                     resizeMode="cover"
                 />
             ) : (
                 <View style={[styles.hotelLogo, styles.hotelLogoFallback]}>
                     <Text style={styles.hotelLogoFallbackText}>
-                        {String(booking?.hotelName || 'H').trim().charAt(0).toUpperCase()}
+                        {String(booking?.hotel_name || booking?.hotelName || 'H').trim().charAt(0).toUpperCase()}
                     </Text>
                 </View>
             )}
             <View style={styles.hotelInfo}>
-                <Text style={styles.hotelName}>{booking.hotelName}</Text>
+                <Text style={styles.hotelName} numberOfLines={1}>
+                    {booking?.hotel_name || booking?.hotelName || 'Hotel'}
+                </Text>
                 <Text style={styles.hotelAddress} numberOfLines={2}>
-                    {booking.hotelAddress}
+                    {hotelAddress}
                 </Text>
             </View>
-            <StaffUserAvatar user={user} size={40} style={{marginLeft: 8}} />
+            <StaffUserAvatar user={user} size={40} style={styles.headerAvatar} />
         </View>
     );
 }
@@ -127,52 +134,56 @@ function PendingCheckInView({
     onCancel,
     processing,
 }) {
-    const isUnassigned = booking.isUnassigned || !booking.roomNumber;
-    const roomType = booking.roomType || '—';
+    const isUnassigned = booking.is_unassigned || !booking.room_number;
+    const roomType = booking.room_type || '—';
+    const roomCharge = Number(booking.room_total || booking.room_price || booking.base_price || 0);
+    const depositPaid = Number(booking.deposit_amount || 0);
 
     return (
         <>
-            <View style={styles.titleRow}>
-                <Text style={styles.screenTitle}>Check-in</Text>
+            <Text style={styles.screenTitle}>Check-in</Text>
+            {booking.date_range_label ? (
                 <View style={styles.datePill}>
-                    <Calendar size={14} color="#64748b" />
-                    <Text style={styles.datePillText}>{booking.dateRangeLabel}</Text>
+                    <Calendar size={14} color="#8294FF" />
+                    <Text style={styles.datePillText} numberOfLines={2}>
+                        {booking.date_range_label}
+                    </Text>
                 </View>
-            </View>
+            ) : null}
 
             <View style={styles.codeBar}>
-                <Text style={styles.codeLabel}>
-                    Code: <Text style={styles.codeValue}>{booking.bookingCode}</Text>
-                </Text>
+                <View style={styles.codeBarText}>
+                    <Text style={styles.codeLabel}>Booking code</Text>
+                    <Text style={styles.codeValue}>{booking.booking_code}</Text>
+                </View>
                 <BookingQrStrip bookingId={booking.id || booking.bookingId} />
             </View>
 
             <View style={[styles.summaryCard, styles.summaryCardFlat]}>
                 <Text style={styles.summaryTitle}>Reservation details</Text>
                 <Text style={styles.summarySubtitle}>
-                    Verify guest information before confirming check-in
+                    Verify guest details, then assign a room of the booked type.
                 </Text>
 
-                <SummaryRow label="Name:" value={booking.guestName} />
+                <SummaryRow label="Name:" value={booking.guest_name} />
                 <SummaryRow label="Email:" value={booking.email} />
                 <SummaryRow label="Phone number:" value={booking.phone} />
+                <SummaryRow label="Room type:" value={roomType} />
                 <View style={styles.roomAssignRow}>
                     <View style={styles.roomAssignBody}>
-                        <Text style={styles.kvKey}>Room:</Text>
+                        <Text style={styles.kvKey}>Assigned room:</Text>
                         {isUnassigned ? (
-                            <Text style={styles.roomAssignValue}>
-                                Unassigned (Type: {roomType})
-                            </Text>
+                            <Text style={styles.roomAssignPending}>Not assigned yet</Text>
                         ) : (
-                            <Text style={styles.roomAssignValue}>Room {booking.roomNumber}</Text>
+                            <Text style={styles.roomAssignValue}>Room {booking.room_number}</Text>
                         )}
-                        {booking.originalRoomNumber ? (
+                        {booking.original_room_number ? (
                             <Text style={styles.roomSwitchedNote}>
-                                Originally Room {booking.originalRoomNumber}
+                                Originally Room {booking.original_room_number}
                             </Text>
                         ) : null}
-                        {booking.roomChangeNote ? (
-                            <Text style={styles.roomSwitchedNote}>{booking.roomChangeNote}</Text>
+                        {booking.room_change_note ? (
+                            <Text style={styles.roomSwitchedNote}>{booking.room_change_note}</Text>
                         ) : null}
                     </View>
                     {!isUnassigned ? (
@@ -185,9 +196,15 @@ function PendingCheckInView({
                         </TouchableOpacity>
                     ) : null}
                 </View>
-                <SummaryRow label="Planned check-in:" value={booking.checkInTime} />
-                <SummaryRow label="Planned check-out:" value={booking.checkOutTime} />
-                <SummaryRow label="Duration:" value={booking.duration} />
+                <SummaryRow label="Planned check-in:" value={booking.check_in_time || '—'} />
+                <SummaryRow label="Planned check-out:" value={booking.check_out_time || '—'} />
+                <SummaryRow label="Duration:" value={booking.duration || '—'} />
+                {roomCharge > 0 ? (
+                    <SummaryRow label="Room charge:" value={formatVnd(roomCharge)} />
+                ) : null}
+                {depositPaid > 0 ? (
+                    <SummaryRow label="Deposit paid:" value={formatVnd(depositPaid)} />
+                ) : null}
             </View>
 
             <TouchableOpacity
@@ -237,41 +254,41 @@ function CheckOutSummaryView({
     onChangeRoom,
     processing,
 }) {
-    const bill = booking.checkoutBill || {};
-    const finalBill = booking.finalBill || {};
-    const room = booking.roomNumber || '—';
+    const bill = booking.checkout_bill || {};
+    const final_bill = booking.final_bill || {};
+    const room = booking.room_number || '—';
     const roomSubtotal =
-        finalBill.roomTotal ??
-        booking.roomTotal ??
-        bill.roomSubtotal ??
-        Math.max(0, (booking.totalAmount || 0) - (booking.discount || 0));
-    const serviceTotal = finalBill.servicesTotal ?? booking.servicesTotal ?? bill.serviceTotal ?? 0;
-    const depositPaid = finalBill.depositPaid ?? finalBill.depositAmount ?? 0;
-    const depositPct = finalBill.depositPercentage ?? booking.depositPercentage ?? 0;
+        final_bill.room_total ??
+        booking.room_total ??
+        bill.room_subtotal ??
+        Math.max(0, (booking.total_amount || 0) - (booking.discount || 0));
+    const serviceTotal = final_bill.services_total ?? booking.services_total ?? bill.service_total ?? 0;
+    const depositPaid = final_bill.deposit_paid ?? final_bill.deposit_amount ?? 0;
+    const depositPct = final_bill.deposit_percentage ?? booking.deposit_percentage ?? 0;
     const isCompleted = booking.status === 'CHECKED_OUT';
     const canAddServices = booking.status === 'CHECKED_IN';
-    const extraItems = booking.extraServices || bill.extraServices || [];
+    const extraItems = booking.line_items || bill.line_items || [];
 
     const overtimeAmount = useMemo(() => {
-        if (booking.overtimeCharge != null) {
-            return Number(booking.overtimeCharge) || 0;
+        if (booking.overtime_charge != null) {
+            return Number(booking.overtime_charge) || 0;
         }
-        if (finalBill.overtimeCharge != null) {
-            return Number(finalBill.overtimeCharge) || 0;
+        if (final_bill.overtime_charge != null) {
+            return Number(final_bill.overtime_charge) || 0;
         }
         if (booking.status === 'CHECKED_OUT') {
-            return Number(bill.overtimeSurcharge) || 0;
+            return Number(bill.overtime_surcharge) || 0;
         }
         if (booking.status === 'CHECKED_IN') {
             return calculateOvertimeCharge(booking, new Date()).amount;
         }
         return 0;
-    }, [booking, bill, finalBill]);
+    }, [booking, bill, final_bill]);
 
     const overtimeLabel = useMemo(() => {
         if (overtimeAmount <= 0) return '';
-        return formatOvertimeLabel(finalBill, calculateOvertimeCharge(booking, new Date()).hoursLabel);
-    }, [booking, finalBill, overtimeAmount]);
+        return formatOvertimeLabel(final_bill, calculateOvertimeCharge(booking, new Date()).hoursLabel);
+    }, [booking, final_bill, overtimeAmount]);
 
     const totals = useMemo(
         () =>
@@ -290,20 +307,20 @@ function CheckOutSummaryView({
                 <Text style={styles.screenTitle}>Check-out</Text>
                 <View style={styles.datePill}>
                     <Calendar size={14} color="#64748b" />
-                    <Text style={styles.datePillText}>{booking.dateRangeLabel}</Text>
+                    <Text style={styles.datePillText}>{booking.date_range_label}</Text>
                 </View>
             </View>
 
             <View style={styles.codeBar}>
                 <Text style={styles.codeLabel}>
-                    Code: <Text style={styles.codeValue}>{booking.bookingCode}</Text>
+                    Code: <Text style={styles.codeValue}>{booking.booking_code}</Text>
                 </Text>
                 <BookingQrStrip bookingId={booking.id || booking.bookingId} />
             </View>
 
             <View style={styles.heroBlock}>
                 {booking?.roomImage ? (
-                    <Image source={{uri: buildNetworkUri(booking.roomImage)}} style={styles.heroImage} resizeMode="cover" />
+                    <Image source={{uri: buildNetworkUri(booking.room_image)}} style={styles.heroImage} resizeMode="cover" />
                 ) : (
                     <View style={[styles.heroImage, styles.heroImageFallback]}>
                         <Text style={styles.heroImageFallbackText}>Room {room}</Text>
@@ -315,19 +332,19 @@ function CheckOutSummaryView({
                         Check information order before payment
                     </Text>
 
-                    <SummaryRow label="Name:" value={booking.guestName} />
+                    <SummaryRow label="Name:" value={booking.guest_name} />
                     <SummaryRow label="Email:" value={booking.email} />
                     <SummaryRow label="Phone number:" value={booking.phone} />
-                    <SummaryRow label="Hotel:" value={booking.hotelName} />
+                    <SummaryRow label="Hotel:" value={booking.hotel_name} />
                     <SummaryRow label="Room:" value={`Room ${room}`} />
-                    {booking.roomChangeNote ? (
+                    {booking.room_change_note ? (
                         <View style={styles.roomChangeBanner}>
-                            <Text style={styles.roomChangeBannerText}>{booking.roomChangeNote}</Text>
+                            <Text style={styles.roomChangeBannerText}>{booking.room_change_note}</Text>
                         </View>
                     ) : null}
-                    {booking.originalRoomNumber ? (
+                    {booking.original_room_number ? (
                         <Text style={styles.roomSwitchedNote}>
-                            Originally Room {booking.originalRoomNumber}
+                            Originally Room {booking.original_room_number}
                         </Text>
                     ) : null}
                     {canAddServices ? (
@@ -339,8 +356,8 @@ function CheckOutSummaryView({
                             <Text style={styles.changeRoomBtnText}>Change Room / Temp Room</Text>
                         </TouchableOpacity>
                     ) : null}
-                    <SummaryRow label="Check-in:" value={booking.checkInTime} />
-                    <SummaryRow label="Check-out:" value={booking.checkOutTime} />
+                    <SummaryRow label="Check-in:" value={booking.check_in_time} />
+                    <SummaryRow label="Check-out:" value={booking.check_out_time} />
                     <SummaryRow label="Time:" value={booking.duration} />
 
                     <View style={styles.divider} />
@@ -357,7 +374,7 @@ function CheckOutSummaryView({
                         />
                     ))}
 
-                    {(bill.serviceOrders || []).map((order) => (
+                    {(bill.line_items || []).map((order) => (
                         <SummaryRow
                             key={order.id}
                             label={`F&B: ${order.summary}`}
@@ -445,7 +462,7 @@ function CheckOutSummaryView({
             ) : (
                 <View style={styles.completedBanner}>
                     <Text style={styles.completedText}>
-                        Checked out · Paid via {String(booking.paymentMethod)}
+                        Checked out · Paid via {String(booking.payment_method)}
                     </Text>
                 </View>
             )}
@@ -453,10 +470,22 @@ function CheckOutSummaryView({
     );
 }
 
+function getRoomPickerStatusStyle(status) {
+    const key = String(status || '').toUpperCase();
+    if (key === 'AVAILABLE') {
+        return {badge: styles.roomStatusBadgeGreen, text: styles.roomStatusBadgeTextGreen};
+    }
+    if (key === 'DIRTY' || key === 'CLEANING') {
+        return {badge: styles.roomStatusBadgeYellow, text: styles.roomStatusBadgeTextYellow};
+    }
+    return {badge: styles.roomStatusBadgeRed, text: styles.roomStatusBadgeTextRed};
+}
+
 function RoomSwitchModal({
     visible,
     rooms,
     loading,
+    busy,
     currentRoomNumber,
     mode,
     roomType,
@@ -465,29 +494,44 @@ function RoomSwitchModal({
 }) {
     const insets = useSafeAreaInsets();
     const isAssign = mode === 'assign';
+    const isBusy = Boolean(busy);
 
     const renderRoomRow = ({item: room}) => {
-        const isCurrent = String(room.roomNumber) === String(currentRoomNumber);
+        const roomNumber = room.roomNumber || room.room_number || '';
+        const roomTypeLabel = room.type || room.roomType || roomType || '';
+        const isCurrent = String(roomNumber) === String(currentRoomNumber);
+        const selectable = room.selectable !== false && !isCurrent && !isBusy;
+        const statusLabel = room.statusLabel || getRoomStatusLabel(room.status);
+        const statusStyle = getRoomPickerStatusStyle(room.status);
+        const floorLabel = room.feature && !String(room.feature).includes(statusLabel) ? room.feature : '';
 
         return (
             <TouchableOpacity
-                activeOpacity={0.85}
-                disabled={isCurrent}
+                activeOpacity={selectable ? 0.85 : 1}
+                disabled={!selectable}
                 onPress={() => onSelect(room)}
-                style={[styles.roomSheetRow, isCurrent && styles.roomSheetRowDisabled]}
+                style={[
+                    styles.roomSheetRow,
+                    (isCurrent || !selectable) && styles.roomSheetRowDisabled,
+                ]}
             >
                 <View style={styles.roomSheetRowLeft}>
-                    <Text style={styles.roomSheetRowTitle}>Room {room.roomNumber}</Text>
+                    <Text style={styles.roomSheetRowTitle}>Room {roomNumber || '—'}</Text>
                     <Text style={styles.roomSheetRowMeta}>
-                        {room.type} · {room.feature}
+                        {roomTypeLabel}
+                        {floorLabel ? ` · ${floorLabel}` : ''}
                     </Text>
                 </View>
                 {isCurrent ? (
                     <Text style={styles.roomSheetCurrentLabel}>Current</Text>
-                ) : (
+                ) : selectable ? (
                     <View style={styles.roomSheetSelectBtn}>
                         <Text style={styles.roomSheetSelectText}>Select</Text>
                         <ChevronRight size={16} color="#8294FF" />
+                    </View>
+                ) : (
+                    <View style={[styles.roomStatusBadge, statusStyle.badge]}>
+                        <Text style={[styles.roomStatusBadgeText, statusStyle.text]}>{statusLabel}</Text>
                     </View>
                 )}
             </TouchableOpacity>
@@ -495,11 +539,17 @@ function RoomSwitchModal({
     };
 
     return (
-        <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <Modal
+            visible={visible}
+            transparent
+            animationType="slide"
+            onRequestClose={isBusy ? undefined : onClose}
+        >
             <View style={styles.roomModalOverlay}>
                 <TouchableOpacity
                     style={styles.roomModalBackdrop}
                     activeOpacity={1}
+                    disabled={isBusy}
                     onPress={onClose}
                 />
                 <View
@@ -516,8 +566,8 @@ function RoomSwitchModal({
                         </Text>
                         <Text style={styles.roomModalSubtitle}>
                             {isAssign
-                                ? `Only clean, ready ${roomType || ''} rooms are shown`
-                                : `Only clean, ready ${roomType || ''} rooms · same category`}
+                                ? `Only available ${roomType || ''} rooms can be assigned. Occupied rooms are in use; dirty rooms need housekeeping.`
+                                : `Switch to an available ${roomType || ''} room. Occupied and dirty rooms cannot be selected.`}
                         </Text>
                     </View>
 
@@ -537,16 +587,28 @@ function RoomSwitchModal({
                             showsVerticalScrollIndicator
                             ListEmptyComponent={
                                 <Text style={styles.roomModalEmpty}>
-                                    No clean, available {roomType || ''} rooms right now. Dirty,
-                                    cleaning, and occupied rooms are not shown.
+                                    No {roomType || ''} rooms found for this branch.
                                 </Text>
                             }
                         />
                     )}
 
-                    <TouchableOpacity onPress={onClose} style={styles.roomModalCancel}>
+                    <TouchableOpacity
+                        onPress={onClose}
+                        disabled={isBusy}
+                        style={[styles.roomModalCancel, isBusy && styles.roomModalCancelDisabled]}
+                    >
                         <Text style={styles.roomModalCancelText}>Cancel</Text>
                     </TouchableOpacity>
+
+                    {isBusy ? (
+                        <View style={styles.roomSheetBusyOverlay} pointerEvents="auto">
+                            <ActivityIndicator size="large" color="#8294FF" />
+                            <Text style={styles.roomSheetBusyText}>
+                                {isAssign ? 'Assigning room…' : 'Updating room…'}
+                            </Text>
+                        </View>
+                    ) : null}
                 </View>
             </View>
         </Modal>
@@ -556,6 +618,7 @@ function RoomSwitchModal({
 export default function BookingDetailScreen({navigation, route}) {
     const {bookingId} = route.params || {};
     const {user, branchId} = useStaffSession();
+    const {subscribe} = useStaffRoomLive();
     const [booking, setBooking] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
@@ -565,23 +628,32 @@ export default function BookingDetailScreen({navigation, route}) {
     const [roomModalMode, setRoomModalMode] = useState('switch');
     const [switchRooms, setSwitchRooms] = useState([]);
     const [loadingSwitchRooms, setLoadingSwitchRooms] = useState(false);
-    const loadBooking = useCallback(async () => {
+    const [roomPickerBusy, setRoomPickerBusy] = useState(false);
+    const hasLoadedBookingRef = useRef(false);
+    const loadBooking = useCallback(async ({silent = false} = {}) => {
         if (!bookingId) {
             setLoadError('Missing booking reference.');
             setBooking(null);
             setLoading(false);
+            hasLoadedBookingRef.current = false;
             return;
         }
-        setLoading(true);
+        if (!silent) {
+            setLoading(true);
+        }
         setLoadError(null);
         const result = await fetchBookingDetails(bookingId);
         if (result.status === 'success' && result.data) {
             setBooking(normalizeStaffBooking(result.data));
-        } else {
+            hasLoadedBookingRef.current = true;
+        } else if (!silent || !hasLoadedBookingRef.current) {
             setBooking(null);
             setLoadError(result.message || 'Unable to load booking details.');
+            hasLoadedBookingRef.current = false;
         }
-        setLoading(false);
+        if (!silent) {
+            setLoading(false);
+        }
     }, [bookingId]);
 
     const refreshLiveBill = useCallback(async () => {
@@ -593,15 +665,15 @@ export default function BookingDetailScreen({navigation, route}) {
                 const live = result.data;
                 return {
                     ...prev,
-                    roomTotal: live.roomTotal ?? prev.roomTotal,
-                    servicesTotal: live.servicesTotal ?? prev.servicesTotal,
+                    room_total: live.room_total ?? prev.room_total,
+                    services_total: live.services_total ?? prev.services_total,
                     subtotal: live.subtotal ?? prev.subtotal,
-                    overtimeCharge: live.overtimeCharge ?? prev.overtimeCharge,
-                    lateMinutes: live.lateMinutes ?? prev.lateMinutes,
-                    isOvertime: live.isOvertime ?? prev.isOvertime,
-                    totalAmount: live.totalAmount ?? prev.totalAmount,
-                    finalBill: live.finalBill ?? prev.finalBill,
-                    extraServices: live.extraServices ?? prev.extraServices,
+                    overtime_charge: live.overtime_charge ?? prev.overtime_charge,
+                    late_minutes: live.late_minutes ?? prev.late_minutes,
+                    is_overtime: live.is_overtime ?? prev.is_overtime,
+                    total_amount: live.total_amount ?? prev.total_amount,
+                    final_bill: live.final_bill ?? prev.final_bill,
+                    line_items: live.line_items ?? prev.line_items,
                 };
             });
         }
@@ -614,7 +686,7 @@ export default function BookingDetailScreen({navigation, route}) {
 
             const bootstrap = async () => {
                 try {
-                    await loadBooking();
+                    await loadBooking({silent: hasLoadedBookingRef.current});
                     if (!mounted || !bookingId) return;
                     const token = (await AsyncStorage.getItem('access_token')) || '';
                     if (!token) return;
@@ -658,12 +730,19 @@ export default function BookingDetailScreen({navigation, route}) {
         }, [loadBooking, branchId, bookingId])
     );
 
+    useEffect(() => {
+        if (!roomModalVisible) return undefined;
+        return subscribe((payload) => {
+            setSwitchRooms((prev) => patchRoomListWithStatus(prev, payload));
+        });
+    }, [roomModalVisible, subscribe]);
+
     const openRoomPicker = async (mode) => {
         if (!branchId || !booking) return;
         setRoomModalMode(mode);
         setRoomModalVisible(true);
         setLoadingSwitchRooms(true);
-        const result = await fetchAvailableRoomsForSwitch(branchId, booking.roomType, bookingId);
+        const result = await fetchAvailableRoomsForSwitch(branchId, booking.room_type, bookingId);
         setLoadingSwitchRooms(false);
         if (result.status === 'success') {
             setSwitchRooms(result.data || []);
@@ -677,33 +756,44 @@ export default function BookingDetailScreen({navigation, route}) {
     const handleOpenAssign = () => openRoomPicker('assign');
 
     const handleSelectRoom = async (room) => {
-        setRoomModalVisible(false);
-        setProcessing(true);
+        if (roomPickerBusy) return;
+        if (room?.selectable === false) {
+            Alert.alert(
+                'Room unavailable',
+                `${room.statusLabel || getRoomStatusLabel(room.status)} — this room cannot be selected right now.`
+            );
+            return;
+        }
 
-        if (roomModalMode === 'assign') {
-            const result = await assignRoomAndCheckIn(bookingId, room.id);
-            setProcessing(false);
-            if (result.status === 'success' && result.data) {
-                setBooking(normalizeStaffBooking(result.data));
-                Alert.alert('Checked in', result.message || `Room ${room.roomNumber} assigned.`);
+        setRoomPickerBusy(true);
+        try {
+            if (roomModalMode === 'assign') {
+                const result = await assignRoomAndCheckIn(bookingId, room.id);
+                if (result.status === 'success' && result.data) {
+                    setBooking(normalizeStaffBooking(result.data));
+                    setRoomModalVisible(false);
+                    return;
+                }
+                Alert.alert('Check-in failed', result.message || 'Please try again.');
                 return;
             }
-            Alert.alert('Check-in failed', result.message || 'Please try again.');
-            return;
-        }
 
-        const isPreCheckIn =
-            booking.status === 'PENDING' || booking.status === 'CONFIRMED';
-        const result = isPreCheckIn
-            ? await reassignBookingRoom(bookingId, room.id)
-            : await switchBookingRoom(bookingId, room.id);
-        setProcessing(false);
-        if (result.status === 'success' && result.data) {
-            setBooking(normalizeStaffBooking(result.data));
-            Alert.alert('Room updated', result.data.roomChangeNote || `Room ${room.roomNumber}.`);
-            return;
+            const isPreCheckIn =
+                booking.status === 'PENDING' || booking.status === 'CONFIRMED';
+            const result = isPreCheckIn
+                ? await reassignBookingRoom(bookingId, room.id)
+                : await switchBookingRoom(bookingId, room.id);
+            if (result.status === 'success' && result.data) {
+                setBooking(normalizeStaffBooking(result.data));
+                setRoomModalVisible(false);
+                return;
+            }
+            Alert.alert('Room change failed', result.message || 'Please try again.');
+        } catch (error) {
+            Alert.alert('Error', error?.message || 'Something went wrong. Please try again.');
+        } finally {
+            setRoomPickerBusy(false);
         }
-        Alert.alert('Room change failed', result.message || 'Please try again.');
     };
 
     const handleConfirmCheckIn = () => {
@@ -713,14 +803,18 @@ export default function BookingDetailScreen({navigation, route}) {
                 text: 'Confirm',
                 onPress: async () => {
                     setProcessing(true);
-                    const result = await confirmCheckIn(bookingId);
-                    setProcessing(false);
-                    if (result.status === 'success' && result.data) {
-                        setBooking(normalizeStaffBooking(result.data));
-                        Alert.alert('Checked in', result.message || 'Guest is now in-house.');
-                        return;
+                    try {
+                        const result = await confirmCheckIn(bookingId);
+                        if (result.status === 'success' && result.data) {
+                            setBooking(normalizeStaffBooking(result.data));
+                            return;
+                        }
+                        Alert.alert('Check-in failed', result.message || 'Please try again.');
+                    } catch (error) {
+                        Alert.alert('Error', error?.message || 'Something went wrong. Please try again.');
+                    } finally {
+                        setProcessing(false);
                     }
-                    Alert.alert('Check-in failed', result.message || 'Please try again.');
                 },
             },
         ]);
@@ -752,19 +846,19 @@ export default function BookingDetailScreen({navigation, route}) {
     };
 
     const resolveCheckoutFinalPayment = () => {
-        const fb = booking?.finalBill;
-        if (fb?.amountDue != null) {
-            return Number(fb.amountDue) || 0;
+        const fb = booking?.final_bill;
+        if (fb?.amount_due != null) {
+            return Number(fb.amount_due) || 0;
         }
-        const bill = booking?.checkoutBill || {};
-        const roomSubtotal = bill.roomSubtotal ?? booking.totalAmount ?? 0;
-        const serviceTotal = bill.serviceTotal ?? 0;
+        const bill = booking?.checkout_bill || {};
+        const roomSubtotal = bill.room_subtotal ?? booking.total_amount ?? 0;
+        const serviceTotal = bill.service_total ?? 0;
         const overtime = calculateOvertimeCharge(booking, new Date());
         return computeCheckoutTotals({
             roomSubtotal,
             serviceTotal,
             overtimeAmount: overtime.amount,
-            depositPaid: fb?.depositPaid ?? fb?.depositAmount ?? 0,
+            depositPaid: fb?.deposit_paid ?? fb?.deposit_amount ?? 0,
         }).finalPayment;
     };
 
@@ -789,7 +883,7 @@ export default function BookingDetailScreen({navigation, route}) {
                         const billResult = await fetchFinalBill(bookingId);
                         if (billResult.status === 'success' && billResult.data) {
                             setBooking((prev) =>
-                                prev ? {...prev, finalBill: billResult.data} : prev
+                                prev ? {...prev, final_bill: billResult.data} : prev
                             );
                             if (billResult.data.amountDue != null) {
                                 checkoutAmount = Number(billResult.data.amountDue) || 0;
@@ -911,21 +1005,27 @@ export default function BookingDetailScreen({navigation, route}) {
                 visible={roomModalVisible}
                 rooms={switchRooms}
                 loading={loadingSwitchRooms}
-                currentRoomNumber={booking?.roomNumber}
+                busy={roomPickerBusy}
+                currentRoomNumber={booking?.room_number || booking?.roomNumber}
                 mode={roomModalMode}
-                roomType={booking?.roomType}
+                roomType={booking?.room_type || booking?.roomType}
                 onSelect={handleSelectRoom}
-                onClose={() => setRoomModalVisible(false)}
+                onClose={() => {
+                    if (roomPickerBusy) return;
+                    setRoomModalVisible(false);
+                }}
             />
 
-            <Modal visible={processing && !isCheckInPhase && !roomModalVisible} transparent animationType="fade">
-                <View style={styles.overlay}>
+            {processing && !roomModalVisible ? (
+                <View style={styles.processingOverlay} pointerEvents="auto">
                     <View style={styles.overlayCard}>
                         <ActivityIndicator size="large" color="#8294FF" />
-                        <Text style={styles.overlayText}>Processing payment…</Text>
+                        <Text style={styles.overlayText}>
+                            {isCheckInPhase ? 'Updating booking…' : 'Processing payment…'}
+                        </Text>
                     </View>
                 </View>
-            </Modal>
+            ) : null}
         </SafeAreaView>
     );
 }
@@ -1016,6 +1116,10 @@ const styles = StyleSheet.create({
         flex: 1,
         minWidth: 0,
     },
+    headerAvatar: {
+        marginLeft: 8,
+        flexShrink: 0,
+    },
     hotelName: {
         fontSize: 16,
         fontWeight: '700',
@@ -1037,20 +1141,27 @@ const styles = StyleSheet.create({
         fontSize: 22,
         fontWeight: '800',
         color: '#0f172a',
+        marginBottom: 8,
     },
     datePill: {
         flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#f1f5f9',
+        alignItems: 'flex-start',
+        alignSelf: 'stretch',
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
         paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 20,
-        gap: 6,
+        paddingVertical: 10,
+        borderRadius: 12,
+        gap: 8,
+        marginBottom: 12,
     },
     datePillText: {
-        fontSize: 12,
+        flex: 1,
+        fontSize: 13,
         fontWeight: '600',
-        color: '#64748b',
+        color: '#475569',
+        lineHeight: 18,
     },
     codeBar: {
         flexDirection: 'row',
@@ -1061,25 +1172,32 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 12,
         marginBottom: 16,
+        gap: 12,
+    },
+    codeBarText: {
+        flex: 1,
+        minWidth: 0,
     },
     codeLabel: {
-        fontSize: 14,
-        color: '#64748b',
+        fontSize: 12,
+        color: '#94a3b8',
+        fontWeight: '600',
+        marginBottom: 2,
     },
     codeValue: {
         fontWeight: '700',
         color: '#334155',
+        fontSize: 14,
     },
     barcodeWrap: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        gap: 2,
-        height: 28,
-        paddingHorizontal: 4,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 4,
         backgroundColor: '#ffffff',
-        borderRadius: 4,
+        borderRadius: 8,
         borderWidth: 1,
         borderColor: '#e2e8f0',
+        flexShrink: 0,
     },
     barcodeLine: {
         backgroundColor: '#1e293b',
@@ -1305,8 +1423,10 @@ const styles = StyleSheet.create({
         color: '#166534',
         textAlign: 'center',
     },
-    overlay: {
-        flex: 1,
+    processingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        zIndex: 30,
+        elevation: 30,
         backgroundColor: 'rgba(15, 23, 42, 0.45)',
         alignItems: 'center',
         justifyContent: 'center',
@@ -1336,6 +1456,11 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
         color: '#0f172a',
+    },
+    roomAssignPending: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#8294FF',
     },
     roomChangeBanner: {
         backgroundColor: '#eef2ff',
@@ -1383,6 +1508,8 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
         paddingHorizontal: 20,
         paddingTop: 8,
+        position: 'relative',
+        overflow: 'hidden',
         shadowColor: '#0f172a',
         shadowOffset: {width: 0, height: -8},
         shadowOpacity: 0.18,
@@ -1476,6 +1603,40 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '600',
         color: '#94a3b8',
+    },
+    roomStatusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 10,
+        maxWidth: 120,
+    },
+    roomStatusBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+        textAlign: 'right',
+    },
+    roomStatusBadgeGreen: {backgroundColor: '#dcfce7'},
+    roomStatusBadgeTextGreen: {color: '#166534'},
+    roomStatusBadgeYellow: {backgroundColor: '#fef9c3'},
+    roomStatusBadgeTextYellow: {color: '#854d0e'},
+    roomStatusBadgeRed: {backgroundColor: '#fee2e2'},
+    roomStatusBadgeTextRed: {color: '#991b1b'},
+    roomSheetBusyOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        backgroundColor: 'rgba(255, 255, 255, 0.92)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+    },
+    roomSheetBusyText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#334155',
+    },
+    roomModalCancelDisabled: {
+        opacity: 0.5,
     },
     roomModalCancel: {
         paddingTop: 12,

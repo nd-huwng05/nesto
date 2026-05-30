@@ -5,7 +5,12 @@ import {AntDesign, Ionicons} from '@expo/vector-icons';
 import {useFocusEffect} from '@react-navigation/native';
 import RemoteImage from '../../../components/common/RemoteImage';
 import {getUnreadCustomerNotificationCount} from '../../../services/NotificationService';
-import api, {endpoints} from '../../../configuration/Apis';
+import {
+    fetchAiSearchBranches,
+    fetchCatalogThemes,
+    fetchCustomerCatalog,
+    fetchSearchSuggestions,
+} from '../../../services/CatalogService';
 import {getSession} from '../../../utils/authStorage';
 import Avatar from '../../../components/common/Avatar';
 import * as Location from 'expo-location';
@@ -132,14 +137,14 @@ function Section({title, data, cardWidth, navigation}) {
                                 onPress={() =>
                                     navigation.navigate('CustomerHomeDetailSceen', {
                                         room: {name: item.title, image: imageUri},
-                                        hotelName: item.title,
-                                        branchId: item.branchId || item.branchID || item.id,
-                                        hotelAddress: item.address || item.city,
+                                        hotel_name: item.title,
+                                        branch_id: item.branch_id || item.id,
+                                        hotel_address: item.address || item.city,
                                         location: item.address || item.city,
-                                        hotelDescription: item.description || '',
-                                        heroImage: imageUri,
-                                        rating: Number.isFinite(item?.syncedRating) ? item.syncedRating : DEFAULT_RATING_VALUE,
-                                        reviews: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
+                                        hotel_description: item.description || '',
+                                        hero_image: imageUri,
+                                        rating: Number.isFinite(item?.synced_rating) ? item.synced_rating : DEFAULT_RATING_VALUE,
+                                        reviews: Number.isFinite(item?.review_count) ? item.review_count : 0,
                                     })
                                 }
                             />
@@ -203,9 +208,12 @@ export function HomeScreen({navigation}) {
                 params.latitude = String(coords.latitude);
                 params.longitude = String(coords.longitude);
             }
-            const res = await api.get(endpoints['customer-catalog'], {params});
-            const rows = res?.data?.results || res?.data || [];
-            setCatalog(Array.isArray(rows) ? rows : []);
+            const res = await fetchCustomerCatalog(params);
+            if (res.status !== 'success') {
+                if (!silent) Alert.alert('Error', res.message || 'Failed to load stays.');
+                return;
+            }
+            setCatalog(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             if (!silent) Alert.alert('Error', 'Failed to load stays. Please try again.');
         } finally {
@@ -216,14 +224,13 @@ export function HomeScreen({navigation}) {
 
     const loadThemes = useCallback(async () => {
         try {
-            const res = await api.get(endpoints['themes']);
-            const rows = res?.data?.results || res?.data || [];
-            const list = Array.isArray(rows) ? rows : [];
+            const res = await fetchCatalogThemes();
+            const list = res.status === 'success' && Array.isArray(res.data) ? res.data : [];
             setThemes(list);
             const names = sortThemeNamesFromApi(
                 list,
                 list
-                    .filter((row) => row?.showInTabs !== false && row?.show_in_tabs !== false)
+                    .filter((row) => row?.show_in_tabs !== false)
                     .map((t) => String(t?.name || '').trim())
                     .filter((name) => Boolean(name) && !BASE_TABS.includes(name))
             );
@@ -264,9 +271,12 @@ export function HomeScreen({navigation}) {
         setIsSearching(true);
         try {
             const params = {q};
-            const res = await api.get(endpoints['ai-search'], {params});
-            const branches = res?.data?.results?.branches || [];
-            setCatalog(Array.isArray(branches) ? branches : []);
+            const res = await fetchAiSearchBranches(q);
+            if (res.status !== 'success') {
+                Alert.alert('Error', res.message || 'AI search failed.');
+                return;
+            }
+            setCatalog(Array.isArray(res.data) ? res.data : []);
             setActiveTab('ALL');
         } catch (error) {
             Alert.alert('Error', 'AI search failed. Please try again.');
@@ -284,9 +294,8 @@ export function HomeScreen({navigation}) {
         setIsAiLoading(true);
         try {
             const params = {q};
-            const res = await api.get(endpoints['search-suggestions'], {params});
-            const rows = res?.data?.results || [];
-            setAiSuggestions(Array.isArray(rows) ? rows : []);
+            const res = await fetchSearchSuggestions(q);
+            setAiSuggestions(res.status === 'success' && Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             setAiSuggestions([]);
         } finally {
@@ -376,13 +385,13 @@ export function HomeScreen({navigation}) {
     const enrichedCatalog = useMemo(() => {
         const rows = Array.isArray(catalog) ? catalog : [];
         return rows.map((item) => {
-            const minPriceHour = Number(item?.minPriceHour);
+            const minPriceHour = Number(item?.min_price_hour ?? 0);
             const priceLabel = String(item?.price || '').trim()
                 || (Number.isFinite(minPriceHour) && minPriceHour > 0 ? `From ${formatVnd(minPriceHour)}/h` : '');
             return {
                 ...item,
                 syncedRating: Number.isFinite(item?.rating) ? item.rating : DEFAULT_RATING_VALUE,
-                reviewCount: Number.isFinite(item?.reviewCount) ? item.reviewCount : 0,
+                reviewCount: Number.isFinite(item?.review_count) ? item.review_count : 0,
                 themes: normalizeThemeNames(item?.themes),
                 price: priceLabel,
             };
@@ -538,7 +547,7 @@ export function HomeScreen({navigation}) {
                                             activeOpacity={0.85}
                                             onPress={() => {
                                                 if (row?.type === 'branch') {
-                                                    navigation.navigate('CustomerHomeDetailSceen', {branchId: row?.id, hotelName: title, hotelAddress: subtitle, heroImage: row?.image});
+                                                    navigation.navigate('CustomerHomeDetailSceen', {branch_id: row?.id, hotel_name: title, hotel_address: subtitle, hero_image: row?.image});
                                                 }
                                             }}
                                         >

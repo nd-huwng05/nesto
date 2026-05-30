@@ -1,24 +1,24 @@
-import {useCallback, useState, useEffect} from 'react';
+import {useCallback, useMemo, useState, useEffect} from 'react';
 import {
     ActivityIndicator,
     Alert,
-    FlatList,
     RefreshControl,
+    SectionList,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {TabScreenLayout} from '../../../components/common/TabScreenLayout';
 import {Wrench} from 'lucide-react-native';
 import EmptyState from '../../../components/common/EmptyState';
 import {StaffBranchHeader} from '../../../components/staff/StaffBranchHeader';
 import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
-import {connectRoomUpdates} from '../../../services/WebSocketService';
-import {listRooms, isRoomGridBlocked} from '../../../services/staffApiService';
+import {useStaffRoomLive} from '../../../contexts/StaffRoomLiveContext';
+import {listRooms, isRoomGridBlocked, getRoomBlockedHint} from '../../../services/staffApiService';
+import {patchRoomListWithStatus} from '../../../utils/roomStatus';
 import {UI} from '../../../styles/uiTokens';
 import {isReceptionistRole} from '../../../constants/authRoles';
 
@@ -45,82 +45,148 @@ function getStatusBadge(status) {
 }
 
 function getBlockedHint(status) {
-    const key = normalizeStatus(status);
-    if (key === 'maintenance') return 'Maintenance';
-    return 'Occupied';
+    return getRoomBlockedHint(status);
+}
+
+function buildRoomSections(rooms) {
+    const groups = new Map();
+    for (const room of rooms) {
+        const typeName = String(room.type || room.room_type_name || 'Other').trim() || 'Other';
+        if (!groups.has(typeName)) {
+            groups.set(typeName, []);
+        }
+        groups.get(typeName).push(room);
+    }
+
+    return Array.from(groups.entries())
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([title, data]) => {
+            const sorted = [...data].sort(
+                (a, b) => Number(a.room_number) - Number(b.room_number)
+            );
+            const availableCount = sorted.filter((room) => !isRoomGridBlocked(room.status)).length;
+            return {
+                title,
+                data: sorted,
+                roomCount: sorted.length,
+                availableCount,
+                hourlyRate: sorted[0]?.hourly_rate ?? 0,
+            };
+        });
+}
+
+function RoomGridCard({item, onPress}) {
+    const statusBadge = getStatusBadge(item.status);
+    const blocked = isRoomGridBlocked(item.status);
+
+    return (
+        <TouchableOpacity
+            activeOpacity={blocked ? 1 : 0.88}
+            disabled={blocked}
+            onPress={() => onPress(item)}
+            style={[styles.roomCard, blocked && styles.roomCardBlocked]}
+        >
+            <View style={styles.cardTop}>
+                <View style={styles.cardLeft}>
+                    <Text style={styles.roomNumber}>Room {item.room_number}</Text>
+                    <Text style={styles.roomFeature}>{item.feature || '—'}</Text>
+                </View>
+                <View style={[styles.statusBadge, statusBadge.badgeStyle]}>
+                    <Text style={[styles.statusBadgeText, statusBadge.textStyle]}>
+                        {statusBadge.label}
+                    </Text>
+                </View>
+            </View>
+            <View style={styles.cardFooter}>
+                <Text style={styles.hourlyRate}>{formatHourly(item.hourly_rate)}</Text>
+                {blocked ? (
+                    <Text style={styles.blockedHint}>{getBlockedHint(item.status)}</Text>
+                ) : (
+                    <Text style={styles.bookHint}>Tap to book walk-in</Text>
+                )}
+            </View>
+        </TouchableOpacity>
+    );
+}
+
+function RoomTypeSectionHeader({section}) {
+    return (
+        <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderTop}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+                <Text style={styles.sectionRate}>{formatHourly(section.hourlyRate)}</Text>
+            </View>
+            <Text style={styles.sectionMeta}>
+                {section.roomCount} room{section.roomCount === 1 ? '' : 's'} · {section.availableCount} available
+            </Text>
+        </View>
+    );
 }
 
 export default function RoomGridScreen({navigation}) {
     const {user, branchId, role} = useStaffSession();
     const {branch} = useStaffBranch(branchId);
+    const {subscribe} = useStaffRoomLive();
     const [rooms, setRooms] = useState([]);
     const roomList = Array.isArray(rooms) ? rooms : [];
+    const roomSections = useMemo(() => buildRoomSections(roomList), [roomList]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
-    const loadRooms = useCallback(async () => {
+    const loadRooms = useCallback(async ({silent = false} = {}) => {
         if (!branchId) {
             setRooms([]);
             setIsLoading(false);
             return;
         }
-        setIsLoading(true);
+        if (!silent) {
+            setIsLoading(true);
+        }
         try {
             const data = await listRooms(branchId);
             setRooms(data);
             setErrorMessage('');
         } catch (error) {
             console.error('API Error: ', error.response?.data || error.message);
-            setRooms([]);
+            if (!silent) {
+                setRooms([]);
+            }
             const message = 'Unable to load room grid.';
             setErrorMessage(message);
-            Alert.alert('Rooms unavailable', message);
+            if (!silent) {
+                Alert.alert('Rooms unavailable', message);
+            }
         } finally {
-            setIsLoading(false);
+            if (!silent) {
+                setIsLoading(false);
+            }
         }
     }, [branchId]);
 
     useFocusEffect(
         useCallback(() => {
-            setIsLoading(true);
-            loadRooms();
-        }, [loadRooms])
+            loadRooms({silent: roomList.length > 0});
+        }, [loadRooms, roomList.length])
     );
 
     useEffect(() => {
-        let unsubscribe;
-        (async () => {
-            if (!branchId) return;
-            const token = await AsyncStorage.getItem('access_token');
-            if (!token) return;
-            unsubscribe = await connectRoomUpdates(branchId, {
-                token,
-                onMessage: (data) => {
-                    if (data?.type === 'room_status' || data?.type === 'room_occupied' || data?.type === 'room_dirty') {
-                        loadRooms();
-                    }
-                },
-            });
-        })().catch((error) => {
-            console.error("API Error: ", error.response?.data || error.message);
+        return subscribe((payload) => {
+            setRooms((prev) => patchRoomListWithStatus(prev, payload));
         });
-        return () => {
-            if (unsubscribe) unsubscribe();
-        };
-    }, [branchId, loadRooms]);
+    }, [subscribe]);
 
     const refresh = async () => {
         setRefreshing(true);
-        await loadRooms();
+        await loadRooms({silent: true});
         setRefreshing(false);
     };
 
     const openBooking = (item) => {
         navigation.navigate('StaffCreateBookingScreen', {
             roomId: item.id,
-            roomNumber: item.roomNumber,
-            hourlyRate: item.hourlyRate,
+            roomNumber: item.room_number,
+            hourlyRate: item.hourly_rate,
             roomType: item.type,
         });
     };
@@ -150,52 +216,27 @@ export default function RoomGridScreen({navigation}) {
                         </TouchableOpacity>
                     </View>
                     <Text className="font-sf text-sm text-gray-500 mt-1 mb-2">
-                        Tap a room to start a walk-in. Occupied and maintenance rooms cannot be booked.
+                        Tap an available room for walk-in. Occupied, dirty, and maintenance rooms cannot be booked.
                     </Text>
                 </View>
 
                 {isLoading ? (
                     <ActivityIndicator size="large" color="#8294FF" style={{marginTop: 40}} />
                 ) : (
-                    <FlatList
-                        data={roomList}
-                        keyExtractor={(item) => String(item?.id ?? item?.roomNumber ?? Math.random())}
+                    <SectionList
+                        sections={roomSections}
+                        keyExtractor={(item) => String(item?.id ?? item?.room_number)}
                         contentContainerStyle={styles.listContent}
-                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />}
-                        renderItem={({item}) => {
-                            const statusBadge = getStatusBadge(item.status);
-                            const blocked = isRoomGridBlocked(item.status);
-
-                            return (
-                                <TouchableOpacity
-                                    activeOpacity={blocked ? 1 : 0.88}
-                                    disabled={blocked}
-                                    onPress={() => openBooking(item)}
-                                    style={[styles.roomCard, blocked && styles.roomCardBlocked]}
-                                >
-                                    <View style={styles.cardTop}>
-                                        <View style={styles.cardLeft}>
-                                            <Text style={styles.roomNumber}>Room {item.roomNumber}</Text>
-                                            <Text style={styles.roomType}>{item.type}</Text>
-                                            <Text style={styles.roomFeature}>{item.feature}</Text>
-                                        </View>
-                                        <View style={[styles.statusBadge, statusBadge.badgeStyle]}>
-                                            <Text style={[styles.statusBadgeText, statusBadge.textStyle]}>
-                                                {statusBadge.label}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <View style={styles.cardFooter}>
-                                        <Text style={styles.hourlyRate}>{formatHourly(item.hourlyRate)}</Text>
-                                        {blocked ? (
-                                            <Text style={styles.blockedHint}>{getBlockedHint(item.status)}</Text>
-                                        ) : (
-                                            <Text style={styles.bookHint}>Tap to book walk-in</Text>
-                                        )}
-                                    </View>
-                                </TouchableOpacity>
-                            );
-                        }}
+                        stickySectionHeadersEnabled={false}
+                        refreshControl={
+                            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />
+                        }
+                        renderSectionHeader={({section}) => <RoomTypeSectionHeader section={section} />}
+                        renderItem={({item}) => (
+                            <RoomGridCard item={item} onPress={openBooking} />
+                        )}
+                        SectionSeparatorComponent={() => <View style={styles.sectionGap} />}
+                        ItemSeparatorComponent={() => <View style={{height: UI.sectionGap}} />}
                         ListEmptyComponent={
                             <EmptyState
                                 icon="bed-outline"
@@ -226,11 +267,40 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     listContent: {paddingHorizontal: 20, paddingBottom: 24},
+    sectionHeader: {
+        paddingTop: 8,
+        paddingBottom: 10,
+    },
+    sectionHeaderTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    sectionTitle: {
+        flex: 1,
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#0f172a',
+    },
+    sectionRate: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#059669',
+    },
+    sectionMeta: {
+        marginTop: 4,
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    sectionGap: {
+        height: 8,
+    },
     roomCard: {
         backgroundColor: '#ffffff',
         borderRadius: 16,
         padding: 16,
-        marginBottom: UI.sectionGap,
         borderWidth: 1,
         borderColor: '#e2e8f0',
         shadowColor: '#0f172a',
@@ -243,8 +313,7 @@ const styles = StyleSheet.create({
     cardTop: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12},
     cardLeft: {flex: 1, minWidth: 0},
     roomNumber: {fontSize: 22, fontWeight: '800', color: '#0f172a'},
-    roomType: {fontSize: 15, fontWeight: '600', color: '#475569', marginTop: 4},
-    roomFeature: {fontSize: 12, color: '#94a3b8', marginTop: 2},
+    roomFeature: {fontSize: 13, color: '#94a3b8', marginTop: 4},
     statusBadge: {paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10},
     statusBadgeText: {fontSize: 11, fontWeight: '700'},
     badgeGreen: {backgroundColor: '#dcfce7'},

@@ -20,13 +20,14 @@ import {
 } from '../../../components/customer/CustomerHotelDetailSections';
 import BookingDateTimePicker from '../../../components/booking/BookingDateTimePicker';
 import {fetchReviews} from '../../../services/ReviewService';
+import {fetchBranchRoomTypes} from '../../../services/CatalogService';
 import {mapReviewsToLocketList} from '../../../utils/locketFeed';
-import api, {endpoints} from '../../../configuration/Apis';
 import RemoteImage from '../../../components/common/RemoteImage';
 import ScreenHeader from '../../../components/common/ScreenHeader';
 import {formatVnd} from '../../../utils/formatCurrency';
 import {calculateTieredRoomPrice, formatDateTimeLabel, normalizeTierRates} from '../../../utils/roomPricing';
 import {useFavorites} from '../../../hooks/customer/useFavorites';
+import {connectCustomerUpdates} from '../../../services/WebSocketService';
 
 const PRIMARY = '#5b79df';
 const PRICE_ACCENT = '#059669';
@@ -61,8 +62,8 @@ const cardShadow = Platform.select({
 export function CustomerHomeDetailSceen({navigation, route}) {
     const params = route?.params ?? {};
     const room = params.room ?? {};
-    const routeHotelName = params.hotelName ?? '';
-    const heroImage = String(params.heroImage ?? room.image ?? '').trim();
+    const routeHotelName = params.hotel_name ?? params.hotelName ?? '';
+    const heroImage = String(params.hero_image ?? params.heroImage ?? room.image ?? '').trim();
     const rating = Number.isFinite(params.rating) ? params.rating : 0;
     const reviews = Number.isFinite(params.reviews) ? params.reviews : 0;
 
@@ -79,12 +80,14 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const [reviewsList, setReviewsList] = useState([]);
     const [isReviewsLoading, setIsReviewsLoading] = useState(false);
 
-    const hotelName = routeHotelName || room?.hotelName || 'Hotel';
-    const branchId = params.branchId ?? room?.branchId ?? '';
+    const hotelName = routeHotelName || room?.hotel_name || room?.hotelName || 'Hotel';
+    const branchId = params.branch_id ?? params.branchId ?? room?.branch_id ?? room?.branchId ?? '';
     const {isFavorite, toggleFavorite} = useFavorites();
     const favorited = isFavorite(branchId);
-    const hotelAddress = params.hotelAddress
+    const hotelAddress = params.hotel_address
+        ?? params.hotelAddress
         ?? params.location
+        ?? room?.hotel_address
         ?? room?.hotelAddress
         ?? '';
 
@@ -132,7 +135,7 @@ export function CustomerHomeDetailSceen({navigation, route}) {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
-    const loadRoomTypes = async () => {
+    const loadRoomTypes = useCallback(async () => {
         const safeBranchId = String(branchId || '').trim();
         if (!safeBranchId) {
             setRoomTypes([]);
@@ -140,20 +143,50 @@ export function CustomerHomeDetailSceen({navigation, route}) {
         }
         setIsRoomTypesLoading(true);
         try {
-            const res = await api.get(endpoints['branch-room-types'], {params: {branch_id: safeBranchId}});
-            const rows = res?.data?.results || res?.data || [];
-            setRoomTypes(Array.isArray(rows) ? rows : []);
+            const res = await fetchBranchRoomTypes({
+                branch_id: safeBranchId,
+                check_in_at: startDate.toISOString(),
+                expected_check_out_at: endDate.toISOString(),
+            });
+            setRoomTypes(res.status === 'success' && Array.isArray(res.data) ? res.data : []);
         } catch {
             setRoomTypes([]);
             Alert.alert('Rooms', 'Unable to load room types right now. Please try again.');
         } finally {
             setIsRoomTypesLoading(false);
         }
-    };
+    }, [branchId, startDate, endDate]);
 
     useEffect(() => {
         loadRoomTypes();
-    }, [branchId]);
+    }, [loadRoomTypes]);
+
+    useEffect(() => {
+        const safeBranchId = String(branchId || '').trim();
+        if (!safeBranchId) return undefined;
+
+        let active = true;
+        let disconnect = () => {};
+
+        (async () => {
+            disconnect = (await connectCustomerUpdates({
+                branchId: safeBranchId,
+                onMessage: (payload) => {
+                    if (!active || payload?.type !== 'availability_changed') return;
+                    const msgBranch = String(payload?.branch_id || '').trim();
+                    if (!msgBranch || msgBranch === safeBranchId) {
+                        loadRoomTypes();
+                    }
+                },
+            })) || (() => {});
+            if (!active) disconnect();
+        })();
+
+        return () => {
+            active = false;
+            disconnect();
+        };
+    }, [branchId, loadRoomTypes]);
 
     const formatDateLabel = () => {
         const inLabel = formatDateTimeLabel(startDate);
@@ -269,20 +302,16 @@ export function CustomerHomeDetailSceen({navigation, route}) {
                             {roomTypes.map((type) => {
                                 const typeId = String(type?.id || '').trim();
                                 const typeName = String(type?.name || '').trim() || 'Room type';
-                                const tier = normalizeTierRates({
-                                    pricePerHour: type?.pricePerHour,
-                                    pricePerHalfDay: type?.pricePerHalfDay,
-                                    pricePerDay: type?.pricePerDay || type?.basePrice,
-                                });
+                                const tier = normalizeTierRates(type);
                                 const pricePerHour = tier.pricePerHour;
                                 const pricePerHalfDay = tier.pricePerHalfDay;
                                 const pricePerDay = tier.pricePerDay;
                                 const previewQuote = calculateTieredRoomPrice(tier, startDate, endDate);
-                                const available = Number(type?.available_count ?? type?.availableCount ?? 0);
+                                const available = Number(type?.available_count ?? 0);
                                 const soldOut = !(available > 0);
                                 const desc = String(type?.description || '').trim();
-                                const amenities = Array.isArray(type?.roomAmenities)
-                                    ? type.roomAmenities.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 3).join(' • ')
+                                const amenities = Array.isArray(type?.room_amenities)
+                                    ? type.room_amenities.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 3).join(' • ')
                                     : '';
                                 const image = (Array.isArray(type?.images) && type.images.length
                                     ? String(type.images[0] || '').trim()

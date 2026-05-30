@@ -1,3 +1,5 @@
+import {normalizeAuthRole} from '../utils/roleNormalize';
+
 export const AUTH_ROLES = {
     SUPER_ADMIN: 'SUPER_ADMIN',
     BUSINESS_OWNER: 'BUSINESS_OWNER',
@@ -25,7 +27,22 @@ export const isBusinessRole = (role) =>
 
 /** Business owner / admin portfolio screens (reports, staff roster). */
 export const canManageBusinessPortfolio = (profile = {}) => {
-    const normalizedRole = String(profile?.rawRole || profile?.role || '').trim().toUpperCase();
+    const uiFlow = String(profile?.uiFlow || profile?.ui_flow || '').trim().toLowerCase();
+    if (uiFlow === STAFF_UI_FLOWS.BUSINESS) {
+        return true;
+    }
+
+    const sessionKind = String(profile?.sessionKind || profile?.session_kind || '').trim().toLowerCase();
+    if (sessionKind === STAFF_UI_FLOWS.BUSINESS) {
+        return true;
+    }
+
+    const normalizedRole = normalizeAuthRole(
+        profile?.rawRole ||
+            profile?.role ||
+            profile?.roleDisplay ||
+            profile?.role_display
+    );
     const groups = Array.isArray(profile?.groups) ? profile.groups : [];
     return (
         isBusinessRole(normalizedRole) ||
@@ -52,7 +69,7 @@ export const resolveStaffUiFlow = (user = {}, role = '') => {
         return explicit;
     }
 
-    const normalizedRole = String(role || user?.role || '').trim().toUpperCase();
+    const normalizedRole = normalizeAuthRole(role || user?.role);
     const department = String(user?.department || '').trim().toUpperCase();
     const serviceCategory = normalizeCategoryToken(user?.serviceCategory || user?.service_category);
 
@@ -106,3 +123,5 @@ export const staffJobToAuthRole = (jobRole) => {
 
 /** @deprecated use isOperationalStaffRole */
 export const isStaffRole = (role) => isOperationalStaffRole(role);
+
+export {normalizeAuthRole};

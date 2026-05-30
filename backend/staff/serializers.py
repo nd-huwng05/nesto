@@ -12,10 +12,9 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email")
     phone = serializers.CharField(source="user.phone", required=False, allow_blank=True)
     role = serializers.SerializerMethodField()
-    formRole = serializers.SerializerMethodField()
-    branchId = serializers.UUIDField(source="branch_id", read_only=True)
-    businessId = serializers.UUIDField(source="branch.company_id", read_only=True)
-    serviceCategory = serializers.CharField(source="service_category", required=False, allow_blank=True)
+    form_role = serializers.SerializerMethodField()
+    branch_id = serializers.UUIDField(read_only=True)
+    business_id = serializers.UUIDField(source="branch.company_id", read_only=True)
 
     class Meta:
         model = StaffProfile
@@ -26,13 +25,12 @@ class StaffProfileSerializer(serializers.ModelSerializer):
             "email",
             "phone",
             "role",
-            "formRole",
+            "form_role",
             "branch",
-            "branchId",
-            "businessId",
+            "branch_id",
+            "business_id",
             "department",
             "service_category",
-            "serviceCategory",
             "job_role",
             "created_at",
             "updated_at",
@@ -42,16 +40,26 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     def get_role(self, obj):
         return staff_form_role_from_profile(obj)
 
-    def get_formRole(self, obj):
+    def get_form_role(self, obj):
         return staff_form_role_from_profile(obj)
 
     def _apply_assignment(self, validated_data):
-        form_role = self.initial_data.get("role") or self.initial_data.get("formRole") or validated_data.get("department")
+        form_role = (
+            self.initial_data.get("role")
+            or self.initial_data.get("form_role")
+            or self.initial_data.get("formRole")
+            or validated_data.get("department")
+        )
         spec = RoleSyncService.sync_from_staff_form(
             self._pending_user,
             form_role=str(form_role or ""),
             department=str(validated_data.get("department") or ""),
-            service_category=str(validated_data.get("service_category") or self.initial_data.get("serviceCategory") or ""),
+            service_category=str(
+                validated_data.get("service_category")
+                or self.initial_data.get("service_category")
+                or self.initial_data.get("serviceCategory")
+                or ""
+            ),
             job_role=str(validated_data.get("job_role") or ""),
         )
         validated_data["department"] = spec["department"]

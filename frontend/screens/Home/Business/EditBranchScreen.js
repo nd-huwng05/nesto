@@ -4,8 +4,13 @@ import {ChevronLeft} from 'lucide-react-native';
 import {ScreenWrapper} from '../../../components/common/ScreenWrapper';
 import {useBranchCRUD} from '../../../hooks/business/useBranchCRUD';
 import {fetchAmenityOptions, fetchGuestSegments, fetchLodgingTypes} from '../../../services/BranchService';
+import {
+    createCatalogTheme,
+    fetchBranchThemes,
+    fetchCatalogThemes,
+    toggleBranchTheme,
+} from '../../../services/CatalogService';
 import {commonInputStyles} from '../../../styles/TextInputStyles';
-import api, {endpoints} from '../../../configuration/Apis';
 
 function FormField({label, value, onChangeText, ...props}) {
     return (
@@ -48,14 +53,15 @@ export default function EditBranchScreen({navigation, route}) {
                 if (am?.status === 'success') setAmenityOptions(Array.isArray(am.data) ? am.data : []);
                 if (gs?.status === 'success') setGuestSegments(Array.isArray(gs.data) ? gs.data : []);
                 const [themesRes, branchThemesRes] = await Promise.all([
-                    api.get(endpoints['themes']),
-                    api.get(endpoints['branch-themes'], {params: {branch_id: branchId}}),
+                    fetchCatalogThemes(),
+                    fetchBranchThemes(branchId),
                 ]);
-                const themeRows = themesRes?.data?.results || themesRes?.data || [];
-                const btRows = branchThemesRes?.data?.results || [];
-                if (alive) {
-                    setThemes(Array.isArray(themeRows) ? themeRows : []);
-                    setBranchThemes(Array.isArray(btRows) ? btRows : []);
+                if (!alive) return;
+                if (themesRes?.status === 'success') {
+                    setThemes(Array.isArray(themesRes.data) ? themesRes.data : []);
+                }
+                if (branchThemesRes?.status === 'success') {
+                    setBranchThemes(Array.isArray(branchThemesRes.data) ? branchThemesRes.data : []);
                 }
             } catch (err) {
                 if (!alive) return;
@@ -128,35 +134,35 @@ export default function EditBranchScreen({navigation, route}) {
 
     const isThemeEnabled = useCallback((theme) => {
         const id = String(theme?.id || '');
-        return branchThemes.some((t) => String(t?.theme?.id || t?.themeId || '') === id);
+        return branchThemes.some((t) => String(t?.theme?.id || t?.theme_id || '') === id);
     }, [branchThemes]);
 
     const reloadBranchThemes = useCallback(async () => {
-        const res = await api.get(endpoints['branch-themes'], {params: {branch_id: branchId}});
-        const btRows = res?.data?.results || [];
-        setBranchThemes(Array.isArray(btRows) ? btRows : []);
+        const res = await fetchBranchThemes(branchId);
+        setBranchThemes(res.status === 'success' && Array.isArray(res.data) ? res.data : []);
     }, [branchId]);
 
     const toggleTheme = useCallback(async (theme) => {
-        try {
-            await api.post(endpoints['branch-theme-toggle'], {branchId, themeId: theme?.id});
-            await reloadBranchThemes();
-        } catch (err) {
-            Alert.alert('Error', err?.response?.data?.detail || err?.message || 'Could not update themes.');
+        const res = await toggleBranchTheme({branch_id: branchId, theme_id: theme?.id});
+        if (res.status !== 'success') {
+            Alert.alert('Error', res.message || 'Could not update themes.');
+            return;
         }
+        await reloadBranchThemes();
     }, [branchId, reloadBranchThemes]);
 
     const createTheme = useCallback(async () => {
         const name = String(newThemeName || '').trim();
         if (!name) return;
-        try {
-            await api.post(endpoints['themes'], {name});
-            setNewThemeName('');
-            const themesRes = await api.get(endpoints['themes']);
-            const themeRows = themesRes?.data?.results || themesRes?.data || [];
-            setThemes(Array.isArray(themeRows) ? themeRows : []);
-        } catch (err) {
-            Alert.alert('Error', err?.response?.data?.detail || err?.message || 'Could not create theme.');
+        const res = await createCatalogTheme(name);
+        if (res.status !== 'success') {
+            Alert.alert('Error', res.message || 'Could not create theme.');
+            return;
+        }
+        setNewThemeName('');
+        const themesRes = await fetchCatalogThemes();
+        if (themesRes.status === 'success') {
+            setThemes(Array.isArray(themesRes.data) ? themesRes.data : []);
         }
     }, [newThemeName]);
 

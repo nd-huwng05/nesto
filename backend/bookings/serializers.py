@@ -1,143 +1,131 @@
 from rest_framework import serializers
 
+from bookings.models import Booking, BookingLineItem, ReviewForumPost, build_display_code
 from bookings.services.billing_service import build_booking_bill, build_final_bill
-from bookings.models import Booking, BookingExtraService, BookingLineItem, build_display_code
-from core.services.serializer_mixins import CloudinaryRepresentationMixin
 from core.services.cloudinary_service import CloudinaryMediaService
-
-
-class BookingExtraServiceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BookingExtraService
-        fields = ["id", "service_key", "summary", "amount", "created_at", "updated_at"]
+from core.services.serializer_mixins import CloudinaryRepresentationMixin
 
 
 class BookingLineItemSerializer(serializers.ModelSerializer):
-    line_id = serializers.UUIDField(source="id", read_only=True)
     display_code = serializers.SerializerMethodField()
-    name = serializers.CharField(source="summary", read_only=True)
-    price = serializers.IntegerField(source="amount", read_only=True)
 
     class Meta:
         model = BookingLineItem
         fields = [
-            "id", "line_id", "service_key", "service_code", "line_no", "display_code",
-            "summary", "name", "amount", "price", "category", "status", "source",
-            "assigned_staff", "assigned_to", "items", "room_number", "guest_name", "guest_phone",
-            "created_at", "updated_at",
+            "id",
+            "booking",
+            "branch",
+            "service_key",
+            "service_code",
+            "line_no",
+            "display_code",
+            "summary",
+            "amount",
+            "category",
+            "status",
+            "source",
+            "assigned_staff",
+            "assigned_to",
+            "items",
+            "room_number",
+            "guest_name",
+            "guest_phone",
+            "created_at",
+            "updated_at",
         ]
 
     def get_display_code(self, obj):
         return build_display_code(obj.service_code, obj.line_no)
 
 
-class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
-    guestName = serializers.CharField(source="guest_name", required=False, allow_blank=True)
-    roomNumber = serializers.SerializerMethodField()
-    roomType = serializers.CharField(source="room_type", required=False, allow_blank=True)
-    bookingCode = serializers.CharField(source="booking_code", required=False)
-    checkInTime = serializers.SerializerMethodField()
-    checkOutTime = serializers.SerializerMethodField()
-    originalRoomNumber = serializers.CharField(source="original_room_number", required=False, allow_blank=True)
-    roomChangeNote = serializers.CharField(source="room_change_note", required=False, allow_blank=True)
-    specialRequests = serializers.CharField(source="special_requests", required=False, allow_blank=True)
-    hourlyRate = serializers.IntegerField(source="hourly_rate", required=False)
-    basePrice = serializers.IntegerField(source="base_price", required=False)
-    extraServices = BookingExtraServiceSerializer(source="extra_services", many=True, read_only=True)
-    lineItems = BookingLineItemSerializer(source="line_items", many=True, read_only=True)
-    servicesTotal = serializers.SerializerMethodField()
-    roomTotal = serializers.SerializerMethodField()
-    subtotal = serializers.SerializerMethodField()
-    overtimeCharge = serializers.SerializerMethodField()
-    lateMinutes = serializers.SerializerMethodField()
-    isOvertime = serializers.SerializerMethodField()
-    stayNights = serializers.SerializerMethodField()
-    stayMinutes = serializers.SerializerMethodField()
-    stayLabel = serializers.SerializerMethodField()
-    nightlyRate = serializers.SerializerMethodField()
-    roomPrice = serializers.IntegerField(source="room_price", read_only=True)
-    depositPercentage = serializers.IntegerField(source="deposit_percentage", read_only=True)
-    depositAmount = serializers.IntegerField(source="deposit_amount", read_only=True)
-    holdMinutes = serializers.IntegerField(source="hold_minutes", read_only=True)
-    lateHoldDeadlineAt = serializers.DateTimeField(source="late_hold_deadline_at", read_only=True)
-    pricingTier = serializers.SerializerMethodField()
-    durationHours = serializers.SerializerMethodField()
-    totalAmount = serializers.SerializerMethodField()
-    heroImage = serializers.SerializerMethodField()
+class BookingImageMixin:
+    @staticmethod
+    def _first_image_url(images):
+        if not isinstance(images, list) or not images:
+            return ""
+        first = images[0]
+        if isinstance(first, str) and first.strip():
+            return first.strip()
+        if isinstance(first, dict):
+            return str(first.get("url") or first.get("image") or "").strip()
+        return ""
+
+    def _resolve_hotel_image(self, obj):
+        branch = getattr(obj, "branch", None)
+        if not branch:
+            return None
+        url = self._first_image_url(getattr(branch, "images", None) or [])
+        if url and CloudinaryMediaService.is_http_url(url):
+            return url
+        return CloudinaryMediaService.resolve_field_url(getattr(branch, "image", None))
+
+    def _resolve_room_image(self, obj):
+        room = getattr(obj, "room", None)
+        if room is not None:
+            category = getattr(room, "category", None)
+            if category is not None:
+                url = self._first_image_url(getattr(category, "images", None) or [])
+                if url:
+                    return url
+        room_category = getattr(obj, "room_category", None)
+        if room_category is not None:
+            url = self._first_image_url(getattr(room_category, "images", None) or [])
+            if url:
+                return url
+        return self._resolve_hotel_image(obj)
+
+
+class BookingListSerializer(BookingImageMixin, CloudinaryRepresentationMixin, serializers.ModelSerializer):
+    room_number = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
+    is_unassigned = serializers.SerializerMethodField()
+    check_in_time = serializers.SerializerMethodField()
+    check_out_time = serializers.SerializerMethodField()
+    hero_image = serializers.SerializerMethodField()
     hotel_image = serializers.SerializerMethodField()
     room_image = serializers.SerializerMethodField()
-    hotelImage = serializers.SerializerMethodField()
-    roomImage = serializers.SerializerMethodField()
-    guestEmail = serializers.EmailField(source="email", read_only=True)
-    guestPhone = serializers.CharField(source="phone", read_only=True)
-    statusLabel = serializers.SerializerMethodField()
-    isUnassigned = serializers.SerializerMethodField()
-    branchId = serializers.UUIDField(source="branch_id", read_only=True)
-    roomId = serializers.UUIDField(source="room_id", read_only=True)
-    roomCategoryId = serializers.UUIDField(source="room_category_id", read_only=True)
-    finalBill = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
         fields = [
             "id",
             "branch",
-            "branchId",
+            "branch_id",
             "room",
-            "roomId",
-            "roomCategoryId",
-            "finalBill",
-            "roomNumber",
-            "roomType",
-            "bookingCode",
-            "guestName",
-            "guestEmail",
-            "guestPhone",
+            "room_id",
+            "room_category_id",
+            "room_number",
+            "room_type",
+            "booking_code",
+            "guest_name",
             "email",
             "phone",
             "status",
-            "statusLabel",
-            "isUnassigned",
+            "status_label",
+            "is_unassigned",
             "walk_in",
-            "checkInTime",
-            "checkOutTime",
+            "check_in_time",
+            "check_out_time",
             "check_in_at",
             "check_out_at",
             "expected_check_out_at",
             "hotel_name",
             "hotel_address",
-            "originalRoomNumber",
-            "roomChangeNote",
-            "specialRequests",
-            "hourlyRate",
-            "basePrice",
-            "roomPrice",
-            "depositPercentage",
-            "depositAmount",
-            "holdMinutes",
-            "lateHoldDeadlineAt",
-            "pricingTier",
-            "durationHours",
-            "roomTotal",
-            "servicesTotal",
-            "subtotal",
-            "overtimeCharge",
-            "lateMinutes",
-            "isOvertime",
-            "stayNights",
-            "stayMinutes",
-            "stayLabel",
-            "nightlyRate",
-            "totalAmount",
-            "heroImage",
-            "hotel_image",
-            "room_image",
-            "hotelImage",
-            "roomImage",
+            "original_room_number",
+            "room_change_note",
+            "special_requests",
+            "hourly_rate",
+            "base_price",
+            "room_price",
+            "deposit_percentage",
+            "deposit_amount",
+            "hold_minutes",
+            "late_hold_deadline_at",
             "discount",
             "payment_method",
-            "extraServices",
-            "lineItems",
+            "hero_image",
+            "hotel_image",
+            "room_image",
             "created_at",
             "updated_at",
         ]
@@ -152,14 +140,97 @@ class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
             "expected_check_out_at",
         ]
 
-    def get_roomNumber(self, obj):
+    def get_room_number(self, obj):
         return obj.room.room_number if obj.room else ""
 
-    def get_statusLabel(self, obj):
+    def get_status_label(self, obj):
         return str(obj.status or "").replace("_", " ").title()
 
-    def get_isUnassigned(self, obj):
+    def get_is_unassigned(self, obj):
         return obj.room_id is None
+
+    @staticmethod
+    def _format_dt(dt):
+        if not dt:
+            return ""
+        return dt.strftime("%Hh%M' %d %b %Y")
+
+    def get_check_in_time(self, obj):
+        return self._format_dt(obj.check_in_at)
+
+    def get_check_out_time(self, obj):
+        checkout = obj.check_out_at or obj.expected_check_out_at
+        return self._format_dt(checkout)
+
+    def get_hotel_image(self, obj):
+        return self._resolve_hotel_image(obj)
+
+    def get_room_image(self, obj):
+        return self._resolve_room_image(obj)
+
+    def get_hero_image(self, obj):
+        room_url = self.get_room_image(obj)
+        if room_url:
+            return room_url
+        return self.get_hotel_image(obj)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not str(data.get("room_type") or "").strip():
+            category = getattr(instance, "room_category", None)
+            if category is None and getattr(instance, "room", None) is not None:
+                category = getattr(instance.room, "category", None)
+            if category is not None:
+                data["room_type"] = str(getattr(category, "name", "") or "").strip()
+        for key in ("hero_image", "hotel_image", "room_image"):
+            value = data.get(key)
+            if not value:
+                data[key] = None
+            elif not CloudinaryMediaService.is_http_url(str(value)):
+                data[key] = CloudinaryMediaService.resolve_legacy_url(str(value))
+        return data
+
+
+class BookingDetailSerializer(BookingListSerializer):
+    line_items = BookingLineItemSerializer(many=True, read_only=True)
+
+    class Meta(BookingListSerializer.Meta):
+        fields = BookingListSerializer.Meta.fields + ["line_items"]
+
+
+class BookingBillSerializer(BookingDetailSerializer):
+    services_total = serializers.SerializerMethodField()
+    room_total = serializers.SerializerMethodField()
+    subtotal = serializers.SerializerMethodField()
+    overtime_charge = serializers.SerializerMethodField()
+    late_minutes = serializers.SerializerMethodField()
+    is_overtime = serializers.SerializerMethodField()
+    stay_nights = serializers.SerializerMethodField()
+    stay_minutes = serializers.SerializerMethodField()
+    stay_label = serializers.SerializerMethodField()
+    nightly_rate = serializers.SerializerMethodField()
+    pricing_tier = serializers.SerializerMethodField()
+    duration_hours = serializers.SerializerMethodField()
+    total_amount = serializers.SerializerMethodField()
+    final_bill = serializers.SerializerMethodField()
+
+    class Meta(BookingDetailSerializer.Meta):
+        fields = BookingDetailSerializer.Meta.fields + [
+            "services_total",
+            "room_total",
+            "subtotal",
+            "overtime_charge",
+            "late_minutes",
+            "is_overtime",
+            "stay_nights",
+            "stay_minutes",
+            "stay_label",
+            "nightly_rate",
+            "pricing_tier",
+            "duration_hours",
+            "total_amount",
+            "final_bill",
+        ]
 
     def _bill_cache(self):
         if not hasattr(self, "_booking_bill_cache"):
@@ -173,130 +244,51 @@ class BookingSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
             cache[key] = build_booking_bill(obj)
         return cache[key]
 
-    def get_servicesTotal(self, obj):
-        return self._bill(obj)["servicesTotal"]
+    def get_services_total(self, obj):
+        return self._bill(obj)["services_total"]
 
-    def get_roomTotal(self, obj):
-        return self._bill(obj)["roomTotal"]
+    def get_room_total(self, obj):
+        return self._bill(obj)["room_total"]
 
     def get_subtotal(self, obj):
         return self._bill(obj)["subtotal"]
 
-    def get_overtimeCharge(self, obj):
-        return self._bill(obj)["overtimeCharge"]
+    def get_overtime_charge(self, obj):
+        return self._bill(obj)["overtime_charge"]
 
-    def get_lateMinutes(self, obj):
-        return self._bill(obj)["lateMinutes"]
+    def get_late_minutes(self, obj):
+        return self._bill(obj)["late_minutes"]
 
-    def get_isOvertime(self, obj):
-        return self._bill(obj)["isOvertime"]
+    def get_is_overtime(self, obj):
+        return self._bill(obj)["is_overtime"]
 
-    def get_stayNights(self, obj):
-        return self._bill(obj)["stayNights"]
+    def get_stay_nights(self, obj):
+        return self._bill(obj)["stay_nights"]
 
-    def get_stayMinutes(self, obj):
-        return self._bill(obj)["stayMinutes"]
+    def get_stay_minutes(self, obj):
+        return self._bill(obj)["stay_minutes"]
 
-    def get_stayLabel(self, obj):
-        return self._bill(obj)["stayLabel"]
+    def get_stay_label(self, obj):
+        return self._bill(obj)["stay_label"]
 
-    def get_nightlyRate(self, obj):
-        return self._bill(obj)["nightlyRate"]
+    def get_nightly_rate(self, obj):
+        return self._bill(obj)["nightly_rate"]
 
-    def get_pricingTier(self, obj):
-        return self._bill(obj).get("pricingTier", "")
+    def get_pricing_tier(self, obj):
+        return self._bill(obj).get("pricing_tier", "")
 
-    def get_durationHours(self, obj):
-        return self._bill(obj).get("durationHours", 0)
+    def get_duration_hours(self, obj):
+        return self._bill(obj).get("duration_hours", 0)
 
-    def get_totalAmount(self, obj):
-        return self._bill(obj)["totalAmount"]
+    def get_total_amount(self, obj):
+        return self._bill(obj)["total_amount"]
 
-    def get_finalBill(self, obj):
+    def get_final_bill(self, obj):
         return build_final_bill(obj)
 
-    @staticmethod
-    def _first_image_url(images):
-        if not isinstance(images, list) or not images:
-            return ""
-        first = images[0]
-        if isinstance(first, str) and first.strip():
-            return first.strip()
-        if isinstance(first, dict):
-            return str(first.get("url") or first.get("image") or "").strip()
-        return ""
 
-    def get_hotel_image(self, obj):
-        return self.get_hotelImage(obj)
-
-    def get_hotelImage(self, obj):
-        branch = getattr(obj, "branch", None)
-        if not branch:
-            return None
-        url = self._first_image_url(getattr(branch, "images", None) or [])
-        if url and CloudinaryMediaService.is_http_url(url):
-            return url
-        return CloudinaryMediaService.resolve_field_url(getattr(branch, "image", None))
-
-    def get_room_image(self, obj):
-        return self.get_roomImage(obj)
-
-    def get_roomImage(self, obj):
-        room = getattr(obj, "room", None)
-        if room is not None:
-            category = getattr(room, "category", None)
-            if category is not None:
-                url = self._first_image_url(getattr(category, "images", None) or [])
-                if url:
-                    return url
-        room_category = getattr(obj, "room_category", None)
-        if room_category is not None:
-            url = self._first_image_url(getattr(room_category, "images", None) or [])
-            if url:
-                return url
-        return self.get_hotelImage(obj)
-
-    def get_heroImage(self, obj):
-        room_url = self.get_roomImage(obj)
-        if room_url:
-            return room_url
-        return self.get_hotelImage(obj)
-
-    def _format_dt(self, dt):
-        if not dt:
-            return ""
-        return dt.strftime("%Hh%M' %d %b %Y")
-
-    def get_checkInTime(self, obj):
-        return self._format_dt(obj.check_in_at)
-
-    def get_checkOutTime(self, obj):
-        return self._format_dt(obj.check_out_at)
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        for key in ("heroImage", "hotelImage", "roomImage", "hotel_image", "room_image"):
-            value = data.get(key)
-            if not value:
-                data[key] = None
-            elif not CloudinaryMediaService.is_http_url(str(value)):
-                data[key] = CloudinaryMediaService.resolve_legacy_url(str(value))
-
-        line_items = data.get("lineItems") or []
-        legacy_services = data.get("extraServices") or []
-        if line_items and not legacy_services:
-            data["extraServices"] = [
-                {
-                    "id": item.get("id"),
-                    "service_key": item.get("service_key") or item.get("serviceKey"),
-                    "summary": item.get("summary") or item.get("name") or "Service",
-                    "amount": item.get("amount") or item.get("price") or 0,
-                    "created_at": item.get("created_at"),
-                    "updated_at": item.get("updated_at"),
-                }
-                for item in line_items
-            ]
-        return data
+# Default serializer — detail view without bill computation on every field access.
+BookingSerializer = BookingDetailSerializer
 
 
 class CustomerBookingCreateSerializer(serializers.ModelSerializer):
@@ -353,7 +345,29 @@ class CustomerBookingCreateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
-from bookings.models import ReviewForumPost
+class BookingQuoteInputSerializer(serializers.Serializer):
+    room_type_id = serializers.UUIDField(required=True)
+    branch = serializers.UUIDField(required=True)
+    branch_id = serializers.UUIDField(required=False)
+    check_in_at = serializers.CharField(required=True)
+    expected_check_out_at = serializers.CharField(required=True)
+    deposit_percentage = serializers.IntegerField(required=False, default=20)
+
+    def validate(self, attrs):
+        branch_id = attrs.get("branch_id") or attrs.get("branch")
+        if not branch_id:
+            raise serializers.ValidationError({"branch": "branch is required."})
+        attrs["branch_id"] = branch_id
+        return attrs
+
+
+class BookingCancelInputSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class BookingCancelOutputSerializer(serializers.Serializer):
+    booking = BookingDetailSerializer()
+    refund = serializers.DictField(required=False)
 
 
 class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
@@ -361,49 +375,34 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
     author_name = serializers.SerializerMethodField()
     author_email = serializers.SerializerMethodField()
     author_avatar = serializers.SerializerMethodField()
-    authorAvatar = serializers.SerializerMethodField()
-    authorName = serializers.SerializerMethodField()
-    hotelName = serializers.CharField(source="hotel_name", read_only=True)
-    roomName = serializers.CharField(source="room_name", read_only=True)
-    imageUrl = serializers.SerializerMethodField()
-    branchId = serializers.SerializerMethodField()
-    branchName = serializers.SerializerMethodField()
-    branchAddress = serializers.SerializerMethodField()
-    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    image_url = serializers.SerializerMethodField()
+    branch_id = serializers.SerializerMethodField()
+    branch_name = serializers.SerializerMethodField()
+    branch_address = serializers.SerializerMethodField()
     hearts_count = serializers.SerializerMethodField()
-    heartsCount = serializers.SerializerMethodField()
     liked_by_me = serializers.SerializerMethodField()
-    likedByMe = serializers.SerializerMethodField()
 
-    cloudinary_field_map = {"imageUrl": "image"}
+    cloudinary_field_map = {"image_url": "image"}
 
     class Meta:
         model = ReviewForumPost
         fields = [
             "id",
             "booking_id",
-            "branchId",
-            "branchName",
-            "branchAddress",
+            "branch_id",
+            "branch_name",
+            "branch_address",
             "hotel_name",
-            "hotelName",
             "room_name",
-            "roomName",
             "content",
             "rating",
             "image_url",
-            "imageUrl",
             "created_at",
-            "createdAt",
             "author_name",
-            "authorName",
             "author_email",
             "author_avatar",
-            "authorAvatar",
             "hearts_count",
-            "heartsCount",
             "liked_by_me",
-            "likedByMe",
         ]
 
     def get_booking_id(self, obj):
@@ -418,9 +417,6 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
         user = self._author_user(obj)
         return str(getattr(user, "name", "") or getattr(user, "email", "") or "Guest")
 
-    def get_authorName(self, obj):
-        return self.get_author_name(obj)
-
     def get_author_email(self, obj):
         user = self._author_user(obj)
         return str(getattr(user, "email", "") or "").strip().lower()
@@ -429,10 +425,7 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
         user = self._author_user(obj)
         return CloudinaryMediaService.resolve_field_url(getattr(user, "avatar", None) if user else None)
 
-    def get_authorAvatar(self, obj):
-        return self.get_author_avatar(obj)
-
-    def get_branchId(self, obj):
+    def get_branch_id(self, obj):
         if obj.branch_id:
             return str(obj.branch_id)
         booking = getattr(obj, "booking_ref", None)
@@ -440,7 +433,7 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
             return str(booking.branch_id)
         return ""
 
-    def get_branchName(self, obj):
+    def get_branch_name(self, obj):
         branch = getattr(obj, "branch", None)
         if branch:
             return str(branch.name or "")
@@ -449,7 +442,7 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
             return str(booking.branch.name or "")
         return str(obj.hotel_name or "")
 
-    def get_branchAddress(self, obj):
+    def get_branch_address(self, obj):
         branch = getattr(obj, "branch", None)
         if branch:
             return str(branch.address or "")
@@ -464,9 +457,6 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
         except Exception:
             return 0
 
-    def get_heartsCount(self, obj):
-        return self.get_hearts_count(obj)
-
     def get_liked_by_me(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None) if request else None
@@ -474,22 +464,11 @@ class ReviewForumPostSerializer(CloudinaryRepresentationMixin, serializers.Model
             return False
         return obj.liked_by.filter(id=user.id).exists()
 
-    def get_likedByMe(self, obj):
-        return self.get_liked_by_me(obj)
-
-    def get_imageUrl(self, obj):
+    def get_image_url(self, obj):
         url = CloudinaryMediaService.resolve_field_url(getattr(obj, "image", None))
         if url:
             return url
         return CloudinaryMediaService.resolve_legacy_url(getattr(obj, "image_url", ""))
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        image_url = self.get_imageUrl(instance)
-        data["imageUrl"] = image_url
-        data["image_url"] = image_url
-        data["authorAvatar"] = data.get("author_avatar")
-        return data
 
 
 class ReviewForumPostCreateSerializer(serializers.ModelSerializer):

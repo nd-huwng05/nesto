@@ -174,7 +174,7 @@ class WebSocketService {
         this._legacyBranchId = null;
     }
 
-    async connect(accessToken, channel, branchId) {
+    async connect(accessToken, channel, branchId = null) {
         this.disconnect();
         this._legacyIntentionalClose = false;
         this._legacyAccessToken = accessToken || (await getValidAccessToken());
@@ -187,7 +187,7 @@ class WebSocketService {
 
     async _openLegacySocket() {
         if (!this._legacyChannel) return;
-        if (!this._legacyBranchId) {
+        if (this._legacyChannel !== 'customer' && !this._legacyBranchId) {
             this._legacyEmitter.emit('error', new Error('Missing branchId for WebSocket connection.'));
             return;
         }
@@ -199,7 +199,11 @@ class WebSocketService {
         }
         this._legacyAccessToken = token;
 
-        const query = `token=${encodeURIComponent(token)}&branch_id=${encodeURIComponent(this._legacyBranchId)}`;
+        const queryParts = [`token=${encodeURIComponent(token)}`];
+        if (this._legacyBranchId) {
+            queryParts.push(`branch_id=${encodeURIComponent(this._legacyBranchId)}`);
+        }
+        const query = queryParts.join('&');
         const url = `${WS_URL}/ws/${this._legacyChannel}/?${query}`;
         this._legacySocket = new WebSocket(url);
 
@@ -357,8 +361,22 @@ const connectByChannel = async (branchId, channel, handlers = {}) => {
 export const connectBookingUpdates = async (branchId, handlers = {}) =>
     connectByChannel(branchId, 'bookings', handlers);
 
-export const connectRoomUpdates = async (branchId, handlers = {}) =>
-    connectByChannel(branchId, 'rooms', handlers);
+export const connectRoomUpdates = async (branchId, handlers = {}) => {
+    const safeBranchId = String(branchId || '').trim();
+    if (!safeBranchId) return () => {};
+
+    const socket = new ReconnectingSocket({
+        buildUrl: (accessToken) =>
+            `${WS_URL}/ws/rooms/?token=${encodeURIComponent(accessToken)}&branch_id=${encodeURIComponent(safeBranchId)}`,
+        onMessage: handlers.onMessage,
+        onError: handlers.onError,
+        onConnected: handlers.onConnected,
+        onDisconnected: handlers.onDisconnected,
+        onMaxRetries: handlers.onMaxRetries,
+    });
+
+    return bindReconnectingSocket(socket, handlers);
+};
 
 export const connectServiceUpdates = async (branchId, handlers = {}) =>
     connectByChannel(branchId, 'services', handlers);
@@ -366,7 +384,8 @@ export const connectServiceUpdates = async (branchId, handlers = {}) =>
 export const connectCustomerUpdates = async (handlers = {}) => {
     const token = handlers.token || (await getValidAccessToken());
     if (!token) return () => {};
-    await wsService.connect(token, 'customer', 'global');
+    const branchId = String(handlers.branchId || '').trim() || null;
+    await wsService.connect(token, 'customer', branchId);
     const unsubscribers = [];
     if (handlers.onMessage) unsubscribers.push(wsService.subscribe('message', handlers.onMessage));
     if (handlers.onError) unsubscribers.push(wsService.subscribe('error', handlers.onError));

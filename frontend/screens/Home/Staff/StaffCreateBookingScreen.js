@@ -29,7 +29,8 @@ function parseNonNegativeInt(value) {
 }
 
 export default function StaffCreateBookingScreen({navigation, route}) {
-    const {roomId, roomNumber, hourlyRate, roomType} = route.params || {};
+    const params = route.params || {};
+    const roomId = params.roomId || params.room_id;
     const {branchId} = useStaffSession();
     const {branch} = useStaffBranch(branchId);
 
@@ -39,6 +40,11 @@ export default function StaffCreateBookingScreen({navigation, route}) {
     const [durationHours, setDurationHours] = useState('1');
     const [submitting, setSubmitting] = useState(false);
     const [roomAvailable, setRoomAvailable] = useState(true);
+    const [roomNumber, setRoomNumber] = useState(params.roomNumber || params.room_number || '');
+    const [roomType, setRoomType] = useState(params.roomType || params.type || '');
+    const [hourlyRate, setHourlyRate] = useState(
+        Number(params.hourlyRate || params.hourly_rate || 0)
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -54,10 +60,14 @@ export default function StaffCreateBookingScreen({navigation, route}) {
                     setRoomAvailable(false);
                     Alert.alert(
                         'Room unavailable',
-                        'This room is occupied or under maintenance and cannot accept a walk-in.',
+                        'This room is occupied, dirty, or under maintenance and cannot accept a walk-in.',
                         [{text: 'OK', onPress: () => navigation.goBack()}]
                     );
+                    return;
                 }
+                setRoomNumber(String(room.room_number || roomNumber || ''));
+                setRoomType(String(room.type || roomType || ''));
+                setHourlyRate(Number(room.hourly_rate || hourlyRate || 0));
             } catch (err) {
                 if (!cancelled) {
                     setRoomAvailable(false);
@@ -104,6 +114,7 @@ export default function StaffCreateBookingScreen({navigation, route}) {
             phone: phone.trim(),
             durationDays: days,
             durationHours: hours,
+            hourlyRate: rate,
             walkIn: true,
             hotelName: branch?.name || '',
             hotelAddress: branch?.address || '',

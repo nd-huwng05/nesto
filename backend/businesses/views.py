@@ -1,3 +1,4 @@
+from django.db import models
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
@@ -5,8 +6,13 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsBusinessMember
 from accounts.services.tenant_queryset import TenantQuerysetService
-from businesses.models import Branch, Company, Department
-from businesses.serializers import BranchSerializer, CompanySerializer, DepartmentSerializer
+from businesses.models import Branch, BranchCustomer, Company, Department
+from businesses.serializers import (
+    BranchCustomerSerializer,
+    BranchSerializer,
+    CompanySerializer,
+    DepartmentSerializer,
+)
 from businesses.services.analytics_service import BusinessAnalyticsService
 from rooms.models import RoomTheme
 
@@ -95,6 +101,29 @@ class BusinessMetadataViewSet(viewsets.GenericViewSet):
                 ],
             }
         )
+
+
+@extend_schema(tags=["Businesses"])
+class BranchCustomerViewSet(viewsets.ReadOnlyModelViewSet):
+    """Branch guest CRM — customers who completed bookings at a branch."""
+
+    serializer_class = BranchCustomerSerializer
+    permission_classes = [permissions.IsAuthenticated, IsBusinessMember]
+
+    def get_queryset(self):
+        qs = BranchCustomer.objects.select_related("branch", "user").order_by("-last_booking_at", "-created_at")
+        qs = TenantQuerysetService.filter_branch_customers(qs, self.request.user)
+        branch_id = self.request.query_params.get("branch_id") or self.request.query_params.get("branchId")
+        if branch_id:
+            qs = qs.filter(branch_id=branch_id)
+        search = str(self.request.query_params.get("search") or "").strip()
+        if search:
+            qs = qs.filter(
+                models.Q(guest_name__icontains=search)
+                | models.Q(email__icontains=search)
+                | models.Q(phone__icontains=search)
+            )
+        return qs
 
 
 @extend_schema(tags=["Businesses"])

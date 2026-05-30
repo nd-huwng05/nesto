@@ -23,13 +23,13 @@ import {useStaffSession} from '../../../hooks/staff/useStaffSession';
 import {useStaffBranch} from '../../../hooks/staff/useStaffBranch';
 import {connectServiceUpdates} from '../../../services/WebSocketService';
 import {
-    listServiceOrders,
-    acceptServiceOrder,
-    startServiceOrder,
-    completeServiceOrder,
-    cancelServiceOrder,
+    listServiceTasks,
+    acceptServiceTask,
+    startServiceTask,
+    completeServiceTask,
+    cancelServiceTask,
 } from '../../../services/staffApiService';
-import {normalizeServiceOrderList} from '../../../utils/serviceOrderMapper';
+import {normalizeLineItemList} from '../../../utils/lineItemMapper';
 
 const STATUS_STYLES = {
     PENDING: {bg: '#FEF3C7', text: '#92400E', label: 'Pending'},
@@ -55,20 +55,38 @@ const formatRoomLabel = (roomNumber) => {
     return /^room\s/i.test(value) ? value : `Room ${value}`;
 };
 
+const isTransportDepartment = (department) => normalizeDepartment(department) === 'TRANSPORT';
+
+const getOrderCardTitle = (order, department) => {
+    if (isTransportDepartment(department)) {
+        return String(order?.guest_name || 'Guest').trim() || 'Guest';
+    }
+    return formatRoomLabel(order?.room_number);
+};
+
+const getOrderConfirmLabel = (order, department) => {
+    if (isTransportDepartment(department)) {
+        const guestName = String(order?.guest_name || 'Guest').trim() || 'Guest';
+        const phone = String(order?.guest_phone || '').trim();
+        return phone ? `${guestName} (${phone})` : guestName;
+    }
+    return formatRoomLabel(order?.room_number);
+};
+
 const getDepartmentMeta = (department) =>
     DEPARTMENT_META[normalizeDepartment(department)] || {
         title: 'Service Requests',
         subtitle: 'Only your branch and department requests are shown.',
     };
 
-export default function ServiceOrderScreen() {
-    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-        UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
+export default function ServiceOrderScreen() {
     const {user, branchId, serviceCategory} = useStaffSession();
     const {branch} = useStaffBranch(branchId);
-    const department = normalizeDepartment(serviceCategory || user?.serviceCategory);
+    const department = normalizeDepartment(serviceCategory || user?.service_category);
     const departmentMeta = getDepartmentMeta(department);
     const [orders, setOrders] = useState([]);
     const orderList = Array.isArray(orders) ? orders : [];
@@ -92,10 +110,10 @@ export default function ServiceOrderScreen() {
         }
         setIsLoading(true);
         try {
-            const data = await listServiceOrders(branchId);
-            const normalized = normalizeServiceOrderList(data).filter(
+            const data = await listServiceTasks(branchId);
+            const normalized = normalizeLineItemList(data).filter(
                 (order) =>
-                    order.branchId === branchId &&
+                    order.branch_id === branchId &&
                     normalizeDepartment(order.category) === department &&
                     !['COMPLETED', 'CANCELLED'].includes(normalizeStatus(order.status))
             );
@@ -147,7 +165,7 @@ export default function ServiceOrderScreen() {
     const confirmAccept = (order) => {
         Alert.alert(
             'Accept & Process?',
-            `Start preparing the request for ${formatRoomLabel(order.roomNumber)}?`,
+            `Start preparing the request for ${getOrderConfirmLabel(order, department)}?`,
             [
                 {text: 'Cancel', style: 'cancel'},
                 {text: 'Accept & Process', onPress: () => handleAccept(order.id)},
@@ -158,7 +176,7 @@ export default function ServiceOrderScreen() {
     const confirmDeliver = (order) => {
         Alert.alert(
             'Mark Completed?',
-            `Confirm completion for ${formatRoomLabel(order.roomNumber)}?`,
+            `Confirm completion for ${getOrderConfirmLabel(order, department)}?`,
             [
                 {text: 'Cancel', style: 'cancel'},
                 {text: 'Mark Completed', onPress: () => handleDone(order.id)},
@@ -169,7 +187,7 @@ export default function ServiceOrderScreen() {
     const confirmCancel = (order) => {
         Alert.alert(
             'Cancel request?',
-            `Cancel the request for ${formatRoomLabel(order.roomNumber)}?`,
+            `Cancel the request for ${getOrderConfirmLabel(order, department)}?`,
             [
                 {text: 'Keep', style: 'cancel'},
                 {text: 'Cancel request', style: 'destructive', onPress: () => handleCancel(order.id)},
@@ -180,19 +198,19 @@ export default function ServiceOrderScreen() {
     const handleAccept = async (orderId) => {
         setBusyId(orderId);
         try {
-            const acceptResult = await acceptServiceOrder(orderId, user?.name || null);
+            const acceptResult = await acceptServiceTask(orderId, user?.name || null);
             if (!acceptResult.success) {
                 Alert.alert('Unable to accept', acceptResult.message || 'Please try again.');
                 return;
             }
-            const startResult = await startServiceOrder(orderId);
+            const startResult = await startServiceTask(orderId);
             if (!startResult.success) {
                 Alert.alert('Unable to start', startResult.message || 'Order accepted but could not be started.');
                 await loadOrders();
                 return;
             }
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            const nextOrder = normalizeServiceOrderList([startResult.data])[0];
+            const nextOrder = normalizeLineItemList([startResult.data])[0];
             setOrders((prev) =>
                 prev.map((order) => (order.id === orderId ? (nextOrder || {...order, status: 'IN_PROGRESS'}) : order))
             );
@@ -204,7 +222,7 @@ export default function ServiceOrderScreen() {
     const handleDone = async (orderId) => {
         setBusyId(orderId);
         try {
-            const result = await completeServiceOrder(orderId);
+            const result = await completeServiceTask(orderId);
             if (!result.success) {
                 Alert.alert('Unable to complete', result.message || 'Please try again.');
                 return;
@@ -219,7 +237,7 @@ export default function ServiceOrderScreen() {
     const handleCancel = async (orderId) => {
         setBusyId(orderId);
         try {
-            const result = await cancelServiceOrder(orderId);
+            const result = await cancelServiceTask(orderId);
             if (!result.success) {
                 Alert.alert('Unable to cancel', result.message || 'Please try again.');
                 return;
@@ -252,49 +270,71 @@ export default function ServiceOrderScreen() {
                 ) : (
                     <FlatList
                         data={orderList}
-                        keyExtractor={(item) => String(item?.id ?? item?.roomNumber ?? Math.random())}
+                        keyExtractor={(item) => String(item?.id ?? item?.room_number ?? Math.random())}
                         contentContainerStyle={styles.listContent}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8294FF" />}
                         renderItem={({item}) => {
                             const statusKey = normalizeStatus(item.status);
                             const st = STATUS_STYLES[statusKey] || STATUS_STYLES.PENDING;
                             const Icon = departmentMeta.icon || Utensils;
+                            const cardTitle = getOrderCardTitle(item, department);
+                            const showGuestRow = !isTransportDepartment(department);
                             return (
                                 <View style={styles.orderCard}>
                                     <View style={styles.orderTop}>
-                                        <Text style={styles.roomText}>{formatRoomLabel(item.roomNumber)}</Text>
+                                        <Text style={styles.roomText}>{cardTitle}</Text>
                                         <View style={[styles.statusBadge, {backgroundColor: st.bg}]}>
                                             <Text style={[styles.statusLabel, {color: st.text}]}>{st.label}</Text>
                                         </View>
                                     </View>
 
                                     <View style={styles.itemsWrap}>
-                                        {(item.items || []).map((line, index) => (
-                                            <View key={`${item.id}_${index}`} style={styles.itemRow}>
-                                                <Text style={styles.bullet}>•</Text>
-                                                <Text style={styles.itemText}>{line}</Text>
-                                            </View>
-                                        ))}
+                                        {(item.items?.length ? item.items : item.summary ? [item.summary] : []).map(
+                                            (line, index) => (
+                                                <View key={`${item.id}_${index}`} style={styles.itemRow}>
+                                                    <Text style={styles.bullet}>•</Text>
+                                                    <Text style={styles.itemText}>{line}</Text>
+                                                </View>
+                                            )
+                                        )}
                                     </View>
 
-                                    <Text style={styles.timestamp}>{item.timestamp}</Text>
+                                    {item.timestamp ? (
+                                        <Text style={styles.timestamp}>{item.timestamp}</Text>
+                                    ) : null}
 
-                                    <View style={styles.guestRow}>
-                                        <Text style={styles.guestName}>{item.guestName || 'Guest'}</Text>
+                                    {isTransportDepartment(department) ? (
                                         <TouchableOpacity
                                             onPress={() => {
-                                                const phone = String(item.guestPhone || '').replace(/\s/g, '');
+                                                const phone = String(item.guest_phone || '').replace(/\s/g, '');
                                                 if (phone) Linking.openURL(`tel:${phone}`);
                                             }}
-                                            style={styles.phoneWrap}
+                                            style={styles.transportContactRow}
+                                            disabled={!String(item.guest_phone || '').trim()}
                                         >
                                             <Phone size={16} color="#475569" />
-                                            <Text style={styles.guestPhone}>{item.guestPhone || ''}</Text>
+                                            <Text style={styles.guestPhone}>
+                                                {item.guest_phone || 'No phone number'}
+                                            </Text>
                                         </TouchableOpacity>
-                                    </View>
+                                    ) : showGuestRow ? (
+                                        <View style={styles.guestRow}>
+                                            <Text style={styles.guestName}>{item.guest_name || 'Guest'}</Text>
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    const phone = String(item.guest_phone || '').replace(/\s/g, '');
+                                                    if (phone) Linking.openURL(`tel:${phone}`);
+                                                }}
+                                                style={styles.phoneWrap}
+                                            >
+                                                <Phone size={16} color="#475569" />
+                                                <Text style={styles.guestPhone}>{item.guest_phone || ''}</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    ) : null}
 
-                                    {(statusKey === 'IN_PROGRESS' || statusKey === 'CONFIRMED') && item.assignedStaff ? (
-                                        <Text style={styles.assignedText}>Assigned to: {item.assignedStaff}</Text>
+                                    {(statusKey === 'IN_PROGRESS' || statusKey === 'CONFIRMED') && item.assigned_staff ? (
+                                        <Text style={styles.assignedText}>Assigned to: {item.assigned_staff}</Text>
                                     ) : null}
 
                                     <View style={styles.actions}>
@@ -383,6 +423,7 @@ const styles = StyleSheet.create({
     itemText: {flex: 1, fontSize: 14, lineHeight: 22, color: '#334155'},
     timestamp: {fontSize: 12, color: '#94A3B8', marginTop: 4},
     guestRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10},
+    transportContactRow: {flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8},
     guestName: {fontSize: 14, color: '#0F172A', fontWeight: '600'},
     guestPhone: {fontSize: 13, color: '#2563EB', marginLeft: 8},
     phoneWrap: {flexDirection: 'row', alignItems: 'center'},

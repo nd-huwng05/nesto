@@ -53,7 +53,7 @@ export function ReportCsatCard({score}) {
 const styles = StyleSheet.create({
     card: {
         ...cardStyle,
-        minHeight: 120,
+        minHeight: 112,
         width: '100%',
         justifyContent: 'flex-start',
     },

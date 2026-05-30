@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from businesses.models import Branch, Company, Department
+from businesses.models import Branch, BranchCustomer, Company, Department
 from rooms.models import BranchTheme, RoomTheme
 from businesses.services.geocode_service import GeocodeService
 from rooms.services.customer_theme_service import assign_branch_themes, ensure_customer_themes
@@ -9,11 +9,6 @@ from core.services.cloudinary_service import CloudinaryMediaService
 
 
 class CompanySerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
-    legalName = serializers.CharField(source="legal_name", required=False, allow_blank=True)
-    taxCode = serializers.CharField(source="tax_code", required=False, allow_blank=True)
-    businessType = serializers.CharField(source="business_type", required=False, allow_blank=True)
-    legalRepresentative = serializers.CharField(source="legal_representative", required=False, allow_blank=True)
-    lodgingType = serializers.CharField(source="lodging_type", required=False, allow_blank=True)
     contact = serializers.SerializerMethodField()
     logo = serializers.SerializerMethodField()
 
@@ -25,12 +20,12 @@ class CompanySerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
             "id",
             "name",
             "logo",
-            "lodgingType",
-            "businessType",
+            "lodging_type",
+            "business_type",
             "scale",
-            "legalName",
-            "taxCode",
-            "legalRepresentative",
+            "legal_name",
+            "tax_code",
+            "legal_representative",
             "contact",
             "created_at",
             "updated_at",
@@ -40,7 +35,7 @@ class CompanySerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
         return {
             "email": obj.contact_email,
             "phone": obj.contact_phone,
-            "headquartersAddress": obj.headquarters_address,
+            "headquarters_address": obj.headquarters_address,
         }
 
     def get_logo(self, obj):
@@ -58,7 +53,10 @@ class CompanySerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
             manager=self.context["request"].user if self.context.get("request") else None,
             contact_email=contact.get("email", ""),
             contact_phone=contact.get("phone", ""),
-            headquarters_address=contact.get("headquartersAddress", ""),
+            headquarters_address=contact.get(
+                "headquarters_address",
+                contact.get("headquartersAddress", ""),
+            ),
             **validated_data,
         )
         return instance
@@ -77,17 +75,16 @@ class CompanySerializer(CloudinaryRepresentationMixin, serializers.ModelSerializ
             instance.contact_email = contact.get("email", instance.contact_email)
             instance.contact_phone = contact.get("phone", instance.contact_phone)
             instance.headquarters_address = contact.get(
-                "headquartersAddress", instance.headquarters_address
+                "headquarters_address",
+                contact.get("headquartersAddress", instance.headquarters_address),
             )
         instance.save()
         return instance
 
 
 class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerializer):
-    businessId = serializers.UUIDField(source="company_id", read_only=True)
+    business_id = serializers.UUIDField(source="company_id", read_only=True)
     company = serializers.PrimaryKeyRelatedField(queryset=Company.objects.none(), required=False, allow_null=True)
-    lodgingType = serializers.CharField(source="lodging_type", required=False, allow_blank=True)
-    guestSegments = serializers.ListField(source="guest_segments", child=serializers.CharField(), required=False)
     room_count = serializers.SerializerMethodField()
     staff_count = serializers.SerializerMethodField()
     contact = serializers.SerializerMethodField()
@@ -101,16 +98,16 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
         model = Branch
         fields = [
             "id",
-            "businessId",
+            "business_id",
             "company",
             "name",
-            "lodgingType",
+            "lodging_type",
             "address",
             "phone",
             "email",
             "contact",
             "amenities",
-            "guestSegments",
+            "guest_segments",
             "image",
             "images",
             "billing",
@@ -131,7 +128,7 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
         return {"phone": obj.phone, "email": obj.email}
 
     def get_billing(self, obj):
-        return {"bankName": obj.bank_name, "accountNumber": obj.bank_account_number}
+        return {"bank_name": obj.bank_name, "account_number": obj.bank_account_number}
 
     def get_image(self, obj):
         return CloudinaryMediaService.resolve_field_url(getattr(obj, "image", None))
@@ -153,7 +150,7 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
         if not isinstance(payload, dict):
             BranchSerializer._assign_default_theme(branch)
             return
-        raw = payload.get("themeIds") or payload.get("theme_ids") or payload.get("themes")
+        raw = payload.get("theme_ids") or payload.get("themeIds") or payload.get("themes")
         theme_ids = raw if isinstance(raw, list) else []
         theme_ids = [str(item).strip() for item in theme_ids if str(item or "").strip()]
         if theme_ids:
@@ -176,10 +173,10 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
         payload = self.initial_data
         contact = payload.get("contact", {}) if isinstance(payload, dict) else {}
         billing = payload.get("billing", {}) if isinstance(payload, dict) else {}
-        company_id = payload.get("businessId") or payload.get("company")
+        company_id = payload.get("business_id") or payload.get("businessId") or payload.get("company")
         if company_id:
             if user and Company.objects.filter(id=company_id, manager=user).exists() is False:
-                raise serializers.ValidationError({"businessId": "Invalid businessId."})
+                raise serializers.ValidationError({"business_id": "Invalid business_id."})
             validated_data["company_id"] = company_id
         if contact:
             validated_data["phone"] = contact.get("phone", validated_data.get("phone", ""))
@@ -192,8 +189,11 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
             if top_email:
                 validated_data["email"] = top_email
         if billing:
-            validated_data["bank_name"] = billing.get("bankName", "")
-            validated_data["bank_account_number"] = billing.get("accountNumber", "")
+            validated_data["bank_name"] = billing.get("bank_name", billing.get("bankName", ""))
+            validated_data["bank_account_number"] = billing.get(
+                "account_number",
+                billing.get("accountNumber", ""),
+            )
 
         image_url = payload.get("image") if isinstance(payload, dict) else None
         if isinstance(image_url, str) and CloudinaryMediaService.is_http_url(image_url):
@@ -242,13 +242,16 @@ class BranchSerializer(CloudinaryRepresentationMixin, serializers.ModelSerialize
             instance.phone = contact.get("phone", instance.phone)
             instance.email = contact.get("email", instance.email)
         if isinstance(billing, dict):
-            instance.bank_name = billing.get("bankName", instance.bank_name)
-            instance.bank_account_number = billing.get("accountNumber", instance.bank_account_number)
+            instance.bank_name = billing.get("bank_name", billing.get("bankName", instance.bank_name))
+            instance.bank_account_number = billing.get(
+                "account_number",
+                billing.get("accountNumber", instance.bank_account_number),
+            )
         instance.save()
         if "address" in validated_data and str(validated_data.get("address") or "") != old_address:
             self._apply_geocode(instance, address=instance.address)
         if isinstance(payload, dict):
-            raw = payload.get("themeIds") or payload.get("theme_ids") or payload.get("themes")
+            raw = payload.get("theme_ids") or payload.get("themeIds") or payload.get("themes")
             if isinstance(raw, list) and raw:
                 assign_branch_themes(instance, raw)
         return instance
@@ -258,3 +261,26 @@ class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
         fields = ["id", "code", "label", "created_at", "updated_at"]
+
+
+class BranchCustomerSerializer(serializers.ModelSerializer):
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    user_id = serializers.UUIDField(source="user.id", read_only=True)
+
+    class Meta:
+        model = BranchCustomer
+        fields = [
+            "id",
+            "branch",
+            "branch_name",
+            "user_id",
+            "guest_name",
+            "email",
+            "phone",
+            "booking_count",
+            "total_spent",
+            "last_booking_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields

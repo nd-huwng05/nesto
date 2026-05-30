@@ -99,18 +99,6 @@ class Booking(BaseAuditedModel):
         super().save(*args, **kwargs)
 
 
-class BookingExtraService(BaseAuditedModel):
-    """Legacy snapshot table. Prefer BookingLineItem for new bookings."""
-
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="extra_services")
-    service_key = models.CharField(max_length=64)
-    summary = models.CharField(max_length=255, blank=True, default="")
-    amount = models.IntegerField(default=0)
-
-    class Meta:
-        db_table = "booking_extra_services"
-
-
 def build_display_code(service_code: str, line_no: int) -> str:
     code = str(service_code or "").strip()
     no = max(1, int(line_no or 1))

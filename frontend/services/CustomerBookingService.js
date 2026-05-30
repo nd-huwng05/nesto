@@ -1,5 +1,6 @@
 import api, {endpoints} from '../configuration/Apis';
 import {extractApiErrorMessage} from '../utils/apiError';
+import {pickResults} from '../utils/apiShape';
 
 const ok = (response, dataOverride = undefined) => ({
   status: 'success',
@@ -12,7 +13,7 @@ const fail = (err, fallback) => ({
   data: err?.response?.data || null,
 });
 
-const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
+const pickList = pickResults;
 
 export const fetchMyBookings = async () => {
   try {
@@ -61,12 +62,12 @@ export const cancelMyBooking = async (bookingId, {reason} = {}) => {
   }
 };
 
-export const confirmBookingPayment = async (bookingId, {amount, paymentMethod, transactionRef} = {}) => {
+export const confirmBookingPayment = async (bookingId, {amount, payment_method, transaction_ref} = {}) => {
   try {
     const res = await api.post(endpoints['customer-booking-pay-deposit'](bookingId), {
       amount,
-      payment_method: paymentMethod,
-      transaction_ref: transactionRef || '',
+      payment_method,
+      transaction_ref: transaction_ref || '',
     });
     return ok(res, res.data);
   } catch (err) {

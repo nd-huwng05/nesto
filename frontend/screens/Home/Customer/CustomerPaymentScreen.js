@@ -1,12 +1,9 @@
-import React, {useMemo, useState} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {STAFF_MEDIA} from '../../../constants/staffMedia';
-import {normalizeBookingId} from '../../../utils/bookingId';
-import {createMyBooking, fetchMyBookingDetail} from '../../../services/CustomerBookingService';
-import {initiateMomoPayment, initiateZaloPayPayment, pollPaymentUntilConfirmed} from '../../../services/PaymentService';
+import {confirmBookingPayment, createMyBooking, fetchMyBookingDetail} from '../../../services/CustomerBookingService';
 import RemoteImage from '../../../components/common/RemoteImage';
 import {formatPricingTierLabel} from '../../../utils/roomPricing';
 import ScreenHeader from '../../../components/common/ScreenHeader';
@@ -14,18 +11,17 @@ import {navigateToCustomerHome} from '../../../utils/navigation';
 import {formatVnd} from '../../../utils/formatCurrency';
 import {normalizeSelectedServices} from '../../../utils/bookingCheckout';
 
-WebBrowser.maybeCompleteAuthSession();
+const PAYMENT_HOLD_MINUTES = 10;
 
 const PAYMENT_LOGOS = {
     momo: STAFF_MEDIA.MOMO_LOGO,
     zalo: STAFF_MEDIA.ZALOPAY_LOGO,
 };
 
+const resolveWalletMethod = (method) => (method === 'zalo' ? 'zalopay' : 'momo');
+
 /**
- * CustomerPaymentScreen — thanh toan deposit MoMo/ZaloPay.
- *
- * - Neu co bookingDraft: tao booking PENDING luc bam Pay (UUID dung lam order_id)
- * - Neu co backendBookingId: resume tu tab Bookings (booking da tao truoc do)
+ * Luong: quote -> Payment -> tao booking PENDING (giu cho 10 phut) -> Pay (xac nhan ngay nhu cash) -> CONFIRMED.
  */
 export default function CustomerPaymentScreen({navigation, route}) {
     const insets = useSafeAreaInsets();
@@ -44,8 +40,6 @@ export default function CustomerPaymentScreen({navigation, route}) {
         subtotalAmount = 0,
         depositAmount = 0,
         depositPercent = 20,
-        holdMinutes = 0,
-        stayMinutes = 0,
         roomTotal = 0,
         servicesTotal = 0,
         stayTimeLabel = '',
@@ -68,8 +62,9 @@ export default function CustomerPaymentScreen({navigation, route}) {
     const [failedLogos, setFailedLogos] = useState({});
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isPaying, setIsPaying] = useState(false);
-    const [createdBookingUuid, setCreatedBookingUuid] = useState(String(backendBookingId || '').trim());
+    const [pendingBookingId, setPendingBookingId] = useState(String(backendBookingId || '').trim());
     const [createdBookingCode, setCreatedBookingCode] = useState(String(bookingId || '').trim());
+    const [liveDepositAmount, setLiveDepositAmount] = useState(0);
 
     const paymentRows = useMemo(
         () => [
@@ -91,44 +86,65 @@ export default function CustomerPaymentScreen({navigation, route}) {
     }, [subtotalAmount, totalAmount, roomTotal, servicesTotal]);
 
     const resolvedDepositAmount = useMemo(() => {
+        if (liveDepositAmount > 0) return liveDepositAmount;
         const explicit = Number(depositAmount || 0);
         if (explicit > 0) return explicit;
         const pct = Math.max(20, Number(depositPercent || 20));
         return Math.round(Number(roomTotal || 0) * (pct / 100));
-    }, [depositAmount, depositPercent, roomTotal]);
-
-    const resolvedHoldMinutes = useMemo(() => {
-        const explicit = Number(holdMinutes || 0);
-        if (explicit > 0) return explicit;
-        const duration = Math.max(1, Number(stayMinutes || 0));
-        const pct = Math.max(20, Number(depositPercent || 20));
-        return Math.max(1, Math.round(duration * (pct / 100)));
-    }, [holdMinutes, stayMinutes, depositPercent]);
+    }, [liveDepositAmount, depositAmount, depositPercent, roomTotal]);
 
     const markLogoFailed = (id) => {
         setFailedLogos((prev) => ({...prev, [id]: true}));
     };
 
-    const buildPaymentPayload = (amountToPay) => ({
-        bookingId: normalizeBookingId(bookingId) || String(backendBookingId || ''),
-        bookingData: {
-            booking_id: normalizeBookingId(bookingId) || String(backendBookingId || ''),
-            branch_id: branchId,
-            hotel_name: hotelName,
-            room_name: roomName,
-            check_in: checkIn,
-            check_out: checkOut,
-            total_amount: resolvedSubtotal,
-            room_total: Number(roomTotal || 0),
-            services_total: Number(servicesTotal || 0),
-            deposit_amount: amountToPay,
-            hold_minutes: resolvedHoldMinutes,
-        },
-        selectedServices: normalizedServices,
-        depositPercentage: Math.max(20, Number(depositPercent || 20)),
-        amount: amountToPay,
-        orderInfo: `Nesto ${hotelName} - ${roomName}`,
-    });
+    const finishPaymentAndGoHome = useCallback((title, message) => {
+        navigateToCustomerHome(navigation);
+        if (message) {
+            setTimeout(() => {
+                Alert.alert(title, message, [{text: 'OK', onPress: () => navigateToCustomerHome(navigation)}]);
+            }, 350);
+        }
+    }, [navigation]);
+
+    const ensurePendingBooking = useCallback(async () => {
+        const existingId = String(pendingBookingId || '').trim();
+        if (existingId) {
+            return {ok: true, bookingId: existingId, bookingCode: createdBookingCode};
+        }
+        if (!bookingDraft) {
+            return {ok: false, message: 'Booking details are missing. Go back and try again.'};
+        }
+
+        const created = await createMyBooking({
+            branchId: bookingDraft.branchId,
+            hotelName: bookingDraft.hotelName,
+            hotelAddress: bookingDraft.hotelAddress,
+            roomType: bookingDraft.roomType,
+            roomTypeId: bookingDraft.roomTypeId,
+            guestName: bookingDraft.guestName,
+            email: bookingDraft.email,
+            phone: bookingDraft.phone,
+            checkInAt: bookingDraft.checkInAt,
+            expectedCheckOutAt: bookingDraft.expectedCheckOutAt,
+            serviceIds: bookingDraft.serviceIds || [],
+            depositPercentage: bookingDraft.depositPercentage || depositPercent,
+            specialRequests: bookingDraft.specialRequests || '',
+        });
+
+        if (created.status !== 'success' || !created.data?.id) {
+            return {ok: false, message: created.message || 'Unable to create your booking hold.'};
+        }
+
+        const bookingUuid = String(created.data.id);
+        const bookingCode = String(created.data.booking_code || '');
+        const serverDeposit = Number(created.data.deposit_amount || 0);
+        if (serverDeposit > 0) {
+            setLiveDepositAmount(serverDeposit);
+        }
+        setPendingBookingId(bookingUuid);
+        setCreatedBookingCode(bookingCode);
+        return {ok: true, bookingId: bookingUuid, bookingCode};
+    }, [bookingDraft, createdBookingCode, depositPercent, pendingBookingId]);
 
     const handleConfirmPayment = async () => {
         const amountToPay = resolvedDepositAmount;
@@ -136,84 +152,38 @@ export default function CustomerPaymentScreen({navigation, route}) {
             Alert.alert('Payment', 'Deposit amount is invalid. Go back and review your booking.');
             return;
         }
-        if (!bookingDraft && !createdBookingUuid) {
-            Alert.alert('Payment', 'Booking details are missing. Go back and try again.');
-            return;
-        }
 
         setIsPaying(true);
         try {
-            let bookingUuid = createdBookingUuid;
-            let bookingCode = createdBookingCode;
-
-            if (!bookingUuid && bookingDraft) {
-                const created = await createMyBooking({
-                    branchId: bookingDraft.branchId,
-                    hotelName: bookingDraft.hotelName,
-                    hotelAddress: bookingDraft.hotelAddress,
-                    roomType: bookingDraft.roomType,
-                    roomTypeId: bookingDraft.roomTypeId,
-                    guestName: bookingDraft.guestName,
-                    email: bookingDraft.email,
-                    phone: bookingDraft.phone,
-                    checkInAt: bookingDraft.checkInAt,
-                    expectedCheckOutAt: bookingDraft.expectedCheckOutAt,
-                    serviceIds: bookingDraft.serviceIds || [],
-                    depositPercentage: bookingDraft.depositPercentage || depositPercent,
-                    specialRequests: bookingDraft.specialRequests || '',
-                });
-                if (created.status !== 'success' || !created.data?.id) {
-                    Alert.alert('Booking', created.message || 'Unable to create your booking.');
-                    return;
-                }
-                bookingUuid = String(created.data.id);
-                bookingCode = String(created.data.bookingCode || created.data.booking_code || '');
-                setCreatedBookingUuid(bookingUuid);
-                setCreatedBookingCode(bookingCode);
-            }
-
-            const payload = buildPaymentPayload(amountToPay);
-            payload.bookingId = bookingUuid;
-            payload.bookingData.booking_id = bookingUuid;
-
-            const gatewayResult = paymentMethod === 'zalo'
-                ? await initiateZaloPayPayment(payload)
-                : await initiateMomoPayment(payload);
-
-            if (gatewayResult.status !== 'success') {
-                Alert.alert('Payment', gatewayResult.message || 'Unable to start payment gateway.');
+            const hold = await ensurePendingBooking();
+            if (!hold.ok) {
+                Alert.alert('Booking', hold.message || 'Unable to hold this room.');
                 return;
             }
 
-            const payUrl = String(gatewayResult.data?.payUrl || '').trim();
-            if (!payUrl) {
-                Alert.alert('Payment', 'Payment gateway did not return a checkout URL. Please try again.');
-                return;
-            }
-
-            await WebBrowser.openBrowserAsync(payUrl, {
-                presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-                showInRecents: true,
+            const walletMethod = resolveWalletMethod(paymentMethod);
+            const confirmRes = await confirmBookingPayment(hold.bookingId, {
+                amount: amountToPay,
+                payment_method: walletMethod,
             });
 
-            const pollResult = await pollPaymentUntilConfirmed(bookingUuid, {
-                maxAttempts: 45,
-                intervalMs: 2000,
-            });
-
-            if (pollResult.confirmed) {
-                Alert.alert(
-                    'Payment successful',
-                    'Your deposit has been confirmed. Show QR at reception for check-in.',
-                    [{text: 'Go to Home', onPress: () => navigateToCustomerHome(navigation)}]
-                );
+            if (confirmRes.status !== 'success') {
+                Alert.alert('Payment', confirmRes.message || 'Payment could not be confirmed.');
                 return;
             }
 
-            Alert.alert(
-                'Verifying payment',
-                'We are still confirming your payment with MoMo/ZaloPay. Check My bookings in a few minutes.',
-                [{text: 'Go to Home', onPress: () => navigateToCustomerHome(navigation)}]
+            const code = String(confirmRes.data?.booking_code || hold.bookingCode || createdBookingCode || '').trim();
+            const status = String(confirmRes.data?.status || '').toUpperCase();
+            if (status && status !== 'CONFIRMED') {
+                Alert.alert('Payment', 'Payment was recorded but booking is not confirmed yet. Check the Booking tab.');
+                return;
+            }
+
+            finishPaymentAndGoHome(
+                'Payment successful',
+                code
+                    ? `Your deposit has been paid. Booking ${code} is confirmed — view details in the Booking tab.`
+                    : 'Your deposit has been paid. Your booking is confirmed — view details in the Booking tab.'
             );
         } catch {
             Alert.alert('Payment', 'Unable to process payment right now. Please try again.');
@@ -225,11 +195,19 @@ export default function CustomerPaymentScreen({navigation, route}) {
     const handleRefresh = async () => {
         setIsRefreshing(true);
         try {
-            if (createdBookingUuid) {
-                const res = await fetchMyBookingDetail(createdBookingUuid);
-                if (res.status === 'success' && res.data) {
-                    const row = res.data;
-                    setCreatedBookingCode(String(row.bookingCode || row.booking_code || createdBookingCode));
+            const bookingUuid = String(pendingBookingId || '').trim();
+            if (!bookingUuid) return;
+            const res = await fetchMyBookingDetail(bookingUuid);
+            if (res.status === 'success' && res.data) {
+                setCreatedBookingCode(String(res.data.booking_code || createdBookingCode));
+                if (String(res.data.status || '').toUpperCase() === 'CONFIRMED') {
+                    const refreshedCode = String(res.data.booking_code || createdBookingCode || '').trim();
+                    finishPaymentAndGoHome(
+                        'Payment successful',
+                        refreshedCode
+                            ? `Booking ${refreshedCode} is confirmed. View details in the Booking tab.`
+                            : 'Your booking is confirmed. View details in the Booking tab.'
+                    );
                 }
             }
         } finally {
@@ -298,13 +276,15 @@ export default function CustomerPaymentScreen({navigation, route}) {
                     <View style={styles.divider}/>
                     <View style={styles.row}><Text style={styles.labelBold}>Subtotal:</Text><Text style={styles.valueBold}>{formatVnd(resolvedSubtotal)}</Text></View>
                     <View style={styles.row}><Text style={styles.labelBold}>Required deposit ({depositPercent}%):</Text><Text style={styles.valueBold}>{formatVnd(resolvedDepositAmount)}</Text></View>
-                    <Text style={styles.holdSummary}>Room will be held for {resolvedHoldMinutes} minutes if you arrive late.</Text>
+                    <Text style={styles.holdSummary}>
+                        Complete payment within {PAYMENT_HOLD_MINUTES} minutes to keep this room reserved. Unpaid holds are cancelled automatically.
+                    </Text>
                 </View>
 
                 <View style={styles.sectionCard}>
                     <Text style={styles.sectionTitle}>Payment method</Text>
                     <Text style={styles.sectionHint}>
-                        You will be redirected to {paymentMethod === 'zalo' ? 'ZaloPay' : 'MoMo'} to complete the transfer
+                        Tap Pay to confirm with {paymentMethod === 'zalo' ? 'ZaloPay' : 'MoMo'} (instant demo payment)
                     </Text>
 
                     {paymentRows.map((item) => {
@@ -326,7 +306,7 @@ export default function CustomerPaymentScreen({navigation, route}) {
                                             onError={() => markLogoFailed(item.id)}
                                         />
                                     ) : (
-                                        <View style={[styles.payBadgeFallback, {backgroundColor: item.fallbackColor}]}> 
+                                        <View style={[styles.payBadgeFallback, {backgroundColor: item.fallbackColor}]}>
                                             <Text style={styles.payBadgeFallbackText}>{item.fallbackText}</Text>
                                         </View>
                                     )}
@@ -552,139 +532,5 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 17,
         fontWeight: '800',
-    },
-    modalOverlaySafe: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.35)',
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'transparent',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 20,
-    },
-    modalCard: {
-        width: '100%',
-        maxWidth: 360,
-        borderRadius: 20,
-        backgroundColor: '#fff',
-        paddingHorizontal: 20,
-        paddingVertical: 24,
-        alignItems: 'center',
-        position: 'relative',
-        shadowColor: '#000',
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-        elevation: 6,
-    },
-    amountModalCard: {
-        width: '100%',
-        maxWidth: 360,
-        borderRadius: 20,
-        backgroundColor: '#fff',
-        paddingHorizontal: 20,
-        paddingTop: 24,
-        paddingBottom: 20,
-        position: 'relative',
-        shadowColor: '#000',
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-        elevation: 6,
-    },
-    amountModalTitle: {
-        fontSize: 24,
-        lineHeight: 30,
-        fontWeight: '800',
-        color: '#1f1f1f',
-    },
-    amountModalHint: {
-        marginTop: 8,
-        fontSize: 13,
-        lineHeight: 18,
-        color: '#666',
-        marginBottom: 12,
-    },
-    amountInput: {
-        borderWidth: 1,
-        borderColor: '#d2d2dd',
-        borderRadius: 12,
-        minHeight: 46,
-        paddingHorizontal: 12,
-        fontSize: 16,
-        color: '#1f1f1f',
-    },
-    amountPayBtn: {
-        marginTop: 12,
-        borderRadius: 12,
-        backgroundColor: '#8294FF',
-        minHeight: 44,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    amountPayBtnText: {
-        color: '#fff',
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    modalCloseBtn: {
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: '#f2f2f2',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    modalIconWrap: {
-        width: 66,
-        height: 66,
-        borderRadius: 33,
-        backgroundColor: '#33b26b',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    modalTitle: {
-        marginTop: 14,
-        fontSize: 24,
-        lineHeight: 30,
-        fontWeight: '800',
-        color: '#1f1f1f',
-        textAlign: 'center',
-    },
-    modalHint: {
-        marginTop: 8,
-        fontSize: 14,
-        color: '#666',
-        textAlign: 'center',
-        lineHeight: 20,
-    },
-    homeBtn: {
-        marginTop: 18,
-        borderRadius: 999,
-        backgroundColor: '#8294FF',
-        paddingHorizontal: 18,
-        paddingVertical: 11,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    homeBtnText: {
-        marginLeft: 8,
-        color: '#fff',
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    secondaryBtn: {
-        marginTop: 10,
-        paddingVertical: 10,
-    },
-    secondaryBtnText: {
-        color: '#5b79df',
-        fontSize: 14,
-        fontWeight: '600',
-        textAlign: 'center',
     },
 });

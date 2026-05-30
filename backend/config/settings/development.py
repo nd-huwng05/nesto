@@ -65,9 +65,16 @@ if not os.getenv('ZALOPAY_APP_ID', '').strip():
 
 
 
-# Luôn redirect sang MoMo/ZaloPay — chỉ bật mock nội bộ khi set PAYMENTS_SANDBOX=true
-
+# PAYMENTS_SANDBOX=true: mock gateway init. PAYMENTS_INSTANT=true: pay-deposit xac nhan ngay (dev mac dinh).
 PAYMENTS_SANDBOX = os.getenv('PAYMENTS_SANDBOX', '').lower() in ('1', 'true', 'yes')
+PAYMENTS_INSTANT = os.getenv('PAYMENTS_INSTANT', 'true' if DEBUG else 'false').lower() in ('1', 'true', 'yes')
+
+# MoMo redirect về backend LAN → xác nhận booking → deep-link nesto:// (Expo Go)
+if not os.getenv('MOMO_REDIRECT_URL', '').strip():
+    from core.utils.network import primary_lan_ip
+
+    _lan = primary_lan_ip() or '127.0.0.1'
+    MOMO_REDIRECT_URL = f'http://{_lan}:{_dev_port}/api/v1/payments/momo/return/'
 
 
 

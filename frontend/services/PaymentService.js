@@ -1,5 +1,6 @@
 import api, {endpoints} from '../configuration/Apis';
 import {extractApiErrorMessage} from '../utils/apiError';
+import {pickResults} from '../utils/apiShape';
 
 const ok = (response, dataOverride = undefined) => ({
     status: 'success',
@@ -12,7 +13,7 @@ const fail = (err, fallback) => ({
     data: err?.response?.data || null,
 });
 
-const pickList = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
+const pickList = pickResults;
 
 export const fetchInvoices = async (params = {}) => {
     try {
@@ -91,7 +92,7 @@ export const initiateMomoPayment = async ({
             amount,
             order_info: orderInfo,
         });
-        return ok(response, response.data);
+        return ok(response, normalizePaymentGatewayData(response.data));
     } catch (err) {
         return fail(err, 'Unable to start MoMo payment.');
     }
@@ -114,30 +115,63 @@ export const initiateZaloPayPayment = async ({
             amount,
             order_info: orderInfo,
         });
-        return ok(response, response.data);
+        return ok(response, normalizePaymentGatewayData(response.data));
     } catch (err) {
         return fail(err, 'Unable to start ZaloPay payment.');
     }
 };
 
-export const fetchPaymentStatus = async (bookingId) => {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const normalizePaymentGatewayData = (data = {}) => ({
+    sandbox: Boolean(data.sandbox),
+    pay_url: String(data.pay_url || data.payUrl || '').trim(),
+    return_url: String(data.return_url || data.returnUrl || '').trim(),
+    deposit_paid: Boolean(data.deposit_paid ?? data.depositPaid),
+    checkout_session_id: String(data.checkout_session_id || data.checkoutSessionId || '').trim(),
+    booking_id: String(data.booking_id || data.bookingId || '').trim(),
+    order_id: String(data.order_id || data.orderId || '').trim(),
+    amount: Number(data.amount || 0),
+    provider: String(data.provider || '').trim(),
+});
+
+export const completeCheckoutPayment = async (checkoutSessionId, {amount, payment_method} = {}) => {
     try {
-        const response = await api.get(endpoints['payment-status'](bookingId));
+        const response = await api.post(endpoints['payment-checkout-complete'](checkoutSessionId), {
+            amount,
+            payment_method: payment_method || 'sandbox',
+        });
+        return ok(response, response.data);
+    } catch (err) {
+        return fail(err, 'Unable to complete checkout payment.');
+    }
+};
+
+export const fetchPaymentStatus = async (sessionId) => {
+    try {
+        const response = await api.get(endpoints['payment-status'](sessionId));
         return ok(response, response.data);
     } catch (err) {
         return fail(err, 'Unable to check payment status.');
     }
 };
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const syncBookingPayment = async (sessionId) => {
+    try {
+        const response = await api.post(endpoints['payment-sync'](sessionId));
+        return ok(response, response.data);
+    } catch (err) {
+        return fail(err, 'Unable to sync payment with the server.');
+    }
+};
 
 export const pollPaymentUntilConfirmed = async (
-    bookingId,
+    sessionId,
     {maxAttempts = 30, intervalMs = 2000} = {}
 ) => {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        const result = await fetchPaymentStatus(bookingId);
-        if (result.status === 'success' && result.data?.depositPaid) {
+        const result = await fetchPaymentStatus(sessionId);
+        if (result.status === 'success' && result.data?.deposit_paid) {
             return {confirmed: true, data: result.data};
         }
         if (attempt < maxAttempts - 1) {

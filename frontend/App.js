@@ -1,4 +1,5 @@
-import {NavigationContainer, useNavigationContainerRef} from "@react-navigation/native";
+import {NavigationContainer} from "@react-navigation/native";
+import {rootNavigationRef} from "./configuration/navigationRef";
 import {createNativeStackNavigator} from "@react-navigation/native-stack";
 import {SafeAreaProvider} from "react-native-safe-area-context";
 import Context from "./configuration/Context";
@@ -35,20 +36,18 @@ const linking = {
 
 function AppNavigator() {
     const {initialRoute} = useContext(GlobalContext)
-    const navigationRef = useNavigationContainerRef();
-
     useEffect(() => {
         return onAuthFailure(() => {
-            if (navigationRef.isReady()) {
-                resetToAccountFlow(navigationRef);
+            if (rootNavigationRef.isReady()) {
+                resetToAccountFlow(rootNavigationRef);
             }
         });
-    }, [navigationRef]);
+    }, []);
 
     return (
         <SafeAreaProvider>
             <ErrorBoundary>
-                <NavigationContainer ref={navigationRef} linking={linking}>
+                <NavigationContainer ref={rootNavigationRef} linking={linking}>
                     <Stack.Navigator screenOptions={{headerShown: false}} initialRouteName={initialRoute}>
                         <Stack.Screen name="OnboardingFlow" component={OnboardingFlow} />
                         <Stack.Screen name="AccountFlow" component={AccountFlow} />

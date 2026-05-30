@@ -125,6 +125,9 @@ class Room(BaseAuditedModel):
         return f"Room {self.room_number}"
 
 
+READY_ROOM_STATUSES = frozenset({Room.Status.AVAILABLE})
+
+
 class RoomThemeLink(BaseAuditedModel):
     class Meta:
         db_table = "room_theme_links"

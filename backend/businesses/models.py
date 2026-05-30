@@ -85,6 +85,33 @@ class Department(BaseAuditedModel):
         return self.code
 
 
+class BranchCustomer(BaseAuditedModel):
+    """Guest CRM record for a branch — populated when a booking is confirmed."""
+
+    class Meta:
+        db_table = "branch_customers"
+        unique_together = ("branch", "user")
+        indexes = [
+            models.Index(fields=["branch", "last_booking_at"]),
+        ]
+
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="branch_customers")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="branch_customer_profiles",
+    )
+    guest_name = models.CharField(max_length=255, blank=True, default="")
+    email = models.EmailField(max_length=255, blank=True, default="")
+    phone = models.CharField(max_length=64, blank=True, default="")
+    booking_count = models.PositiveIntegerField(default=0)
+    total_spent = models.PositiveIntegerField(default=0)
+    last_booking_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.guest_name or self.email} @ {self.branch_id}"
+
+
 class FavoriteBranch(BaseAuditedModel):
     class Meta:
         db_table = "customer_favorite_branches"

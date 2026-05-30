@@ -22,14 +22,14 @@ class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     groups = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
-    branchId = serializers.SerializerMethodField()
+    branch_id = serializers.SerializerMethodField()
     department = serializers.SerializerMethodField()
-    jobRole = serializers.SerializerMethodField()
-    serviceCategory = serializers.SerializerMethodField()
-    uiFlow = serializers.SerializerMethodField()
-    preferredLocation = serializers.CharField(source="preferred_location", required=False, allow_blank=True)
-    preferredLatitude = serializers.FloatField(source="preferred_latitude", required=False, allow_null=True)
-    preferredLongitude = serializers.FloatField(source="preferred_longitude", required=False, allow_null=True)
+    job_role = serializers.SerializerMethodField()
+    service_category = serializers.SerializerMethodField()
+    ui_flow = serializers.SerializerMethodField()
+    preferred_location = serializers.CharField(required=False, allow_blank=True)
+    preferred_latitude = serializers.FloatField(required=False, allow_null=True)
+    preferred_longitude = serializers.FloatField(required=False, allow_null=True)
 
     def get_groups(self, obj):
         return [group.name for group in obj.groups.all()]
@@ -40,7 +40,7 @@ class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
         except Exception:
             return ""
 
-    def get_branchId(self, obj):
+    def get_branch_id(self, obj):
         sp = getattr(obj, "staff_profile", None)
         if sp and getattr(sp, "branch_id", None):
             return str(sp.branch_id)
@@ -50,15 +50,15 @@ class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
         sp = getattr(obj, "staff_profile", None)
         return str(getattr(sp, "department", "") or "") if sp else ""
 
-    def get_jobRole(self, obj):
+    def get_job_role(self, obj):
         sp = getattr(obj, "staff_profile", None)
         return str(getattr(sp, "job_role", "") or "") if sp else ""
 
-    def get_serviceCategory(self, obj):
+    def get_service_category(self, obj):
         sp = getattr(obj, "staff_profile", None)
         return str(getattr(sp, "service_category", "") or "") if sp else ""
 
-    def get_uiFlow(self, obj):
+    def get_ui_flow(self, obj):
         from accounts.services.role_sync_service import resolve_ui_flow
 
         return resolve_ui_flow(obj)
@@ -74,16 +74,27 @@ class UserSerializer(PhoneValidationMixin, serializers.ModelSerializer):
             'role',
             'role_display',
             'groups',
-            'branchId',
+            'branch_id',
             'department',
-            'jobRole',
-            'serviceCategory',
-            'uiFlow',
-            'preferredLocation',
-            'preferredLatitude',
-            'preferredLongitude',
+            'job_role',
+            'service_category',
+            'ui_flow',
+            'preferred_location',
+            'preferred_latitude',
+            'preferred_longitude',
         ]
-        read_only_fields = ['id', 'email', 'role', 'role_display', 'groups', 'branchId', 'department', 'jobRole', 'serviceCategory', 'uiFlow']
+        read_only_fields = [
+            'id',
+            'email',
+            'role',
+            'role_display',
+            'groups',
+            'branch_id',
+            'department',
+            'job_role',
+            'service_category',
+            'ui_flow',
+        ]
 
 class SendOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
@@ -197,9 +208,8 @@ class ChangePasswordSerializer(serializers.Serializer):
 class UserNotificationSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(read_only=True)
     type = serializers.CharField(source="notification_type", read_only=True)
-    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
 
     class Meta:
         model = UserNotification
-        fields = ["id", "title", "message", "type", "notification_type", "meta", "read", "createdAt", "created_at"]
+        fields = ["id", "title", "message", "type", "notification_type", "meta", "read", "created_at"]
         read_only_fields = fields

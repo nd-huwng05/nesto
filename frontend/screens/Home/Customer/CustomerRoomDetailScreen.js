@@ -65,17 +65,13 @@ export function HomeDetailScreen({navigation, route}) {
 
   const tierRates = useMemo(() => {
     if (roomTypeDetail) {
-      return normalizeTierRates({
-        pricePerHour: roomTypeDetail.pricePerHour,
-        pricePerHalfDay: roomTypeDetail.pricePerHalfDay,
-        pricePerDay: roomTypeDetail.pricePerDay || roomTypeDetail.basePrice,
-      });
+      return normalizeTierRates(roomTypeDetail);
     }
     return normalizeTierRates({
-      pricePerHour: params.pricePerHour || room?.pricePerHour,
-      pricePerHalfDay: params.pricePerHalfDay || room?.pricePerHalfDay,
-      pricePerDay: params.roomPrice || params.pricePerDay || room?.price?.amount,
-      basePrice: params.roomPrice,
+      price_per_hour: params.pricePerHour || params.price_per_hour || room?.price_per_hour,
+      price_per_half_day: params.pricePerHalfDay || params.price_per_half_day || room?.price_per_half_day,
+      price_per_day: params.roomPrice || params.pricePerDay || params.price_per_day || room?.price?.amount,
+      base_price: params.roomPrice || params.base_price,
     });
   }, [roomTypeDetail, params, room]);
 

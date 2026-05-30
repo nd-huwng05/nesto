@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from bookings.models import Booking, BookingExtraService, ReviewForumPost
+from bookings.models import Booking, ReviewForumPost
 
 
 @admin.register(Booking)
@@ -8,14 +8,6 @@ class BookingAdmin(admin.ModelAdmin):
     list_display = ("id", "booking_code", "branch", "room", "guest_name", "phone", "status", "created_at")
     list_filter = ("status", "walk_in", "branch", "created_at")
     search_fields = ("id", "booking_code", "guest_name", "email", "phone", "room__room_number", "branch__name")
-    ordering = ("-created_at",)
-
-
-@admin.register(BookingExtraService)
-class BookingExtraServiceAdmin(admin.ModelAdmin):
-    list_display = ("id", "booking", "service_key", "summary", "amount", "created_at")
-    list_filter = ("created_at",)
-    search_fields = ("id", "booking__booking_code", "service_key", "summary")
     ordering = ("-created_at",)
 
 

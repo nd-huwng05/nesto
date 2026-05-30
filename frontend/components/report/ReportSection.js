@@ -2,7 +2,7 @@ import {StyleSheet, Text, View} from 'react-native';
 import {UI, cardStyle} from '../../styles/uiTokens';
 import {REPORT_SECTION_GAP} from './reportLayout';
 
-export function ReportSection({title, children, style}) {
+export function ReportSection({title, children, style, chartOverflow = false}) {
     return (
         <View style={[styles.section, style]}>
             {title ? (
@@ -10,7 +10,7 @@ export function ReportSection({title, children, style}) {
                     {title}
                 </Text>
             ) : null}
-            <View style={styles.card}>{children}</View>
+            <View style={[styles.card, chartOverflow && styles.cardChartOverflow]}>{children}</View>
         </View>
     );
 }
@@ -23,5 +23,9 @@ const styles = StyleSheet.create({
     card: {
         ...cardStyle,
         width: '100%',
+    },
+    cardChartOverflow: {
+        overflow: 'visible',
+        paddingBottom: 20,
     },
 });

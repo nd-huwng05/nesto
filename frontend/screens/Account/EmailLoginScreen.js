@@ -62,7 +62,7 @@ export default function EmailLoginScreen({ navigation }) {
 
             {googleTemporarilyDisabled ? (
                 <Text className="text-[11px] font-sf text-gray-400 mt-2 text-center px-2">
-                    Google Sign-In cần build dev app — dùng email/mật khẩu hoặc cấu hình EXPO_PUBLIC_WEB_CLIENT_ID.
+                    Thêm EXPO_PUBLIC_WEB_CLIENT_ID vào frontend/.env để bật đăng nhập Google (Expo Go dùng trình duyệt).
                 </Text>
             ) : null}
         </QuestionLayout>

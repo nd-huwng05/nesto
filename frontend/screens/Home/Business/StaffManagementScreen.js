@@ -18,8 +18,7 @@ import {StaffCard} from '../../../components/staff/StaffCard';
 import {useStaffCRUD} from '../../../hooks/business/useStaffCRUD';
 import {DEFAULT_STAFF_PASSWORD} from '../../../services/StaffService';
 import {UI} from '../../../styles/uiTokens';
-import {useManagerProfile} from '../../../configuration/ManagerProfileContext';
-import {canManageBusinessPortfolio} from '../../../constants/authRoles';
+import {useBusinessPortfolioAccess} from '../../../hooks/business/useBusinessPortfolioAccess';
 
 function getFirstBranchForBusiness(business) {
     const raw = business?.branches;
@@ -29,11 +28,10 @@ function getFirstBranchForBusiness(business) {
 
 export default function StaffManagementScreen({navigation}) {
     const insets = useSafeAreaInsets();
-    const {profile} = useManagerProfile();
+    const {canAccess: canManageStaff, isLoading: profileLoading} = useBusinessPortfolioAccess();
     const {staffList, businesses, isLoading, loadList, loadBusinesses} = useStaffCRUD();
     const safeBusinesses = Array.isArray(businesses) ? businesses : [];
     const safeStaffList = Array.isArray(staffList) ? staffList : [];
-    const canManageStaff = canManageBusinessPortfolio(profile);
 
     const [refreshing, setRefreshing] = useState(false);
     const [businessFilter, setBusinessFilter] = useState('');
@@ -165,6 +163,14 @@ export default function StaffManagementScreen({navigation}) {
     const closeDropdowns = () => setOpenDropdown(null);
 
     const footerBottomPad = Math.max(insets.bottom, 10);
+
+    if (profileLoading) {
+        return (
+            <TabScreenLayout backgroundColor={UI.screenBg}>
+                <ActivityIndicator size="large" color="#8294FF" style={{marginTop: 48}} />
+            </TabScreenLayout>
+        );
+    }
 
     if (!canManageStaff) {
         return (
